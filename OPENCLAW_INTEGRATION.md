@@ -1,8 +1,49 @@
-﻿# OpenClaw 对接参数说明
+# OpenClaw 对接参数说明（API 优先）
 
-## 1. 网关参数（OpenClaw 侧）
+## 1. 推荐方式：Open Canvas API + Skill
 
-根据现有 OpenClaw Assistant 实现，连接参数优先级如下：
+当前推荐用 API 方式对接 OpenClaw。Open Canvas 会为账号生成固定 API Key，再由 OpenClaw Skill 调用。
+
+### 启动方式
+
+1. 启动 API：
+```bash
+npm run api:dev
+```
+
+2. 启动 Web：
+```bash
+npm run dev
+```
+
+### 账号绑定与 Skill 配置
+
+1. 进入设置页，完成登录（演示或 Google）。
+2. 点击 “连接 API” 绑定账号到 API 服务器。
+3. 点击 “生成 API Key”，再点击 “复制 Skill JSON”。
+4. 在 OpenClaw 中创建 Skill，粘贴 JSON 配置即可。
+
+### API 能力
+
+当前 Skill 已开放以下 API：
+- `POST /v1/grids` 创建画布
+- `POST /v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar）
+- `PATCH /v1/cards/:cardId` 更新卡片
+- `POST /v1/cards/:cardId/append-note` 追加文本
+- `GET /v1/state?full=1` 获取全量画布状态
+- `GET /v1/config` 获取 API 配置
+
+示例（创建卡片）：
+```bash
+curl -X POST http://127.0.0.1:8787/v1/cards \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"note","title":"From OpenClaw","content":"Auto created by API"}'
+```
+
+## 2. OpenClaw 网关参数（仍保留）
+
+如果你仍需要对接 OpenClaw 网关（例如现有 OpenClaw Assistant），连接参数优先级如下：
 
 1. 环境变量
 - `OPENCLAW_GATEWAY_URL`（如 `ws://localhost:18789`）
@@ -15,9 +56,9 @@
 - `~/.openclaw/openclaw.json`
 - 读取字段：`gateway.port`、`gateway.auth.token`
 
-## 2. 调 Open Canvas 的方式
+## 3. Legacy：Web 注入方式（保留但不推荐）
 
-Open Canvas Web 已提供两个入口供 OpenClaw 调用：
+Open Canvas Web 仍保留本地 JS 注入模式，但该方式不适合账号/API-Key 控制。
 
 1. 全局 API（同页面 JS 环境）
 - `window.openCanvas.invoke(command)`
@@ -27,7 +68,6 @@ Open Canvas Web 已提供两个入口供 OpenClaw 调用：
 - `window.openCanvas.getState()`
 
 2. `postMessage` 桥接（跨窗口/WebView）
-- 发送：
 ```js
 window.postMessage({
   source: 'openclaw',
@@ -49,102 +89,43 @@ window.postMessage({
 }, '*')
 ```
 
-- 回执（消息源窗口会收到）：
+## 4. 设置面板配置
+
+Open Canvas 的 Settings 中 `OpenClaw 集成` 分组包含两部分：
+
+1. 网关参数（OpenClaw Assistant 侧）
+- `gatewayUrl`
+- `gatewayPort`
+- `gatewayToken`
+- `sessionKey`
+- `sessionKeys`
+- `source`
+
+2. API 账号与 Skill（OpenClaw Skill 侧）
+- `API Base URL`
+- `API Key`
+- “生成 API Key”
+- “复制 Skill JSON”
+
+配置会实时持久化，并广播事件：
 ```js
-{
-  source: 'open-canvas',
-  type: 'open-canvas.result',
-  result: {
-    ok: true,
-    requestId: 'req-001',
-    message: 'Card created',
-    data: { cardId: '...', gridId: '...' }
-  }
-}
+window.addEventListener('open-canvas:config', (event) => {
+  console.log(event.detail.openclaw)
+})
 ```
 
-## 3. 命令参数（当前支持）
+## 5. 配置命令（Web 注入模式）
 
-1. `create-grid`
+`get-config`
+```ts
+{ type: 'get-config', requestId?: string }
+```
+
+`set-config`
 ```ts
 {
-  type: 'create-grid',
+  type: 'set-config',
   requestId?: string,
-  payload?: { name?: string; activate?: boolean }
+  payload?: Partial<OpenClawConfig>
 }
 ```
-
-2. `create-card`
-```ts
-{
-  type: 'create-card',
-  requestId?: string,
-  payload?: {
-    kind?: 'note'|'hint'|'image'|'video'|'pdf'|'todo'|'calendar',
-    gridId?: string,
-    title?: string,
-    content?: string,
-    x?: number,
-    y?: number,
-    width?: number,
-    height?: number,
-    activateGrid?: boolean,
-    fileName?: string,
-    mediaUrl?: string,
-    todoItems?: Array<string|{text:string,done?:boolean}>,
-    calendar?: {
-      monthCursor?: string,
-      selectedDate?: string,
-      viewMode?: 'month'|'week',
-      draftTitle?: string,
-      draftAllDay?: boolean,
-      draftStartTime?: string,
-      draftEndTime?: string,
-      events?: Array<{
-        title: string,
-        date?: string,
-        allDay?: boolean,
-        startTime?: string,
-        endTime?: string
-      }>
-    }
-  }
-}
-```
-
-3. `update-card`
-```ts
-{
-  type: 'update-card',
-  requestId?: string,
-  payload: {
-    cardId: string,
-    title?: string,
-    content?: string,
-    x?: number,
-    y?: number,
-    width?: number,
-    height?: number
-  }
-}
-```
-
-4. `append-note`
-```ts
-{
-  type: 'append-note',
-  requestId?: string,
-  payload: { cardId: string, text: string }
-}
-```
-
-5. `get-state`
-```ts
-{ type: 'get-state', requestId?: string }
-```
-
-## 4. OpenClaw 工作流建议
-
-1. 先通过 OpenClaw 的 `canvas.navigate` 打开 Open Canvas 页面。
-2. 用 `canvas.eval` 或同等 JS 注入方式执行 `window.openCanvas.createCard(...)`。
-3. 若需可靠交付，使用 `requestId`，并监听 `open-canvas.result` 回执确认是否创建成功。

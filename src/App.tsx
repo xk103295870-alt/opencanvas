@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, FormEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import './App.css'
+import { apiCreateKey, apiDemoLogin, apiGetSkillTemplate, buildOpenClawSkillConfig, getApiBaseUrl } from './apiClient'
 
 type LanguageCode = 'zh' | 'en'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
@@ -111,10 +112,33 @@ type AppSettings = {
   syncDebounceMs: number
 }
 
-type FakeUser = {
+type AccountProvider = 'demo' | 'google'
+
+type AccountUser = {
   id: string
   name: string
   email: string
+  provider: AccountProvider
+  avatarUrl?: string
+}
+
+type OpenClawConfig = {
+  gatewayUrl: string
+  gatewayPort: string
+  gatewayToken: string
+  sessionKey: string
+  sessionKeys: string
+  source: string
+  googleClientId: string
+}
+
+type ServerAuthState = {
+  accessToken: string
+  expiresAt: string
+  apiBaseUrl: string
+  accountId: string
+  lastApiKey?: string
+  lastApiKeyId?: string
 }
 
 type SyncMeta = {
@@ -181,11 +205,22 @@ type I18nText = {
   loginEmailPlaceholder: string
   signIn: string
   cancel: string
+  demoLoginLabel: string
   fakeLogin: string
   fakeLoginSuccess: string
+  googleQuickSignIn: string
+  googleSigningIn: string
+  googleLoginSuccess: string
+  googleLoginFailedPrefix: string
+  googleClientIdLabel: string
+  googleClientIdHint: string
+  googleClientIdRequired: string
   signedOut: string
   logout: string
   loginHintInSettings: string
+  providerPrefix: string
+  providerDemo: string
+  providerGoogle: string
   languageTitle: string
   languageHint: string
   languageZh: string
@@ -198,6 +233,19 @@ type I18nText = {
   autoSyncLabel: string
   syncOnStartupLabel: string
   syncDebounceLabel: string
+  openclawTitle: string
+  openclawHint: string
+  openclawGatewayUrl: string
+  openclawGatewayPort: string
+  openclawGatewayToken: string
+  openclawSessionKey: string
+  openclawSessionKeys: string
+  openclawSource: string
+  openclawSave: string
+  openclawSaved: string
+  openclawCopyConfig: string
+  openclawConfigCopied: string
+  openclawConfigCopyFailed: string
   futureTitle: string
   futureLine1: string
   futureLine2: string
@@ -272,6 +320,8 @@ type OpenCanvasCreateCardPayload = {
   calendar?: ExternalCalendarInput
 }
 
+type OpenCanvasSetConfigPayload = Partial<OpenClawConfig>
+
 type OpenCanvasCommand =
   | {
       type: 'ping'
@@ -309,6 +359,15 @@ type OpenCanvasCommand =
       type: 'get-state'
       requestId?: string
     }
+  | {
+      type: 'get-config'
+      requestId?: string
+    }
+  | {
+      type: 'set-config'
+      requestId?: string
+      payload?: OpenCanvasSetConfigPayload
+    }
 
 type OpenCanvasCommandResult = {
   ok: boolean
@@ -344,11 +403,37 @@ type OpenCanvasGlobalApi = {
     requestId?: string
   }) => Promise<OpenCanvasCommandResult>
   getState: (requestId?: string) => Promise<OpenCanvasCommandResult>
+  getConfig: (requestId?: string) => Promise<OpenCanvasCommandResult>
+  setConfig: (payload?: OpenCanvasSetConfigPayload & { requestId?: string }) => Promise<OpenCanvasCommandResult>
+}
+
+type GoogleTokenResponse = {
+  access_token?: string
+  expires_in?: number
+  error?: string
+  error_description?: string
+}
+
+type GoogleTokenClient = {
+  requestAccessToken: (overrideConfig?: { prompt?: string }) => void
+}
+
+type GoogleIdentity = {
+  accounts: {
+    oauth2: {
+      initTokenClient: (config: {
+        client_id: string
+        scope: string
+        callback: (response: GoogleTokenResponse) => void
+      }) => GoogleTokenClient
+    }
+  }
 }
 
 declare global {
   interface Window {
     openCanvas?: OpenCanvasGlobalApi
+    google?: GoogleIdentity
   }
 }
 
@@ -359,8 +444,11 @@ const STORE_ASSETS = 'assets'
 const APP_STATE_KEY = 'main'
 const AUTH_STORAGE_KEY = 'open-canvas-fake-auth'
 const SETTINGS_STORAGE_KEY = 'open-canvas-settings'
+const OPENCLAW_SETTINGS_KEY = 'open-canvas-openclaw-settings'
 const SYNC_META_KEY = 'open-canvas-sync-meta'
+const SERVER_AUTH_STORAGE_KEY = 'open-canvas-server-auth'
 const CLOUD_KEY_PREFIX = 'open-canvas-cloud-'
+const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
 
 const SCENE_WIDTH = 6000
 const SCENE_HEIGHT = 4000
@@ -376,6 +464,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSync: true,
   syncOnStartup: true,
   syncDebounceMs: 2400,
+}
+
+const DEFAULT_OPENCLAW_CONFIG: OpenClawConfig = {
+  gatewayUrl: 'ws://localhost:18789',
+  gatewayPort: '18789',
+  gatewayToken: '',
+  sessionKey: '',
+  sessionKeys: '',
+  source: 'openclaw',
+  googleClientId: '',
 }
 
 const DEFAULT_SYNC_META: SyncMeta = {
@@ -417,16 +515,27 @@ const I18N: Record<LanguageCode, I18nText> = {
     mediaPdfUnavailable: 'PDF 不可用',
     hintItems: ['Markdown', '链接', '图片', '视频', 'PDF', '代码', '任务', '表格'],
     dropFilesLabel: '拖放文件以创建卡片',
-    accountTitle: '账号（模拟登录）',
+    accountTitle: '账号',
     loginDisplayNamePlaceholder: '显示名称',
     loginEmailPlaceholder: '邮箱（可选）',
     signIn: '登录',
     cancel: '取消',
+    demoLoginLabel: '演示登录',
     fakeLogin: '模拟登录',
     fakeLoginSuccess: '模拟登录成功。',
+    googleQuickSignIn: 'Google 快捷登录',
+    googleSigningIn: 'Google 登录中...',
+    googleLoginSuccess: 'Google 登录成功。',
+    googleLoginFailedPrefix: 'Google 登录失败：',
+    googleClientIdLabel: 'Google Client ID',
+    googleClientIdHint: '用于 Google 快捷登录（OAuth）。',
+    googleClientIdRequired: '请先在设置中填写 Google Client ID。',
     signedOut: '已退出登录。',
     logout: '退出登录',
     loginHintInSettings: '登录入口在设置中，后续会替换为真实登录。',
+    providerPrefix: '登录方式',
+    providerDemo: '演示账号',
+    providerGoogle: 'Google',
     languageTitle: '语言',
     languageHint: '当前支持中英文切换',
     languageZh: '中文',
@@ -439,6 +548,19 @@ const I18N: Record<LanguageCode, I18nText> = {
     autoSyncLabel: '自动同步（本地改动后自动执行）',
     syncOnStartupLabel: '启动后自动检查云端版本',
     syncDebounceLabel: '自动同步延迟（毫秒）',
+    openclawTitle: 'OpenClaw 集成',
+    openclawHint: '在这里配置网关与会话参数，供 OpenClaw 调用。',
+    openclawGatewayUrl: '网关 URL',
+    openclawGatewayPort: '网关端口',
+    openclawGatewayToken: '网关 Token',
+    openclawSessionKey: 'Session Key',
+    openclawSessionKeys: 'Session Keys（逗号分隔）',
+    openclawSource: '消息源标识',
+    openclawSave: '保存配置',
+    openclawSaved: '配置已保存。',
+    openclawCopyConfig: '复制 JSON',
+    openclawConfigCopied: '已复制 OpenClaw 配置。',
+    openclawConfigCopyFailed: '复制配置失败。',
     futureTitle: '未来扩展',
     futureLine1: '登录、同步、安装器会逐步替换为真实服务。',
     futureLine2: '当前结构已支持 Web + 桌面 + 多平台扩展。',
@@ -476,16 +598,27 @@ const I18N: Record<LanguageCode, I18nText> = {
     mediaPdfUnavailable: 'PDF unavailable',
     hintItems: ['Markdown', 'Links', 'Images', 'Videos', 'PDFs', 'Code', 'Tasks', 'Tables'],
     dropFilesLabel: 'Drop files to create cards',
-    accountTitle: 'Account (Fake Login)',
+    accountTitle: 'Account',
     loginDisplayNamePlaceholder: 'Display name',
     loginEmailPlaceholder: 'Email (optional)',
     signIn: 'Sign in',
     cancel: 'Cancel',
+    demoLoginLabel: 'Demo login',
     fakeLogin: 'Fake login',
     fakeLoginSuccess: 'Fake login successful.',
+    googleQuickSignIn: 'Google quick sign-in',
+    googleSigningIn: 'Signing in with Google...',
+    googleLoginSuccess: 'Signed in with Google.',
+    googleLoginFailedPrefix: 'Google sign-in failed: ',
+    googleClientIdLabel: 'Google Client ID',
+    googleClientIdHint: 'Used for Google OAuth quick sign-in.',
+    googleClientIdRequired: 'Please configure Google Client ID in Settings first.',
     signedOut: 'Signed out.',
     logout: 'Log out',
     loginHintInSettings: 'Login entry is in Settings. Real auth will replace this later.',
+    providerPrefix: 'Provider',
+    providerDemo: 'Demo account',
+    providerGoogle: 'Google',
     languageTitle: 'Language',
     languageHint: 'Currently supports Chinese and English',
     languageZh: '中文',
@@ -498,6 +631,19 @@ const I18N: Record<LanguageCode, I18nText> = {
     autoSyncLabel: 'Auto sync (after local changes)',
     syncOnStartupLabel: 'Check cloud snapshot on startup',
     syncDebounceLabel: 'Auto sync debounce (ms)',
+    openclawTitle: 'OpenClaw Integration',
+    openclawHint: 'Configure gateway and session parameters for OpenClaw calls.',
+    openclawGatewayUrl: 'Gateway URL',
+    openclawGatewayPort: 'Gateway Port',
+    openclawGatewayToken: 'Gateway Token',
+    openclawSessionKey: 'Session Key',
+    openclawSessionKeys: 'Session Keys (comma separated)',
+    openclawSource: 'Message Source',
+    openclawSave: 'Save config',
+    openclawSaved: 'Config saved.',
+    openclawCopyConfig: 'Copy JSON',
+    openclawConfigCopied: 'OpenClaw config copied.',
+    openclawConfigCopyFailed: 'Failed to copy config.',
     futureTitle: 'Future Extension',
     futureLine1: 'Auth, sync and installers will be replaced with real services.',
     futureLine2: 'Current architecture already supports Web + Desktop + multi-platform.',
@@ -769,6 +915,147 @@ const writeJson = <T,>(key: string, value: T) => {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+const trimConfigValue = (value: unknown, maxLength = 260) =>
+  typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
+
+const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefined): OpenClawConfig => {
+  const gatewayUrl = trimConfigValue(input?.gatewayUrl || DEFAULT_OPENCLAW_CONFIG.gatewayUrl, 280)
+  const gatewayPort = trimConfigValue(input?.gatewayPort || DEFAULT_OPENCLAW_CONFIG.gatewayPort, 12)
+  const gatewayToken = trimConfigValue(input?.gatewayToken, 512)
+  const sessionKey = trimConfigValue(input?.sessionKey, 256)
+  const sessionKeys = trimConfigValue(input?.sessionKeys, 1024)
+  const source = trimConfigValue(input?.source || DEFAULT_OPENCLAW_CONFIG.source, 64)
+  const googleClientId = trimConfigValue(input?.googleClientId, 240)
+
+  return {
+    gatewayUrl: gatewayUrl || DEFAULT_OPENCLAW_CONFIG.gatewayUrl,
+    gatewayPort: gatewayPort || DEFAULT_OPENCLAW_CONFIG.gatewayPort,
+    gatewayToken,
+    sessionKey,
+    sessionKeys,
+    source: source || DEFAULT_OPENCLAW_CONFIG.source,
+    googleClientId,
+  }
+}
+
+const normalizeAccount = (raw: unknown): AccountUser | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Partial<AccountUser>
+  const id = trimConfigValue(value.id, 140)
+  const name = trimConfigValue(value.name, 120)
+  const email = trimConfigValue(value.email, 180).toLowerCase()
+  if (!id || !name || !email) return null
+
+  return {
+    id,
+    name,
+    email,
+    provider: value.provider === 'google' ? 'google' : 'demo',
+    avatarUrl: trimConfigValue(value.avatarUrl, 500) || undefined,
+  }
+}
+
+const normalizeServerAuth = (raw: unknown): ServerAuthState | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Partial<ServerAuthState>
+  const accessToken = trimConfigValue(value.accessToken, 1024)
+  const expiresAt = trimConfigValue(value.expiresAt, 120)
+  const apiBaseUrl = trimConfigValue(value.apiBaseUrl, 320) || getApiBaseUrl()
+  const accountId = trimConfigValue(value.accountId, 140)
+  if (!accessToken || !expiresAt || !accountId) return null
+
+  return {
+    accessToken,
+    expiresAt,
+    apiBaseUrl,
+    accountId,
+    lastApiKey: trimConfigValue(value.lastApiKey, 1024) || undefined,
+    lastApiKeyId: trimConfigValue(value.lastApiKeyId, 120) || undefined,
+  }
+}
+
+let googleIdentityPromise: Promise<GoogleIdentity> | null = null
+
+const loadGoogleIdentityApi = (): Promise<GoogleIdentity> => {
+  const existingGoogle = window.google
+  if (existingGoogle?.accounts?.oauth2) return Promise.resolve(existingGoogle)
+  if (googleIdentityPromise) return googleIdentityPromise
+
+  const pending = new Promise<GoogleIdentity>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GOOGLE_IDENTITY_SCRIPT_SRC}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => {
+        if (window.google?.accounts?.oauth2) resolve(window.google)
+        else reject(new Error('Google Identity API is unavailable'))
+      })
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity API')))
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = GOOGLE_IDENTITY_SCRIPT_SRC
+    script.async = true
+    script.defer = true
+    script.onload = () => {
+      if (window.google?.accounts?.oauth2) {
+        resolve(window.google)
+        return
+      }
+      reject(new Error('Google Identity API is unavailable'))
+    }
+    script.onerror = () => reject(new Error('Failed to load Google Identity API'))
+    document.head.appendChild(script)
+  }).catch((error) => {
+    googleIdentityPromise = null
+    throw error
+  })
+
+  googleIdentityPromise = pending
+  return pending
+}
+
+const requestGoogleToken = (google: GoogleIdentity, clientId: string) =>
+  new Promise<GoogleTokenResponse>((resolve, reject) => {
+    try {
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'openid email profile',
+        callback: (response) => {
+          if (response.error) {
+            reject(new Error(response.error_description || response.error))
+            return
+          }
+          resolve(response)
+        },
+      })
+
+      tokenClient.requestAccessToken({ prompt: 'select_account' })
+    } catch (error) {
+      reject(error)
+    }
+  })
+
+type GoogleProfile = {
+  sub?: string
+  name?: string
+  email?: string
+  picture?: string
+}
+
+const fetchGoogleProfile = async (accessToken: string) => {
+  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Google profile request failed (${response.status})`)
+  }
+
+  return (await response.json()) as GoogleProfile
+}
+
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -987,9 +1274,15 @@ function App() {
   const [showLoginForm, setShowLoginForm] = useState(false)
   const [loginName, setLoginName] = useState('')
   const [loginEmail, setLoginEmail] = useState('')
+  const [googleLoginPending, setGoogleLoginPending] = useState(false)
+  const [openClawNotice, setOpenClawNotice] = useState('')
+  const [serverAuth, setServerAuth] = useState<ServerAuthState | null>(null)
+  const [apiKeyMasked, setApiKeyMasked] = useState('')
+  const [apiActionPending, setApiActionPending] = useState(false)
 
-  const [fakeUser, setFakeUser] = useState<FakeUser | null>(null)
+  const [account, setAccount] = useState<AccountUser | null>(null)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const [openClawConfig, setOpenClawConfig] = useState<OpenClawConfig>(DEFAULT_OPENCLAW_CONFIG)
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncMessage, setSyncMessage] = useState('')
@@ -1069,19 +1362,31 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const auth = readJson<FakeUser>(AUTH_STORAGE_KEY)
+    const auth = readJson<unknown>(AUTH_STORAGE_KEY)
     const setting = readJson<AppSettings>(SETTINGS_STORAGE_KEY)
+    const openClaw = readJson<Partial<OpenClawConfig>>(OPENCLAW_SETTINGS_KEY)
     const meta = readJson<SyncMeta>(SYNC_META_KEY)
+    const serverSession = readJson<unknown>(SERVER_AUTH_STORAGE_KEY)
+    const normalizedAccount = normalizeAccount(auth)
+    const normalizedServerAuth = normalizeServerAuth(serverSession)
 
-    if (auth) setFakeUser(auth)
+    if (normalizedAccount) {
+      setAccount(normalizedAccount)
+      writeJson(AUTH_STORAGE_KEY, normalizedAccount)
+    }
+    if (normalizedServerAuth) {
+      setServerAuth(normalizedServerAuth)
+      setApiKeyMasked(normalizedServerAuth.lastApiKey ? `${normalizedServerAuth.lastApiKey.slice(0, 18)}...` : '')
+    }
     if (setting) setSettings({ ...DEFAULT_SETTINGS, ...setting })
+    if (openClaw) setOpenClawConfig(normalizeOpenClawConfig({ ...DEFAULT_OPENCLAW_CONFIG, ...openClaw }))
     if (meta) setSyncMeta(meta)
   }, [])
 
   useEffect(() => {
     if (syncStatus !== 'idle') return
-    setSyncMessage(fakeUser ? text.ready : text.syncNeedLogin)
-  }, [fakeUser, syncStatus, text.ready, text.syncNeedLogin])
+    setSyncMessage(account ? text.ready : text.syncNeedLogin)
+  }, [account, syncStatus, text.ready, text.syncNeedLogin])
 
   useEffect(() => {
     let cancelled = false
@@ -1167,6 +1472,19 @@ function App() {
     })
   }, [])
 
+  const saveOpenClawConfig = useCallback((nextConfig: OpenClawConfig) => {
+    setOpenClawConfig(nextConfig)
+    writeJson(OPENCLAW_SETTINGS_KEY, nextConfig)
+  }, [])
+
+  const updateOpenClawConfig = useCallback((partial: Partial<OpenClawConfig>) => {
+    setOpenClawConfig((current) => {
+      const next = normalizeOpenClawConfig({ ...current, ...partial })
+      writeJson(OPENCLAW_SETTINGS_KEY, next)
+      return next
+    })
+  }, [])
+
   const updateSyncMeta = useCallback((partial: Partial<SyncMeta>) => {
     setSyncMeta((current) => {
       const next = { ...current, ...partial }
@@ -1174,6 +1492,140 @@ function App() {
       return next
     })
   }, [])
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('open-canvas:config', {
+        detail: {
+          openclaw: openClawConfig,
+        },
+      }),
+    )
+  }, [openClawConfig])
+
+  useEffect(() => {
+    if (!openClawNotice) return
+    const timer = window.setTimeout(() => setOpenClawNotice(''), 2600)
+    return () => window.clearTimeout(timer)
+  }, [openClawNotice])
+
+  useEffect(() => {
+    setApiKeyMasked(serverAuth?.lastApiKey ? `${serverAuth.lastApiKey.slice(0, 18)}...` : '')
+  }, [serverAuth?.lastApiKey])
+
+  const persistServerAuth = useCallback((next: ServerAuthState | null) => {
+    setServerAuth(next)
+    if (next) {
+      writeJson(SERVER_AUTH_STORAGE_KEY, next)
+      return
+    }
+    window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
+  }, [])
+
+  const bindAccountToApi = useCallback(
+    async (user: AccountUser) => {
+      setApiActionPending(true)
+      try {
+        const response = await apiDemoLogin({
+          name: user.name,
+          email: user.email,
+          provider: user.provider,
+          avatarUrl: user.avatarUrl,
+        })
+
+        const nextAuth: ServerAuthState = {
+          accountId: response.account.id,
+          accessToken: response.accessToken,
+          expiresAt: response.expiresAt,
+          apiBaseUrl: response.apiBaseUrl || getApiBaseUrl(),
+          lastApiKey: serverAuth?.accountId === response.account.id ? serverAuth.lastApiKey : undefined,
+          lastApiKeyId: serverAuth?.accountId === response.account.id ? serverAuth.lastApiKeyId : undefined,
+        }
+
+        persistServerAuth(nextAuth)
+        setOpenClawNotice(settings.language === 'zh' ? 'API 会话已连接。' : 'API session connected.')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setOpenClawNotice(settings.language === 'zh' ? `API 登录失败：${message}` : `API login failed: ${message}`)
+      } finally {
+        setApiActionPending(false)
+      }
+    },
+    [persistServerAuth, serverAuth?.accountId, serverAuth?.lastApiKey, serverAuth?.lastApiKeyId, settings.language],
+  )
+
+  const ensureApiSession = useCallback(async () => {
+    if (!account) throw new Error(settings.language === 'zh' ? '请先登录账号。' : 'Please sign in first.')
+
+    if (serverAuth && serverAuth.accountId === account.id && new Date(serverAuth.expiresAt).getTime() > Date.now() + 5_000) {
+      return serverAuth
+    }
+
+    const response = await apiDemoLogin({
+      name: account.name,
+      email: account.email,
+      provider: account.provider,
+      avatarUrl: account.avatarUrl,
+    })
+
+    const nextAuth: ServerAuthState = {
+      accountId: response.account.id,
+      accessToken: response.accessToken,
+      expiresAt: response.expiresAt,
+      apiBaseUrl: response.apiBaseUrl || getApiBaseUrl(),
+      lastApiKey: serverAuth?.lastApiKey,
+      lastApiKeyId: serverAuth?.lastApiKeyId,
+    }
+    persistServerAuth(nextAuth)
+    return nextAuth
+  }, [account, persistServerAuth, serverAuth])
+
+  const generateApiKeyForSkill = useCallback(async () => {
+    setApiActionPending(true)
+    try {
+      const session = await ensureApiSession()
+      const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key')
+      const nextAuth: ServerAuthState = {
+        ...session,
+        lastApiKey: created.apiKey,
+        lastApiKeyId: created.key.id,
+      }
+      persistServerAuth(nextAuth)
+      setApiKeyMasked(`${created.apiKey.slice(0, 18)}...`)
+      setOpenClawNotice(settings.language === 'zh' ? '已生成 API Key（仅本地保存）。' : 'API key generated and saved locally.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOpenClawNotice(settings.language === 'zh' ? `生成 API Key 失败：${message}` : `Failed to generate API key: ${message}`)
+    } finally {
+      setApiActionPending(false)
+    }
+  }, [ensureApiSession, persistServerAuth, settings.language])
+
+  const copyOpenClawSkillJson = useCallback(async () => {
+    setApiActionPending(true)
+    try {
+      const session = await ensureApiSession()
+      let apiKey = session.lastApiKey
+      let nextSession = session
+      if (!apiKey) {
+        const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key')
+        apiKey = created.apiKey
+        nextSession = { ...session, lastApiKey: created.apiKey, lastApiKeyId: created.key.id }
+        persistServerAuth(nextSession)
+        setApiKeyMasked(`${created.apiKey.slice(0, 18)}...`)
+      }
+
+      const skillTemplate = await apiGetSkillTemplate(nextSession.accessToken)
+      const config = buildOpenClawSkillConfig(skillTemplate, apiKey)
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+      setOpenClawNotice(settings.language === 'zh' ? '已复制 OpenClaw Skill JSON。' : 'OpenClaw skill JSON copied.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOpenClawNotice(settings.language === 'zh' ? `复制 Skill 失败：${message}` : `Failed to copy skill config: ${message}`)
+    } finally {
+      setApiActionPending(false)
+    }
+  }, [ensureApiSession, persistServerAuth, settings.language])
 
   const serializeAssetsForCloud = useCallback(async () => {
     const assets = await getAllAssets()
@@ -1230,7 +1682,7 @@ function App() {
 
   const performSync = useCallback(
     async (silentAuto = false) => {
-      if (!fakeUser) {
+      if (!account) {
         if (!silentAuto) {
           setSyncStatus('error')
           setSyncMessage(text.syncPleaseSignIn)
@@ -1257,19 +1709,19 @@ function App() {
           viewport,
         }
 
-        const remote = readJson<CloudSnapshot>(cloudKey(fakeUser.id))
+        const remote = readJson<CloudSnapshot>(cloudKey(account.id))
 
         if (!remote) {
           const assets = await serializeAssetsForCloud()
           const payload: CloudSnapshot = {
             version: 1,
-            userId: fakeUser.id,
+            userId: account.id,
             savedAt: Date.now(),
             state: localState,
             assets,
           }
 
-          writeJson(cloudKey(fakeUser.id), payload)
+          writeJson(cloudKey(account.id), payload)
           updateSyncMeta({ lastSyncAt: Date.now() })
           setSyncStatus('ok')
           setSyncMessage(text.syncCloudCreated)
@@ -1286,13 +1738,13 @@ function App() {
         const assets = await serializeAssetsForCloud()
         const payload: CloudSnapshot = {
           version: 1,
-          userId: fakeUser.id,
+          userId: account.id,
           savedAt: Date.now(),
           state: localState,
           assets,
         }
 
-        writeJson(cloudKey(fakeUser.id), payload)
+        writeJson(cloudKey(account.id), payload)
         updateSyncMeta({ lastSyncAt: Date.now() })
 
         setSyncStatus('ok')
@@ -1308,7 +1760,7 @@ function App() {
     },
     [
       activeGridId,
-      fakeUser,
+      account,
       grids,
       restoreFromCloud,
       serializeAssetsForCloud,
@@ -1325,14 +1777,14 @@ function App() {
   )
 
   useEffect(() => {
-    if (!hydrated || !fakeUser || !settings.syncOnStartup) return
-    if (startupSyncUserRef.current === fakeUser.id) return
-    startupSyncUserRef.current = fakeUser.id
+    if (!hydrated || !account || !settings.syncOnStartup) return
+    if (startupSyncUserRef.current === account.id) return
+    startupSyncUserRef.current = account.id
     void performSync(true)
-  }, [fakeUser, hydrated, performSync, settings.syncOnStartup])
+  }, [account, hydrated, performSync, settings.syncOnStartup])
 
   useEffect(() => {
-    if (!hydrated || !fakeUser || !settings.autoSync) return
+    if (!hydrated || !account || !settings.autoSync) return
 
     const timer = window.setTimeout(() => {
       if (!skipLocalSyncMetaUpdateRef.current) {
@@ -1343,7 +1795,7 @@ function App() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [activeGridId, fakeUser, grids, hydrated, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
+  }, [activeGridId, account, grids, hydrated, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
 
   const toWorldPoint = useCallback((clientX: number, clientY: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -1496,40 +1948,115 @@ function App() {
   const closeSettings = () => {
     setSettingsOpen(false)
     setShowLoginForm(false)
+    setOpenClawNotice('')
   }
 
-  const beginFakeLogin = () => {
+  const beginDemoLogin = () => {
     setShowLoginForm(true)
-    setLoginName(fakeUser?.name ?? '')
-    setLoginEmail(fakeUser?.email ?? '')
+    setLoginName(account?.name ?? '')
+    setLoginEmail(account?.email ?? '')
   }
 
-  const submitFakeLogin = (event: FormEvent<HTMLFormElement>) => {
+  const submitDemoLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const name = loginName.trim() || text.demoUser
     const email = (loginEmail.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@open-canvas.local`).toLowerCase()
 
-    const user: FakeUser = {
+    const user: AccountUser = {
       id: `fake-${email}`,
       name,
       email,
+      provider: 'demo',
     }
 
     writeJson(AUTH_STORAGE_KEY, user)
-    setFakeUser(user)
+    setAccount(user)
     setShowLoginForm(false)
     setSyncStatus('idle')
     setSyncMessage(text.fakeLoginSuccess)
+    void bindAccountToApi(user)
   }
+
+  const signInWithGoogle = useCallback(async () => {
+    const clientId = openClawConfig.googleClientId.trim()
+    if (!clientId) {
+      setSyncStatus('error')
+      setSyncMessage(text.googleClientIdRequired)
+      return
+    }
+
+    setGoogleLoginPending(true)
+
+    try {
+      const google = await loadGoogleIdentityApi()
+      const token = await requestGoogleToken(google, clientId)
+      const accessToken = token.access_token
+      if (!accessToken) throw new Error('No access token returned')
+
+      const profile = await fetchGoogleProfile(accessToken)
+      const email = trimConfigValue(profile.email, 180).toLowerCase()
+      const name = trimConfigValue(profile.name, 120) || text.demoUser
+      const idSuffix = trimConfigValue(profile.sub, 120) || email
+      if (!idSuffix || !email) throw new Error('Google profile missing required fields')
+
+      const user: AccountUser = {
+        id: `google-${idSuffix}`,
+        name,
+        email,
+        provider: 'google',
+        avatarUrl: trimConfigValue(profile.picture, 600) || undefined,
+      }
+
+      writeJson(AUTH_STORAGE_KEY, user)
+      setAccount(user)
+      setShowLoginForm(false)
+      setSyncStatus('idle')
+      setSyncMessage(text.googleLoginSuccess)
+      void bindAccountToApi(user)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSyncStatus('error')
+      setSyncMessage(`${text.googleLoginFailedPrefix}${message}`)
+    } finally {
+      setGoogleLoginPending(false)
+    }
+  }, [
+    bindAccountToApi,
+    openClawConfig.googleClientId,
+    text.demoUser,
+    text.googleClientIdRequired,
+    text.googleLoginFailedPrefix,
+    text.googleLoginSuccess,
+  ])
 
   const logout = () => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY)
-    setFakeUser(null)
+    window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
+    setAccount(null)
+    setServerAuth(null)
+    setApiKeyMasked('')
     startupSyncUserRef.current = null
     setShowLoginForm(false)
     setSyncStatus('idle')
     setSyncMessage(text.signedOut)
+  }
+
+  const saveOpenClawSettings = () => {
+    const normalized = normalizeOpenClawConfig(openClawConfig)
+    saveOpenClawConfig(normalized)
+    setOpenClawNotice(text.openclawSaved)
+  }
+
+  const copyOpenClawConfig = async () => {
+    const payload = JSON.stringify(openClawConfig, null, 2)
+
+    try {
+      await navigator.clipboard.writeText(payload)
+      setOpenClawNotice(text.openclawConfigCopied)
+    } catch {
+      setOpenClawNotice(text.openclawConfigCopyFailed)
+    }
   }
 
   const beginEditGrid = (grid: GridData) => {
@@ -1857,13 +2384,55 @@ function App() {
               name: grid.name,
               cardCount: grid.cards.length,
             })),
+            account: account
+              ? {
+                  id: account.id,
+                  name: account.name,
+                  email: account.email,
+                  provider: account.provider,
+                }
+              : null,
+            openclaw: openClawConfig,
+          },
+        }
+      }
+
+      if (command.type === 'get-config') {
+        return {
+          ok: true,
+          requestId,
+          data: {
+            openclaw: openClawConfig,
+            account: account
+              ? {
+                  id: account.id,
+                  name: account.name,
+                  email: account.email,
+                  provider: account.provider,
+                }
+              : null,
+          },
+        }
+      }
+
+      if (command.type === 'set-config') {
+        const partial = command.payload ?? {}
+        const next = normalizeOpenClawConfig({ ...openClawConfig, ...partial })
+        saveOpenClawConfig(next)
+
+        return {
+          ok: true,
+          requestId,
+          message: 'Config updated',
+          data: {
+            openclaw: next,
           },
         }
       }
 
       return { ok: false, requestId, message: 'Unsupported command' }
     },
-    [activeGridId, createCardInternal, createGridInternal, grids, updateCardInternal],
+    [account, activeGridId, createCardInternal, createGridInternal, grids, openClawConfig, saveOpenClawConfig, updateCardInternal],
   )
 
   useEffect(() => {
@@ -1891,6 +2460,27 @@ function App() {
         handleOpenCanvasCommand({
           type: 'get-state',
           requestId,
+        }),
+      getConfig: async (requestId) =>
+        handleOpenCanvasCommand({
+          type: 'get-config',
+          requestId,
+        }),
+      setConfig: async (payload) =>
+        handleOpenCanvasCommand({
+          type: 'set-config',
+          requestId: payload?.requestId,
+          payload: payload
+            ? {
+                gatewayUrl: payload.gatewayUrl,
+                gatewayPort: payload.gatewayPort,
+                gatewayToken: payload.gatewayToken,
+                sessionKey: payload.sessionKey,
+                sessionKeys: payload.sessionKeys,
+                source: payload.source,
+                googleClientId: payload.googleClientId,
+              }
+            : undefined,
         }),
     }
 
@@ -2362,6 +2952,19 @@ function App() {
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
+  const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
+  const apiSessionConnected =
+    Boolean(account && serverAuth && serverAuth.accountId === account.id) &&
+    new Date(serverAuth?.expiresAt || 0).getTime() > Date.now()
+  const apiSessionLabel =
+    settings.language === 'zh'
+      ? apiSessionConnected
+        ? 'API 已连接'
+        : 'API 未连接'
+      : apiSessionConnected
+        ? 'API connected'
+        : 'API not connected'
+  const apiBaseLabel = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
 
   return (
     <main className="app-shell">
@@ -2404,12 +3007,12 @@ function App() {
             {syncMeta.lastSyncAt ? `${text.lastSyncPrefix}${formatLocalDateTime(syncMeta.lastSyncAt, settings.language)}` : text.lastSyncNever}
           </p>
           <p className="sync-hint">
-            {fakeUser ? `${text.accountPrefix}: ${fakeUser.email}` : text.accountSignedOutHint}
+            {account ? `${text.accountPrefix}: ${account.email}` : text.accountSignedOutHint}
           </p>
           <div className="panel-actions">
             <button
               className="action-btn compact"
-              disabled={!fakeUser || syncStatus === 'syncing'}
+              disabled={!account || syncStatus === 'syncing'}
               onClick={() => {
                 void performSync(false)
               }}
@@ -2994,18 +3597,44 @@ function App() {
 
             <div className="settings-group">
               <h3>{text.accountTitle}</h3>
-              {fakeUser ? (
+              {account ? (
                 <div className="account-user-card">
-                  <strong>{fakeUser.name}</strong>
-                  <span>{fakeUser.email}</span>
+                  <div className="account-user-head">
+                    {account.avatarUrl ? (
+                      <img className="account-avatar" src={account.avatarUrl} alt={account.name} />
+                    ) : (
+                      <span className="account-avatar-fallback">{account.name.slice(0, 1).toUpperCase()}</span>
+                    )}
+                    <div className="account-user-meta">
+                      <strong>{account.name}</strong>
+                      <span>{account.email}</span>
+                    </div>
+                  </div>
+                  <span>{`${text.providerPrefix}: ${accountProviderLabel}`}</span>
+                  <span>{apiSessionLabel}</span>
                   <div className="panel-actions">
+                    <button
+                      className="mini-btn"
+                      disabled={apiActionPending}
+                      onClick={() => {
+                        if (account) void bindAccountToApi(account)
+                      }}
+                    >
+                      {settings.language === 'zh'
+                        ? apiActionPending
+                          ? '连接中...'
+                          : '连接 API'
+                        : apiActionPending
+                          ? 'Connecting...'
+                          : 'Connect API'}
+                    </button>
                     <button className="mini-btn danger" onClick={logout}>
                       {text.logout}
                     </button>
                   </div>
                 </div>
               ) : showLoginForm ? (
-                <form className="login-form" onSubmit={submitFakeLogin}>
+                <form className="login-form" onSubmit={submitDemoLogin}>
                   <input
                     type="text"
                     placeholder={text.loginDisplayNamePlaceholder}
@@ -3030,11 +3659,162 @@ function App() {
               ) : (
                 <div className="account-empty">
                   <p>{text.loginHintInSettings}</p>
-                  <button className="action-btn compact" onClick={beginFakeLogin}>
-                    {text.fakeLogin}
-                  </button>
+                  <div className="panel-actions">
+                    <button
+                      className="action-btn compact"
+                      disabled={googleLoginPending}
+                      onClick={() => {
+                        void signInWithGoogle()
+                      }}
+                    >
+                      {googleLoginPending ? text.googleSigningIn : text.googleQuickSignIn}
+                    </button>
+                    <button className="mini-btn" onClick={beginDemoLogin}>
+                      {text.demoLoginLabel}
+                    </button>
+                  </div>
                 </div>
               )}
+            </div>
+
+            <div className="settings-group">
+              <h3>{text.openclawTitle}</h3>
+              <p>{text.openclawHint}</p>
+
+              <label className="input-row">
+                <span>{text.openclawGatewayUrl}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.gatewayUrl}
+                  onChange={(event) => updateOpenClawConfig({ gatewayUrl: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.openclawGatewayPort}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.gatewayPort}
+                  onChange={(event) => updateOpenClawConfig({ gatewayPort: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.openclawGatewayToken}</span>
+                <input
+                  type="password"
+                  className="settings-text-input"
+                  value={openClawConfig.gatewayToken}
+                  onChange={(event) => updateOpenClawConfig({ gatewayToken: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.openclawSessionKey}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.sessionKey}
+                  onChange={(event) => updateOpenClawConfig({ sessionKey: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.openclawSessionKeys}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.sessionKeys}
+                  onChange={(event) => updateOpenClawConfig({ sessionKeys: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.openclawSource}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.source}
+                  onChange={(event) => updateOpenClawConfig({ source: event.target.value })}
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.googleClientIdLabel}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={openClawConfig.googleClientId}
+                  onChange={(event) => updateOpenClawConfig({ googleClientId: event.target.value })}
+                />
+              </label>
+              <p>{text.googleClientIdHint}</p>
+
+              <div className="panel-actions">
+                <button className="mini-btn" onClick={saveOpenClawSettings}>
+                  {text.openclawSave}
+                </button>
+                <button
+                  className="mini-btn"
+                  onClick={() => {
+                    void copyOpenClawConfig()
+                  }}
+                >
+                  {text.openclawCopyConfig}
+                </button>
+              </div>
+
+              <label className="input-row">
+                <span>{settings.language === 'zh' ? 'API Base URL' : 'API Base URL'}</span>
+                <input type="text" className="settings-text-input" value={apiBaseLabel} readOnly />
+              </label>
+
+              <label className="input-row">
+                <span>{settings.language === 'zh' ? '最新 API Key' : 'Latest API Key'}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={apiKeyMasked || (settings.language === 'zh' ? '尚未生成' : 'Not generated')}
+                  readOnly
+                />
+              </label>
+
+              <div className="panel-actions">
+                <button
+                  className="mini-btn"
+                  disabled={apiActionPending || !account}
+                  onClick={() => {
+                    void generateApiKeyForSkill()
+                  }}
+                >
+                  {settings.language === 'zh'
+                    ? apiActionPending
+                      ? '处理中...'
+                      : '生成 API Key'
+                    : apiActionPending
+                      ? 'Working...'
+                      : 'Generate API key'}
+                </button>
+                <button
+                  className="mini-btn"
+                  disabled={apiActionPending || !account}
+                  onClick={() => {
+                    void copyOpenClawSkillJson()
+                  }}
+                >
+                  {settings.language === 'zh'
+                    ? apiActionPending
+                      ? '处理中...'
+                      : '复制 Skill JSON'
+                    : apiActionPending
+                      ? 'Working...'
+                      : 'Copy skill JSON'}
+                </button>
+              </div>
+
+              {openClawNotice ? <p>{openClawNotice}</p> : null}
             </div>
 
             <div className="settings-group">

@@ -122,6 +122,40 @@
   gap: 4px;
 }
 
+.account-user-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-user-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-avatar,
+.account-avatar-fallback {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.account-avatar {
+  object-fit: cover;
+}
+
+.account-avatar-fallback {
+  background: var(--icon-bg);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
 .account-user-card strong {
   font-size: 13px;
   color: var(--text-main);
@@ -1166,6 +1200,10 @@
   background: var(--icon-bg);
   color: var(--text-main);
   padding: 7px 9px;
+}
+
+.settings-text-input {
+  width: 100% !important;
 }
 
 .language-switch {
