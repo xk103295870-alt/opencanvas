@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-main: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] {
+  --canvas-base: #0b0d12;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --text-main: #e5edf2;
+  --text-soft: #a4b1b9;
+  --text-dim: #68767f;
+  --accent: #7ec7dc;
+  --body-bg: #07090d;
+  --app-bg: #0d0f14;
+  --app-glow: rgba(27, 76, 98, 0.2);
+  --sidebar-bg-top: rgba(20, 23, 31, 0.97);
+  --sidebar-bg-bottom: rgba(14, 16, 22, 0.98);
+  --action-bg: rgba(255, 255, 255, 0.03);
+  --icon-bg: rgba(255, 255, 255, 0.02);
+  --grid-active-bg: rgba(255, 255, 255, 0.06);
+  --badge-bg: rgba(255, 255, 255, 0.08);
+  --canvas-dot: rgba(255, 255, 255, 0.12);
+  --canvas-fade: rgba(11, 13, 18, 0.4);
+  --card-bg-top: rgba(30, 33, 43, 0.9);
+  --card-bg-bottom: rgba(23, 25, 33, 0.88);
+  --card-shadow: rgba(0, 0, 0, 0.35);
+  --card-drag-outline: rgba(116, 179, 195, 0.6);
+  --card-drag-shadow: rgba(0, 0, 0, 0.5);
+  --card-header-bg: rgba(255, 255, 255, 0.01);
+}
+
+:root[data-theme='light'] {
+  --canvas-base: #f5f8fd;
+  --line: rgba(17, 24, 39, 0.14);
+  --line-strong: rgba(17, 24, 39, 0.28);
+  --text-main: #1f2633;
+  --text-soft: #4f5d6d;
+  --text-dim: #7a8896;
+  --accent: #2f8ca3;
+  --body-bg: #eef2f7;
+  --app-bg: #f7f9fc;
+  --app-glow: rgba(89, 141, 162, 0.2);
+  --sidebar-bg-top: rgba(246, 248, 252, 0.94);
+  --sidebar-bg-bottom: rgba(239, 243, 249, 0.97);
+  --action-bg: rgba(16, 24, 40, 0.03);
+  --icon-bg: rgba(16, 24, 40, 0.03);
+  --grid-active-bg: rgba(16, 24, 40, 0.08);
+  --badge-bg: rgba(16, 24, 40, 0.1);
+  --canvas-dot: rgba(49, 65, 84, 0.2);
+  --canvas-fade: rgba(110, 125, 140, 0.11);
+  --card-bg-top: rgba(255, 255, 255, 0.96);
+  --card-bg-bottom: rgba(246, 249, 253, 0.96);
+  --card-shadow: rgba(22, 35, 53, 0.16);
+  --card-drag-outline: rgba(47, 140, 163, 0.55);
+  --card-drag-shadow: rgba(20, 35, 50, 0.3);
+  --card-header-bg: rgba(255, 255, 255, 0.65);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--body-bg);
+}
