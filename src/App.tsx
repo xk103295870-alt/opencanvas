@@ -44,6 +44,7 @@ type CardData = {
   height: number
   fileId?: string
   fileName?: string
+  externalUrl?: string
   todoItems?: TodoItem[]
   calendar?: CalendarState
 }
@@ -228,6 +229,127 @@ type CalendarI18n = {
   endTime: string
   invalidTimeHint: string
   dragHint: string
+}
+
+type ParticleRuntime = {
+  energy: number
+  originX: number
+  originY: number
+  shiftX: number
+  shiftY: number
+  dotAlpha: number
+  bloomAlpha: number
+  bloomRadius: number
+}
+
+type ExternalTodoInput = string | { text: string; done?: boolean }
+
+type ExternalCalendarEventInput = {
+  title: string
+  date?: string
+  allDay?: boolean
+  startTime?: string
+  endTime?: string
+}
+
+type ExternalCalendarInput = Partial<Omit<CalendarState, 'events'>> & {
+  events?: ExternalCalendarEventInput[]
+}
+
+type OpenCanvasCreateCardPayload = {
+  kind?: CardKind | string
+  gridId?: string
+  title?: string
+  content?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  activateGrid?: boolean
+  fileName?: string
+  mediaUrl?: string
+  todoItems?: ExternalTodoInput[]
+  calendar?: ExternalCalendarInput
+}
+
+type OpenCanvasCommand =
+  | {
+      type: 'ping'
+      requestId?: string
+    }
+  | {
+      type: 'create-grid'
+      requestId?: string
+      payload?: { name?: string; activate?: boolean }
+    }
+  | {
+      type: 'create-card'
+      requestId?: string
+      payload?: OpenCanvasCreateCardPayload
+    }
+  | {
+      type: 'update-card'
+      requestId?: string
+      payload?: {
+        cardId: string
+        title?: string
+        content?: string
+        x?: number
+        y?: number
+        width?: number
+        height?: number
+      }
+    }
+  | {
+      type: 'append-note'
+      requestId?: string
+      payload?: { cardId: string; text: string }
+    }
+  | {
+      type: 'get-state'
+      requestId?: string
+    }
+
+type OpenCanvasCommandResult = {
+  ok: boolean
+  requestId?: string
+  message?: string
+  data?: unknown
+}
+
+type OpenCanvasPostMessageEnvelope = {
+  source?: string
+  type: 'open-canvas.command'
+  command: OpenCanvasCommand
+}
+
+type OpenCanvasPostMessageResult = {
+  source: 'open-canvas'
+  type: 'open-canvas.result'
+  result: OpenCanvasCommandResult
+}
+
+type OpenCanvasGlobalApi = {
+  invoke: (command: OpenCanvasCommand) => Promise<OpenCanvasCommandResult>
+  createGrid: (payload?: { name?: string; activate?: boolean; requestId?: string }) => Promise<OpenCanvasCommandResult>
+  createCard: (payload?: OpenCanvasCreateCardPayload & { requestId?: string }) => Promise<OpenCanvasCommandResult>
+  updateCard: (payload: {
+    cardId: string
+    title?: string
+    content?: string
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+    requestId?: string
+  }) => Promise<OpenCanvasCommandResult>
+  getState: (requestId?: string) => Promise<OpenCanvasCommandResult>
+}
+
+declare global {
+  interface Window {
+    openCanvas?: OpenCanvasGlobalApi
+  }
 }
 
 const DB_NAME = 'open-canvas-db'
@@ -668,6 +790,69 @@ const dataUrlToBlob = async (dataUrl: string) => {
 
 const cloudKey = (userId: string) => `${CLOUD_KEY_PREFIX}${userId}`
 
+const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar'])
+
+const normalizeCardKind = (value: unknown): CardKind => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return CARD_KIND_SET.has(raw as CardKind) ? (raw as CardKind) : 'note'
+}
+
+const toFiniteNumber = (value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+
+const toDateKeyOrFallback = (value: string | undefined, fallback: string) =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : fallback
+
+const toTodoItems = (input: ExternalTodoInput[] | undefined) =>
+  Array.isArray(input)
+    ? input
+        .map((item) => {
+          if (typeof item === 'string') {
+            const text = item.trim()
+            return text ? createTodoItem(text) : null
+          }
+
+          const text = String(item?.text ?? '').trim()
+          if (!text) return null
+          return {
+            id: uid('todo-item'),
+            text,
+            done: item?.done === true,
+          } satisfies TodoItem
+        })
+        .filter((item): item is TodoItem => Boolean(item))
+    : []
+
+const toCalendarEvents = (input: ExternalCalendarEventInput[] | undefined, fallbackDate: string) =>
+  Array.isArray(input)
+    ? input
+        .map((eventItem) => {
+          const title = String(eventItem?.title ?? '').trim()
+          if (!title) return null
+
+          const dateKey = toDateKeyOrFallback(eventItem?.date, fallbackDate)
+          const allDay = eventItem?.allDay !== false
+          const range = normalizeTimeRange(
+            String(eventItem?.startTime ?? ''),
+            String(eventItem?.endTime ?? ''),
+          )
+
+          return {
+            id: uid('event'),
+            date: dateKey,
+            title,
+            allDay,
+            ...(allDay
+              ? {}
+              : {
+                  startTime: range?.[0],
+                  endTime: range?.[1],
+                }),
+          } satisfies CalendarEvent
+        })
+        .filter((eventItem): eventItem is CalendarEvent => Boolean(eventItem))
+    : []
+
 const openDatabase = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -694,7 +879,24 @@ const getPersistedState = async () => {
     const store = tx.objectStore(STORE_APP)
     const request = store.get(APP_STATE_KEY)
 
-    request.onsuccess = () => resolve((request.result as PersistedAppState | undefined) ?? null)
+    request.onsuccess = () => {
+      const raw = request.result as unknown
+      if (!raw || typeof raw !== 'object') {
+        resolve(null)
+        return
+      }
+
+      // Backward compatibility:
+      // legacy shape: { key: "main", value: PersistedAppState }
+      const legacyValue = (raw as { value?: unknown }).value
+      if (legacyValue && typeof legacyValue === 'object') {
+        resolve(legacyValue as PersistedAppState)
+        return
+      }
+
+      // current shape: PersistedAppState
+      resolve(raw as PersistedAppState)
+    }
     request.onerror = () => reject(request.error ?? new Error('Failed to read app state'))
   })
 }
@@ -705,7 +907,13 @@ const putPersistedState = async (state: PersistedAppState) => {
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_APP, 'readwrite')
     const store = tx.objectStore(STORE_APP)
-    const request = store.put(state, APP_STATE_KEY)
+    const request =
+      store.keyPath === null
+        ? store.put(state, APP_STATE_KEY)
+        : store.put({
+            key: APP_STATE_KEY,
+            value: state,
+          })
 
     request.onsuccess = () => resolve()
     request.onerror = () => reject(request.error ?? new Error('Failed to write app state'))
@@ -808,6 +1016,17 @@ function App() {
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
   const startupSyncUserRef = useRef<string | null>(null)
+  const particleRuntimeRef = useRef<ParticleRuntime>({
+    energy: 0,
+    originX: 50,
+    originY: 50,
+    shiftX: 0,
+    shiftY: 0,
+    dotAlpha: 10,
+    bloomAlpha: 8,
+    bloomRadius: 360,
+  })
+  const particleFrameRef = useRef<number | null>(null)
 
   const activeGrid = useMemo(() => grids.find((grid) => grid.id === activeGridId) ?? grids[0], [activeGridId, grids])
 
@@ -1141,6 +1360,67 @@ function App() {
     }
   }, [])
 
+  const applyParticleVisual = useCallback(() => {
+    const canvasElement = canvasRef.current
+    if (!canvasElement) return
+
+    const runtime = particleRuntimeRef.current
+    canvasElement.style.setProperty('--particle-energy', runtime.energy.toFixed(3))
+    canvasElement.style.setProperty('--particle-origin-x', `${runtime.originX.toFixed(2)}%`)
+    canvasElement.style.setProperty('--particle-origin-y', `${runtime.originY.toFixed(2)}%`)
+    canvasElement.style.setProperty('--particle-shift-x', `${runtime.shiftX.toFixed(2)}px`)
+    canvasElement.style.setProperty('--particle-shift-y', `${runtime.shiftY.toFixed(2)}px`)
+    canvasElement.style.setProperty('--particle-dot-alpha', `${runtime.dotAlpha.toFixed(1)}%`)
+    canvasElement.style.setProperty('--particle-bloom-alpha', `${runtime.bloomAlpha.toFixed(1)}%`)
+    canvasElement.style.setProperty('--particle-bloom-radius', `${runtime.bloomRadius.toFixed(0)}px`)
+  }, [])
+
+  const pushParticleImpulse = useCallback(
+    (worldX: number, worldY: number, strength = 0.1) => {
+      const runtime = particleRuntimeRef.current
+
+      const nx = clamp((worldX / SCENE_WIDTH) * 100, 0, 100)
+      const ny = clamp((worldY / SCENE_HEIGHT) * 100, 0, 100)
+      const impulse = clamp(strength, 0.03, 0.4)
+
+      runtime.energy = clamp(runtime.energy + impulse, 0, 1.2)
+      runtime.originX = clamp(runtime.originX * 0.72 + nx * 0.28, 0, 100)
+      runtime.originY = clamp(runtime.originY * 0.72 + ny * 0.28, 0, 100)
+      runtime.shiftX = clamp(runtime.shiftX * 0.6 + (nx - 50) * 0.28, -26, 26)
+      runtime.shiftY = clamp(runtime.shiftY * 0.6 + (ny - 50) * 0.28, -26, 26)
+      runtime.dotAlpha = clamp(10 + runtime.energy * 18, 10, 38)
+      runtime.bloomAlpha = clamp(7 + runtime.energy * 24, 7, 46)
+      runtime.bloomRadius = clamp(340 + runtime.energy * 460, 340, 980)
+
+      applyParticleVisual()
+    },
+    [applyParticleVisual],
+  )
+
+  useEffect(() => {
+    applyParticleVisual()
+
+    const tick = () => {
+      const runtime = particleRuntimeRef.current
+      runtime.energy = Math.max(0, runtime.energy * 0.92 - 0.002)
+      runtime.shiftX *= 0.9
+      runtime.shiftY *= 0.9
+      runtime.dotAlpha = clamp(10 + runtime.energy * 18, 10, 38)
+      runtime.bloomAlpha = clamp(7 + runtime.energy * 24, 7, 46)
+      runtime.bloomRadius = clamp(340 + runtime.energy * 460, 340, 980)
+      applyParticleVisual()
+      particleFrameRef.current = window.requestAnimationFrame(tick)
+    }
+
+    particleFrameRef.current = window.requestAnimationFrame(tick)
+
+    return () => {
+      if (particleFrameRef.current !== null) {
+        window.cancelAnimationFrame(particleFrameRef.current)
+      }
+    }
+  }, [applyParticleVisual])
+
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const resizeState = resizeStateRef.current
@@ -1163,6 +1443,8 @@ function App() {
             }
           }),
         )
+        const movement = Math.abs(deltaX) + Math.abs(deltaY)
+        pushParticleImpulse(world.x, world.y, 0.08 + movement / 960)
         return
       }
 
@@ -1181,6 +1463,7 @@ function App() {
             }
           }),
         )
+        pushParticleImpulse(world.x, world.y, 0.07)
         return
       }
 
@@ -1208,7 +1491,7 @@ function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [toWorldPoint])
+  }, [pushParticleImpulse, toWorldPoint])
 
   const closeSettings = () => {
     setSettingsOpen(false)
@@ -1297,70 +1580,360 @@ function App() {
     setCardTitleDraft('')
   }
 
-  const addGrid = () => {
-    const count = grids.length + 1
-    const newGrid: GridData = {
-      id: uid('grid'),
-      name: `${text.gridPrefix} ${count}`,
-      cards: [],
-    }
+  const createGridInternal = useCallback(
+    (payload?: { name?: string; activate?: boolean }) => {
+      const count = grids.length + 1
+      const newGrid: GridData = {
+        id: uid('grid'),
+        name: payload?.name?.trim() || `${text.gridPrefix} ${count}`,
+        cards: [],
+      }
 
-    setGrids((current) => [...current, newGrid])
-    setActiveGridId(newGrid.id)
+      setGrids((current) => [...current, newGrid])
+      if (payload?.activate !== false) {
+        setActiveGridId(newGrid.id)
+      }
+
+      return newGrid
+    },
+    [grids.length, text.gridPrefix],
+  )
+
+  const createCardInternal = useCallback(
+    (payload?: OpenCanvasCreateCardPayload) => {
+      const targetGridId =
+        payload?.gridId && grids.some((grid) => grid.id === payload.gridId) ? payload.gridId : activeGridId
+      const targetGrid = grids.find((grid) => grid.id === targetGridId)
+      if (!targetGrid) return null
+
+      const kind = normalizeCardKind(payload?.kind)
+      const baseX = clamp(toFiniteNumber(payload?.x, 140), -200, SCENE_WIDTH - 60)
+      const baseY = clamp(toFiniteNumber(payload?.y, 140), -200, SCENE_HEIGHT - 60)
+      const defaultTitle =
+        kind === 'todo'
+          ? todoText.title
+          : kind === 'calendar'
+            ? calendarText.title
+            : kind === 'hint'
+              ? 'Hints'
+              : kind === 'note'
+                ? text.newNoteCard.replace('+ ', '')
+                : text.unnamedCard
+
+      const defaultSize =
+        kind === 'todo'
+          ? { width: 360, height: 320 }
+          : kind === 'calendar'
+            ? { width: 440, height: 460 }
+            : kind === 'hint'
+              ? { width: 300, height: 420 }
+              : kind === 'image'
+                ? { width: 360, height: 280 }
+                : kind === 'video'
+                  ? { width: 420, height: 300 }
+                  : kind === 'pdf'
+                    ? { width: 460, height: 360 }
+                    : { width: 340, height: 280 }
+
+      const width = clamp(toFiniteNumber(payload?.width, defaultSize.width), CARD_MIN_WIDTH, CARD_MAX_WIDTH)
+      const height = clamp(toFiniteNumber(payload?.height, defaultSize.height), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
+      const title = String(payload?.title ?? '').trim() || defaultTitle
+      const content = String(payload?.content ?? '').trim()
+      const cardId = uid(kind)
+      const externalTodoItems = toTodoItems(payload?.todoItems)
+
+      const cardBase: CardData = {
+        id: cardId,
+        kind,
+        title,
+        content: kind === 'note' ? content || text.notePlaceholder : content,
+        x: baseX,
+        y: baseY,
+        width,
+        height,
+        fileName: payload?.fileName,
+        externalUrl: typeof payload?.mediaUrl === 'string' ? payload.mediaUrl.trim() : undefined,
+      }
+
+      const cardWithTypeData =
+        kind === 'todo'
+          ? {
+              ...cardBase,
+              content,
+              todoItems:
+                externalTodoItems.length > 0
+                  ? externalTodoItems
+                  : content
+                    ? []
+                    : todoText.defaultItems.map((item) => createTodoItem(item)),
+            }
+          : kind === 'calendar'
+            ? (() => {
+                const today = toDateKey(new Date())
+                const calendarInput = payload?.calendar
+                const selectedDate = toDateKeyOrFallback(calendarInput?.selectedDate, today)
+                const monthCursor = toDateKeyOrFallback(calendarInput?.monthCursor, toMonthKey(parseDateKey(selectedDate)))
+                const calendarState = withCalendarDefaults({
+                  ...createDefaultCalendarState(),
+                  ...calendarInput,
+                  selectedDate,
+                  monthCursor,
+                  events: toCalendarEvents(calendarInput?.events, selectedDate),
+                })
+                return {
+                  ...cardBase,
+                  content: '',
+                  calendar: calendarState,
+                }
+              })()
+            : kind === 'hint'
+              ? {
+                  ...cardBase,
+                  title: title || 'Drag and drop any file',
+                  content: '',
+                }
+              : cardBase
+
+      setGrids((current) =>
+        current.map((grid) => (grid.id === targetGridId ? { ...grid, cards: [...grid.cards, cardWithTypeData] } : grid)),
+      )
+      if (payload?.activateGrid) {
+        setActiveGridId(targetGridId)
+      }
+      pushParticleImpulse(baseX, baseY, 0.22)
+
+      return { cardId, gridId: targetGridId }
+    },
+    [
+      activeGridId,
+      calendarText.title,
+      grids,
+      pushParticleImpulse,
+      text.newNoteCard,
+      text.notePlaceholder,
+      text.unnamedCard,
+      todoText.defaultItems,
+      todoText.title,
+    ],
+  )
+
+  const addGrid = () => {
+    createGridInternal({ activate: true })
   }
 
   const addNoteCard = () => {
-    const newCard: CardData = {
-      id: uid('note'),
+    createCardInternal({
       kind: 'note',
-      title: text.newNoteCard.replace('+ ', ''),
-      content: text.notePlaceholder,
       x: 92,
       y: 92,
       width: 340,
       height: 280,
-    }
-
-    setGrids((current) =>
-      current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, newCard] } : grid)),
-    )
+    })
   }
 
   const addTodoCard = () => {
-    const newCard: CardData = {
-      id: uid('todo'),
+    createCardInternal({
       kind: 'todo',
-      title: todoText.title,
-      content: '',
-      todoItems: todoText.defaultItems.map((item) => createTodoItem(item)),
       x: 132,
       y: 132,
       width: 360,
       height: 320,
-    }
-
-    setGrids((current) =>
-      current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, newCard] } : grid)),
-    )
+    })
   }
 
   const addCalendarCard = () => {
-    const newCard: CardData = {
-      id: uid('calendar'),
+    createCardInternal({
       kind: 'calendar',
-      title: calendarText.title,
-      content: '',
-      calendar: createDefaultCalendarState(),
       x: 180,
       y: 180,
       width: 440,
       height: 460,
+    })
+  }
+
+  const updateCardInternal = useCallback((payload: NonNullable<Extract<OpenCanvasCommand, { type: 'update-card' }>['payload']>) => {
+    const cardId = String(payload.cardId || '').trim()
+    if (!cardId) {
+      return { ok: false, message: 'cardId is required' } satisfies OpenCanvasCommandResult
+    }
+
+    const exists = grids.some((grid) => grid.cards.some((card) => card.id === cardId))
+    if (!exists) {
+      return { ok: false, message: `Card not found: ${cardId}` } satisfies OpenCanvasCommandResult
     }
 
     setGrids((current) =>
-      current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, newCard] } : grid)),
+      current.map((grid) => ({
+        ...grid,
+        cards: grid.cards.map((card) => {
+          if (card.id !== cardId) return card
+
+          return {
+            ...card,
+            ...(typeof payload.title === 'string' ? { title: payload.title.trim() || card.title } : {}),
+            ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
+            ...(typeof payload.x === 'number' ? { x: clamp(payload.x, -200, SCENE_WIDTH - 60) } : {}),
+            ...(typeof payload.y === 'number' ? { y: clamp(payload.y, -200, SCENE_HEIGHT - 60) } : {}),
+            ...(typeof payload.width === 'number'
+              ? { width: clamp(payload.width, CARD_MIN_WIDTH, CARD_MAX_WIDTH) }
+              : {}),
+            ...(typeof payload.height === 'number'
+              ? { height: clamp(payload.height, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT) }
+              : {}),
+          }
+        }),
+      })),
     )
-  }
+
+    return { ok: true, message: 'Card updated', data: { cardId } } satisfies OpenCanvasCommandResult
+  }, [grids])
+
+  const handleOpenCanvasCommand = useCallback(
+    (command: OpenCanvasCommand): OpenCanvasCommandResult => {
+      const requestId = command?.requestId
+
+      if (!command || typeof command !== 'object' || typeof command.type !== 'string') {
+        return { ok: false, requestId, message: 'Invalid command format' }
+      }
+
+      if (command.type === 'ping') {
+        return { ok: true, requestId, message: 'pong' }
+      }
+
+      if (command.type === 'create-grid') {
+        const grid = createGridInternal(command.payload)
+        return { ok: true, requestId, message: 'Grid created', data: { gridId: grid.id, name: grid.name } }
+      }
+
+      if (command.type === 'create-card') {
+        const created = createCardInternal(command.payload)
+        if (!created) {
+          return { ok: false, requestId, message: 'Failed to create card (grid not found)' }
+        }
+        return { ok: true, requestId, message: 'Card created', data: created }
+      }
+
+      if (command.type === 'update-card') {
+        const result = updateCardInternal(command.payload ?? { cardId: '' })
+        return { ...result, requestId }
+      }
+
+      if (command.type === 'append-note') {
+        const cardId = String(command.payload?.cardId || '').trim()
+        const appendText = String(command.payload?.text || '')
+        if (!cardId || !appendText.trim()) {
+          return { ok: false, requestId, message: 'cardId and text are required' }
+        }
+
+        const exists = grids.some((grid) => grid.cards.some((card) => card.id === cardId))
+        if (!exists) {
+          return { ok: false, requestId, message: `Card not found: ${cardId}` }
+        }
+
+        setGrids((current) =>
+          current.map((grid) => ({
+            ...grid,
+            cards: grid.cards.map((card) =>
+              card.id === cardId
+                ? {
+                    ...card,
+                    content: card.content ? `${card.content}\n${appendText}` : appendText,
+                  }
+                : card,
+            ),
+          })),
+        )
+        return { ok: true, requestId, message: 'Content appended', data: { cardId } }
+      }
+
+      if (command.type === 'get-state') {
+        return {
+          ok: true,
+          requestId,
+          data: {
+            activeGridId,
+            grids: grids.map((grid) => ({
+              id: grid.id,
+              name: grid.name,
+              cardCount: grid.cards.length,
+            })),
+          },
+        }
+      }
+
+      return { ok: false, requestId, message: 'Unsupported command' }
+    },
+    [activeGridId, createCardInternal, createGridInternal, grids, updateCardInternal],
+  )
+
+  useEffect(() => {
+    const api: OpenCanvasGlobalApi = {
+      invoke: async (command) => handleOpenCanvasCommand(command),
+      createGrid: async (payload) =>
+        handleOpenCanvasCommand({
+          type: 'create-grid',
+          requestId: payload?.requestId,
+          payload: { name: payload?.name, activate: payload?.activate },
+        }),
+      createCard: async (payload) =>
+        handleOpenCanvasCommand({
+          type: 'create-card',
+          requestId: payload?.requestId,
+          payload,
+        }),
+      updateCard: async (payload) =>
+        handleOpenCanvasCommand({
+          type: 'update-card',
+          requestId: payload?.requestId,
+          payload,
+        }),
+      getState: async (requestId) =>
+        handleOpenCanvasCommand({
+          type: 'get-state',
+          requestId,
+        }),
+    }
+
+    window.openCanvas = api
+    return () => {
+      if (window.openCanvas === api) {
+        delete window.openCanvas
+      }
+    }
+  }, [handleOpenCanvasCommand])
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as OpenCanvasPostMessageEnvelope | null
+      if (!data || typeof data !== 'object' || data.type !== 'open-canvas.command') return
+
+      if (
+        data.source &&
+        !['openclaw', 'openclaw-assistant', 'open-canvas-bridge'].includes(String(data.source).toLowerCase())
+      ) {
+        return
+      }
+
+      const result = handleOpenCanvasCommand(data.command)
+      const response: OpenCanvasPostMessageResult = {
+        source: 'open-canvas',
+        type: 'open-canvas.result',
+        result,
+      }
+
+      const source = event.source as WindowProxy | null
+      if (source?.postMessage) {
+        source.postMessage(response, '*')
+      }
+
+      window.dispatchEvent(new CustomEvent('open-canvas:result', { detail: response }))
+    }
+
+    window.addEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+    }
+  }, [handleOpenCanvasCommand])
 
   const removeCardById = (cardId: string) => {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
@@ -1418,6 +1991,7 @@ function App() {
     }
 
     setDraggingCardId(card.id)
+    pushParticleImpulse(world.x, world.y, 0.2)
   }
 
   const onCardResizeStart = (event: ReactPointerEvent<HTMLButtonElement>, card: CardData) => {
@@ -1440,6 +2014,7 @@ function App() {
     }
 
     setResizingCardId(card.id)
+    pushParticleImpulse(world.x, world.y, 0.22)
   }
 
   const onCanvasPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
@@ -1783,6 +2358,7 @@ function App() {
     setGrids((current) =>
       current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, ...newCards] } : grid)),
     )
+    pushParticleImpulse(world.x, world.y, 0.24)
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
@@ -1950,7 +2526,7 @@ function App() {
           <div className="canvas-grid" />
 
           {activeGrid.cards.map((card) => {
-            const fileUrl = card.fileId ? assetUrls[card.fileId] : undefined
+            const fileUrl = card.fileId ? assetUrls[card.fileId] : card.externalUrl
 
             return (
               <article

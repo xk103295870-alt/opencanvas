@@ -309,6 +309,14 @@
   position: relative;
   overflow: hidden;
   cursor: grab;
+  --particle-energy: 0;
+  --particle-origin-x: 50%;
+  --particle-origin-y: 50%;
+  --particle-shift-x: 0px;
+  --particle-shift-y: 0px;
+  --particle-dot-alpha: 10%;
+  --particle-bloom-alpha: 8%;
+  --particle-bloom-radius: 360px;
 }
 
 .canvas.is-panning {
@@ -387,11 +395,44 @@
 .canvas-grid {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   background-color: var(--canvas-base);
   background-image:
     radial-gradient(circle at center, var(--canvas-dot) 1px, transparent 1px),
     linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, var(--canvas-fade) 100%);
   background-size: 28px 28px, 100% 100%;
+}
+
+.canvas-grid::before,
+.canvas-grid::after {
+  content: '';
+  position: absolute;
+  inset: -30px;
+  pointer-events: none;
+}
+
+.canvas-grid::before {
+  background: radial-gradient(
+    circle var(--particle-bloom-radius) at var(--particle-origin-x) var(--particle-origin-y),
+    color-mix(in srgb, var(--accent) var(--particle-bloom-alpha), transparent) 0%,
+    transparent 72%
+  );
+  opacity: var(--particle-energy);
+  transition: opacity 0.18s linear;
+}
+
+.canvas-grid::after {
+  background-image: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--accent) var(--particle-dot-alpha), transparent) 1px,
+    transparent 1px
+  );
+  background-size: 28px 28px;
+  transform: translate(var(--particle-shift-x), var(--particle-shift-y));
+  opacity: var(--particle-energy);
+  mix-blend-mode: screen;
+  filter: blur(0.2px);
+  transition: transform 0.12s ease-out;
 }
 
 .card {
