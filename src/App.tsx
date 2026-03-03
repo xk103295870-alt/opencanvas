@@ -7,11 +7,12 @@ type LanguageCode = 'zh' | 'en'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
 type CalendarViewMode = 'month' | 'week'
+type TodoLane = 'todo' | 'doing' | 'done'
 
 type TodoItem = {
   id: string
   text: string
-  done: boolean
+  status: TodoLane
 }
 
 type CalendarEvent = {
@@ -88,6 +89,11 @@ type ResizeState = {
 type CalendarDragState = {
   cardId: string
   eventId: string
+} | null
+
+type TodoDragState = {
+  cardId: string
+  itemId: string
 } | null
 
 type StoredAsset = {
@@ -257,6 +263,11 @@ type TodoI18n = {
   placeholder: string
   addButton: string
   emptyHint: string
+  removeItemAria: string
+  laneTodo: string
+  laneDoing: string
+  laneDone: string
+  laneAddCard: string
   defaultItems: string[]
 }
 
@@ -290,7 +301,7 @@ type ParticleRuntime = {
   bloomRadius: number
 }
 
-type ExternalTodoInput = string | { text: string; done?: boolean }
+type ExternalTodoInput = string | { text: string; done?: boolean; status?: TodoLane }
 
 type ExternalCalendarEventInput = {
   title: string
@@ -657,6 +668,11 @@ const TODO_I18N: Record<LanguageCode, TodoI18n> = {
     placeholder: '输入任务后按回车添加',
     addButton: '添加',
     emptyHint: '暂无任务，输入后按回车添加。',
+    removeItemAria: '删除事项',
+    laneTodo: '待办',
+    laneDoing: '进行中',
+    laneDone: '已完成',
+    laneAddCard: '新增卡片',
     defaultItems: ['整理想法', '安排下一步'],
   },
   en: {
@@ -665,6 +681,11 @@ const TODO_I18N: Record<LanguageCode, TodoI18n> = {
     placeholder: 'Type a task and press Enter',
     addButton: 'Add',
     emptyHint: 'No tasks yet. Type above and press Enter.',
+    removeItemAria: 'Remove item',
+    laneTodo: 'To-do',
+    laneDoing: 'Doing',
+    laneDone: 'Done',
+    laneAddCard: 'Add card',
     defaultItems: ['Organize ideas', 'Plan next step'],
   },
 }
@@ -814,11 +835,50 @@ const formatCalendarEventTime = (eventItem: CalendarEvent, language: LanguageCod
   return language === 'zh' ? '未设时间' : 'No time'
 }
 
-const createTodoItem = (text: string): TodoItem => ({
+const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
+
+const normalizeTodoLane = (value: unknown, doneFallback = false): TodoLane => {
+  const lane = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (lane === 'todo' || lane === 'doing' || lane === 'done') return lane
+  return doneFallback ? 'done' : 'todo'
+}
+
+const createTodoItem = (text: string, status: TodoLane = 'todo'): TodoItem => ({
   id: uid('todo-item'),
   text,
-  done: false,
+  status,
 })
+
+const normalizeTodoItemsForCard = (items: TodoItem[] | undefined): TodoItem[] => {
+  if (!Array.isArray(items)) return []
+  return items
+    .map((item) => {
+      const text = String(item?.text ?? '').trim()
+      if (!text) return null
+      const rawDone = item && typeof item === 'object' && 'done' in item ? Boolean((item as { done?: boolean }).done) : false
+      return {
+        id: String(item?.id || uid('todo-item')),
+        text,
+        status: normalizeTodoLane(item?.status, rawDone),
+      } satisfies TodoItem
+    })
+    .filter((item): item is TodoItem => Boolean(item))
+}
+
+const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
+  if (!Array.isArray(input)) return []
+  return input.map((grid) => ({
+    ...grid,
+    cards: grid.cards.map((card) =>
+      card.kind === 'todo'
+        ? {
+            ...card,
+            todoItems: normalizeTodoItemsForCard(card.todoItems),
+          }
+        : card,
+    ),
+  }))
+}
 
 const createDefaultCalendarState = (): CalendarState => {
   const today = toDateKey(new Date())
@@ -890,6 +950,17 @@ const mediaCardKindFromFile = (file: File): Extract<CardKind, 'image' | 'video' 
   if (file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v)$/.test(lowerName)) return 'video'
   if (file.type === 'application/pdf' || lowerName.endsWith('.pdf')) return 'pdf'
   return null
+}
+
+const isFileDrag = (dataTransfer: DataTransfer | null | undefined) => {
+  if (!dataTransfer) return false
+  if (dataTransfer.files && dataTransfer.files.length > 0) return true
+
+  if (dataTransfer.items && dataTransfer.items.length > 0) {
+    return Array.from(dataTransfer.items).some((item) => item.kind === 'file')
+  }
+
+  return Array.from(dataTransfer.types ?? []).some((type) => type.toLowerCase() === 'files')
 }
 
 const mediaCardPreset = (
@@ -1101,10 +1172,11 @@ const toTodoItems = (input: ExternalTodoInput[] | undefined) =>
 
           const text = String(item?.text ?? '').trim()
           if (!text) return null
+          const doneFallback = item?.done === true
           return {
             id: uid('todo-item'),
             text,
-            done: item?.done === true,
+            status: normalizeTodoLane(item?.status, doneFallback),
           } satisfies TodoItem
         })
         .filter((item): item is TodoItem => Boolean(item))
@@ -1295,6 +1367,7 @@ function App() {
   const [cardTitleDraft, setCardTitleDraft] = useState('')
 
   const [calendarDropTarget, setCalendarDropTarget] = useState<string | null>(null)
+  const [todoDropTarget, setTodoDropTarget] = useState<{ cardId: string; lane: TodoLane; itemId: string | null } | null>(null)
 
   const canvasRef = useRef<HTMLElement | null>(null)
   const viewportRef = useRef(viewport)
@@ -1305,6 +1378,7 @@ function App() {
   const panStateRef = useRef<PanState>(null)
   const resizeStateRef = useRef<ResizeState>(null)
   const calendarDragStateRef = useRef<CalendarDragState>(null)
+  const todoDragStateRef = useRef<TodoDragState>(null)
 
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
@@ -1326,6 +1400,11 @@ function App() {
   const text = I18N[settings.language]
   const todoText = TODO_I18N[settings.language]
   const calendarText = CALENDAR_I18N[settings.language]
+  const todoLaneLabels: Record<TodoLane, string> = {
+    todo: todoText.laneTodo,
+    doing: todoText.laneDoing,
+    done: todoText.laneDone,
+  }
 
   useEffect(() => {
     viewportRef.current = viewport
@@ -1397,8 +1476,9 @@ function App() {
         if (cancelled) return
 
         if (stateFromDb && stateFromDb.grids.length > 0) {
-          setGrids(stateFromDb.grids)
-          setActiveGridId(stateFromDb.activeGridId || stateFromDb.grids[0].id)
+          const normalizedGrids = normalizeGridsForTodoBoard(stateFromDb.grids)
+          setGrids(normalizedGrids)
+          setActiveGridId(stateFromDb.activeGridId || normalizedGrids[0].id)
           setViewport(stateFromDb.viewport ?? initialViewport)
         }
 
@@ -1664,7 +1744,7 @@ function App() {
         }
 
         setAssetUrls(restoredUrls)
-        setGrids(snapshot.state.grids)
+        setGrids(normalizeGridsForTodoBoard(snapshot.state.grids))
         setActiveGridId(snapshot.state.activeGridId)
         setViewport(snapshot.state.viewport ?? initialViewport)
         updateSyncMeta({
@@ -2149,7 +2229,7 @@ function App() {
 
       const defaultSize =
         kind === 'todo'
-          ? { width: 360, height: 320 }
+          ? { width: 760, height: 420 }
           : kind === 'calendar'
             ? { width: 440, height: 460 }
             : kind === 'hint'
@@ -2636,7 +2716,7 @@ function App() {
     )
   }
 
-  const addTodoItem = (cardId: string) => {
+  const addTodoItem = (cardId: string, lane: TodoLane = 'todo') => {
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -2652,7 +2732,7 @@ function App() {
             return {
               ...card,
               content: '',
-              todoItems: [...(card.todoItems ?? []), createTodoItem(textValue)],
+              todoItems: [...(card.todoItems ?? []), createTodoItem(textValue, lane)],
             }
           }),
         }
@@ -2660,7 +2740,111 @@ function App() {
     )
   }
 
-  const toggleTodo = (cardId: string, todoId: string) => {
+  const moveTodoItem = (cardId: string, itemId: string, nextLane: TodoLane, targetItemId: string | null = null) => {
+    setGrids((current) =>
+      current.map((grid) => {
+        if (grid.id !== activeGridId) return grid
+
+        return {
+          ...grid,
+          cards: grid.cards.map((card) => {
+            if (card.id !== cardId || card.kind !== 'todo') return card
+            if (targetItemId === itemId) return card
+
+            const lanes: Record<TodoLane, TodoItem[]> = { todo: [], doing: [], done: [] }
+            let movingItem: TodoItem | null = null
+
+            for (const todoItem of card.todoItems ?? []) {
+              const normalizedLane = normalizeTodoLane(todoItem.status)
+              if (todoItem.id === itemId) {
+                movingItem = { ...todoItem, status: nextLane }
+                continue
+              }
+              lanes[normalizedLane].push({ ...todoItem, status: normalizedLane })
+            }
+
+            if (!movingItem) return card
+
+            const targetLaneItems = lanes[nextLane]
+            if (targetItemId) {
+              const targetIndex = targetLaneItems.findIndex((todoItem) => todoItem.id === targetItemId)
+              if (targetIndex >= 0) {
+                targetLaneItems.splice(targetIndex, 0, movingItem)
+              } else {
+                targetLaneItems.push(movingItem)
+              }
+            } else {
+              targetLaneItems.push(movingItem)
+            }
+
+            return {
+              ...card,
+              todoItems: [...lanes.todo, ...lanes.doing, ...lanes.done],
+            }
+          }),
+        }
+      }),
+    )
+  }
+
+  const onTodoDragStart = (
+    event: ReactDragEvent<HTMLElement>,
+    cardId: string,
+    itemId: string,
+    lane: TodoLane,
+  ) => {
+    event.stopPropagation()
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', JSON.stringify({ cardId, itemId, lane }))
+    todoDragStateRef.current = { cardId, itemId }
+    setTodoDropTarget({ cardId, lane, itemId: null })
+  }
+
+  const onTodoDragEnd = () => {
+    todoDragStateRef.current = null
+    setTodoDropTarget(null)
+  }
+
+  const onTodoLaneDragOver = (event: ReactDragEvent<HTMLElement>, cardId: string, lane: TodoLane) => {
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    setTodoDropTarget((current) =>
+      current && current.cardId === cardId && current.lane === lane && current.itemId === null
+        ? current
+        : { cardId, lane, itemId: null },
+    )
+  }
+
+  const onTodoItemDragOver = (event: ReactDragEvent<HTMLElement>, cardId: string, lane: TodoLane, itemId: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    setTodoDropTarget((current) =>
+      current && current.cardId === cardId && current.lane === lane && current.itemId === itemId
+        ? current
+        : { cardId, lane, itemId },
+    )
+  }
+
+  const onTodoDrop = (event: ReactDragEvent<HTMLElement>, cardId: string, lane: TodoLane, itemId: string | null = null) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const currentDrag = todoDragStateRef.current
+    if (!currentDrag || currentDrag.cardId !== cardId) return
+    moveTodoItem(cardId, currentDrag.itemId, lane, itemId)
+    todoDragStateRef.current = null
+    setTodoDropTarget(null)
+  }
+
+  const removeTodoItem = (cardId: string, todoId: string) => {
+    if (todoDragStateRef.current?.cardId === cardId && todoDragStateRef.current?.itemId === todoId) {
+      todoDragStateRef.current = null
+    }
+    setTodoDropTarget((current) =>
+      current && current.cardId === cardId && current.itemId === todoId ? null : current,
+    )
+
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -2672,9 +2856,7 @@ function App() {
 
             return {
               ...card,
-              todoItems: (card.todoItems ?? []).map((item) =>
-                item.id === todoId ? { ...item, done: !item.done } : item,
-              ),
+              todoItems: (card.todoItems ?? []).filter((item) => item.id !== todoId),
             }
           }),
         }
@@ -2898,6 +3080,7 @@ function App() {
   const onCanvasDrop = async (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault()
     setIsFileOver(false)
+    if (!isFileDrag(event.dataTransfer)) return
 
     const files = Array.from(event.dataTransfer.files ?? []).filter((file) => mediaCardKindFromFile(file) !== null)
     if (!files.length) return
@@ -3088,11 +3271,13 @@ function App() {
         onPointerDown={onCanvasPointerDown}
         onWheel={onCanvasWheel}
         onDragOver={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
           event.preventDefault()
           event.dataTransfer.dropEffect = 'copy'
           setIsFileOver(true)
         }}
         onDragLeave={(event) => {
+          if (!isFileDrag(event.dataTransfer)) return
           const relatedTarget = event.relatedTarget as Node | null
           if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
             setIsFileOver(false)
@@ -3217,7 +3402,7 @@ function App() {
                       className="todo-entry"
                       onSubmit={(event) => {
                         event.preventDefault()
-                        addTodoItem(card.id)
+                        addTodoItem(card.id, 'todo')
                       }}
                     >
                       <input
@@ -3236,26 +3421,84 @@ function App() {
                       </button>
                     </form>
 
-                    <div className="todo-list">
-                      {(card.todoItems ?? []).length ? (
-                        (card.todoItems ?? []).map((item) => (
-                          <div key={item.id} className={`todo-item ${item.done ? 'done' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={item.done}
-                              onChange={() => toggleTodo(card.id, item.id)}
-                            />
-                            <input
-                              className="todo-item-input"
-                              value={item.text}
-                              onChange={(event) => updateTodoText(card.id, item.id, event.target.value)}
-                              placeholder={todoText.placeholder}
-                            />
-                          </div>
-                        ))
-                      ) : (
-                        <p className="todo-empty">{todoText.emptyHint}</p>
-                      )}
+                    <div className="todo-board">
+                      {TODO_LANES.map((lane) => {
+                        const laneItems = (card.todoItems ?? []).filter((item) => normalizeTodoLane(item.status) === lane)
+                        const isLaneDropTarget =
+                          todoDropTarget?.cardId === card.id && todoDropTarget.lane === lane && todoDropTarget.itemId === null
+
+                        return (
+                          <section
+                            key={lane}
+                            className={`todo-lane ${isLaneDropTarget ? 'drop-target' : ''}`}
+                            onDragOver={(event) => onTodoLaneDragOver(event, card.id, lane)}
+                            onDrop={(event) => onTodoDrop(event, card.id, lane)}
+                          >
+                            <header className="todo-lane-header">
+                              <span>{todoLaneLabels[lane]}</span>
+                              <span className="todo-lane-count">{laneItems.length}</span>
+                            </header>
+
+                            <div className="todo-lane-list">
+                              {laneItems.length ? (
+                                laneItems.map((item) => {
+                                  const isItemDropTarget =
+                                    todoDropTarget?.cardId === card.id &&
+                                    todoDropTarget.lane === lane &&
+                                    todoDropTarget.itemId === item.id
+
+                                  return (
+                                    <div
+                                      key={item.id}
+                                      className={`todo-board-item ${isItemDropTarget ? 'drop-before' : ''}`}
+                                      draggable
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onDragStart={(event) => onTodoDragStart(event, card.id, item.id, lane)}
+                                      onDragEnd={onTodoDragEnd}
+                                      onDragOver={(event) => onTodoItemDragOver(event, card.id, lane, item.id)}
+                                      onDrop={(event) => onTodoDrop(event, card.id, lane, item.id)}
+                                    >
+                                      <span className="todo-board-grip">::</span>
+                                      <input
+                                        className="todo-item-input"
+                                        value={item.text}
+                                        onPointerDown={(event) => event.stopPropagation()}
+                                        onChange={(event) => updateTodoText(card.id, item.id, event.target.value)}
+                                        placeholder={todoText.placeholder}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="todo-item-delete"
+                                        draggable={false}
+                                        onPointerDown={(event) => event.stopPropagation()}
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          removeTodoItem(card.id, item.id)
+                                        }}
+                                        aria-label={todoText.removeItemAria}
+                                      >
+                                        x
+                                      </button>
+                                    </div>
+                                  )
+                                })
+                              ) : (
+                                <p className="todo-empty">{todoText.emptyHint}</p>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              className="todo-lane-add-btn"
+                              disabled={!card.content.trim()}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => addTodoItem(card.id, lane)}
+                            >
+                              + {todoText.laneAddCard}
+                            </button>
+                          </section>
+                        )
+                      })}
                     </div>
                   </div>
                 ) : null}

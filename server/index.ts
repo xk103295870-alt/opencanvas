@@ -6,11 +6,12 @@ import express, { type NextFunction, type Request, type Response } from 'express
 
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
 type CalendarViewMode = 'month' | 'week'
+type TodoLane = 'todo' | 'doing' | 'done'
 
 type TodoItem = {
   id: string
   text: string
-  done: boolean
+  status: TodoLane
 }
 
 type CalendarEvent = {
@@ -117,7 +118,7 @@ type OpenCanvasCreateCardPayload = {
   activateGrid?: boolean
   fileName?: string
   mediaUrl?: string
-  todoItems?: Array<string | { text?: string; done?: boolean }>
+  todoItems?: Array<string | { text?: string; done?: boolean; status?: TodoLane | string }>
   calendar?: {
     monthCursor?: string
     selectedDate?: string
@@ -161,7 +162,7 @@ app.use(
 )
 app.use(express.json({ limit: '2mb' }))
 
-let db = loadDb()
+const db = loadDb()
 
 function nowIso() {
   return new Date().toISOString()
@@ -261,6 +262,14 @@ function parseCardKind(input: unknown): CardKind {
   return 'note'
 }
 
+function normalizeTodoLane(input: unknown, doneFallback = false): TodoLane {
+  const value = String(input || '')
+    .trim()
+    .toLowerCase()
+  if (value === 'todo' || value === 'doing' || value === 'done') return value
+  return doneFallback ? 'done' : 'todo'
+}
+
 function inferDefaultTitle(kind: CardKind) {
   switch (kind) {
     case 'hint':
@@ -302,13 +311,17 @@ function normalizeTodoItems(input: OpenCanvasCreateCardPayload['todoItems']): To
     if (typeof item === 'string') {
       const text = item.trim()
       if (!text) continue
-      out.push({ id: `todo-${uid(10)}`, text, done: false })
+      out.push({ id: `todo-${uid(10)}`, text, status: 'todo' })
       continue
     }
     if (!item || typeof item !== 'object') continue
     const text = String(item.text || '').trim()
     if (!text) continue
-    out.push({ id: `todo-${uid(10)}`, text, done: Boolean(item.done) })
+    out.push({
+      id: `todo-${uid(10)}`,
+      text,
+      status: normalizeTodoLane(item.status, Boolean(item.done)),
+    })
   }
   return out
 }
@@ -747,8 +760,8 @@ app.post('/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
-  const width = clamp(Number(body.width) || (kind === 'calendar' ? 760 : kind === 'todo' ? 600 : 420), 220, 1400)
-  const height = clamp(Number(body.height) || (kind === 'calendar' ? 520 : kind === 'todo' ? 460 : 300), 160, 1200)
+  const width = clamp(Number(body.width) || (kind === 'calendar' ? 760 : kind === 'todo' ? 760 : 420), 220, 1400)
+  const height = clamp(Number(body.height) || (kind === 'calendar' ? 520 : kind === 'todo' ? 420 : 300), 160, 1200)
   const x = clamp(Number(body.x) || randomInt(120, 860), -200, 6000)
   const y = clamp(Number(body.y) || randomInt(120, 860), -200, 4000)
 
@@ -859,7 +872,8 @@ app.post('/v1/cards/:cardId/append-note', requireApiKey('canvas:write'), (req, r
   res.status(404).json({ ok: false, message: `Card not found: ${cardId}` })
 })
 
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+  void next
   const message = error instanceof Error ? error.message : String(error)
   res.status(500).json({ ok: false, message })
 })
