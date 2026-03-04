@@ -1,40 +1,67 @@
 param(
-  [int]$Port = 5173
+  [int]$Port = 5173,
+  [int]$ApiPort = 8787
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 
 $appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeDir = Join-Path $appDir '.runtime'
-$pidFile = Join-Path $runtimeDir "vite-$Port.pid"
-$stopped = $false
+$webPidFile = Join-Path $runtimeDir "vite-$Port.pid"
+$apiPidFile = Join-Path $runtimeDir "api-$ApiPort.pid"
+$stoppedAny = $false
 
-if (Test-Path -LiteralPath $pidFile) {
-  $pidText = Get-Content -Path $pidFile -Raw
-  $pid = 0
-  if ([int]::TryParse(($pidText.Trim()), [ref]$pid) -and $pid -gt 0) {
-    $proc = Get-Process -Id $pid
-    if ($proc) {
-      Stop-Process -Id $pid -Force
+function Stop-ByPidFile {
+  param([string]$PidFilePath)
+
+  if (-not (Test-Path -LiteralPath $PidFilePath)) {
+    return $false
+  }
+
+  $pidText = Get-Content -Path $PidFilePath -Raw
+  Remove-Item -Path $PidFilePath -Force
+
+  [int]$processId = 0
+  if (-not [int]::TryParse(($pidText.Trim()), [ref]$processId)) {
+    return $false
+  }
+  if ($processId -le 0) {
+    return $false
+  }
+
+  $proc = Get-Process -Id $processId
+  if ($proc) {
+    Stop-Process -Id $processId -Force
+    return $true
+  }
+  return $false
+}
+
+function Stop-ByPort {
+  param([int]$LocalPort)
+  if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+    return $false
+  }
+  $stopped = $false
+  $listeners = Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique
+  foreach ($ownerProcessId in $listeners) {
+    if ($ownerProcessId -and $ownerProcessId -gt 0) {
+      Stop-Process -Id $ownerProcessId -Force
       $stopped = $true
     }
   }
-  Remove-Item -Path $pidFile -Force
+  return $stopped
 }
 
-if (Get-Command Get-NetTCPConnection) {
-  $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen | Select-Object -ExpandProperty OwningProcess -Unique
-  foreach ($ownerPid in $listeners) {
-    if ($ownerPid -and $ownerPid -gt 0) {
-      Stop-Process -Id $ownerPid -Force
-      $stopped = $true
-    }
-  }
-}
+$stoppedAny = (Stop-ByPidFile -PidFilePath $webPidFile) -or $stoppedAny
+$stoppedAny = (Stop-ByPidFile -PidFilePath $apiPidFile) -or $stoppedAny
 
-if ($stopped) {
-  Write-Output "Open Canvas background service stopped (port $Port)."
+$stoppedAny = (Stop-ByPort -LocalPort $Port) -or $stoppedAny
+$stoppedAny = (Stop-ByPort -LocalPort $ApiPort) -or $stoppedAny
+
+if ($stoppedAny) {
+  Write-Output "Open Canvas background services stopped (web:$Port api:$ApiPort)."
 } else {
-  Write-Output "No running Open Canvas background service found on port $Port."
+  Write-Output "No running Open Canvas background services found (web:$Port api:$ApiPort)."
 }
-

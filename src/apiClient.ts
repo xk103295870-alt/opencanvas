@@ -7,7 +7,6 @@ export type ServerAccount = {
 }
 
 export type ServerLoginResponse = {
-  ok: boolean
   account: ServerAccount
   accessToken: string
   expiresAt: string
@@ -15,7 +14,6 @@ export type ServerLoginResponse = {
 }
 
 export type ServerApiKeyResponse = {
-  ok: boolean
   apiKey: string
   key: {
     id: string
@@ -27,7 +25,6 @@ export type ServerApiKeyResponse = {
 }
 
 export type ServerSkillResponse = {
-  ok: boolean
   account: ServerAccount
   skill: {
     name: string
@@ -42,8 +39,36 @@ export type ServerSkillResponse = {
 
 const API_BASE_URL = (import.meta.env.VITE_OPEN_CANVAS_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8787'
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+export type ServerHealthResponse = {
+  ok?: boolean
+  version?: string
+  apiBaseUrl?: string
+  webOrigin?: string
+}
+
+type ApiErrorEnvelope = {
+  error?: {
+    code?: string
+    message?: string
+    details?: unknown
+  }
+  message?: string
+}
+
+type ApiSuccessEnvelope<T> = {
+  data?: T
+  meta?: {
+    message?: string
+  }
+}
+
+function resolveBaseUrl(baseUrl?: string) {
+  const value = (baseUrl || API_BASE_URL).trim()
+  return value.endsWith('/') ? value.slice(0, -1) : value
+}
+
+async function requestJson<T>(path: string, init?: RequestInit, baseUrl?: string): Promise<T> {
+  const response = await fetch(`${resolveBaseUrl(baseUrl)}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -51,38 +76,73 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
 
-  const payload = (await response.json().catch(() => null)) as { message?: string } | null
+  const payload = (await response.json().catch(() => null)) as
+    | (ApiErrorEnvelope & ApiSuccessEnvelope<T>)
+    | T
+    | null
   if (!response.ok) {
-    throw new Error(payload?.message || `Request failed: ${response.status}`)
+    const envelope = payload && typeof payload === 'object' ? (payload as ApiErrorEnvelope) : null
+    throw new Error(envelope?.error?.message || envelope?.message || `Request failed: ${response.status}`)
+  }
+
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return (payload as ApiSuccessEnvelope<T>).data as T
   }
   return payload as T
 }
 
-export async function apiDemoLogin(input: {
-  name: string
-  email: string
-  provider: 'demo' | 'google'
-  avatarUrl?: string
-}) {
-  return requestJson<ServerLoginResponse>('/v1/auth/demo-login', {
+export async function apiDemoLogin(
+  input: {
+    name: string
+    email: string
+    provider: 'demo' | 'google'
+    avatarUrl?: string
+  },
+  baseUrl?: string,
+) {
+  return requestJson<ServerLoginResponse>('/api/v1/auth/demo-login', {
     method: 'POST',
     body: JSON.stringify(input),
-  })
+  }, baseUrl)
 }
 
-export async function apiCreateKey(accessToken: string, name = 'OpenClaw Skill Key') {
-  return requestJson<ServerApiKeyResponse>('/v1/auth/api-keys', {
+export async function apiCreateKey(accessToken: string, name = 'OpenClaw Skill Key', baseUrl?: string) {
+  return requestJson<ServerApiKeyResponse>('/api/v1/auth/api-keys', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ name, scopes: ['canvas:read', 'canvas:write'] }),
-  })
+  }, baseUrl)
 }
 
-export async function apiGetSkillTemplate(accessToken: string) {
-  return requestJson<ServerSkillResponse>('/v1/openclaw/skill', {
+export async function apiGetSkillTemplate(accessToken: string, baseUrl?: string) {
+  return requestJson<ServerSkillResponse>('/api/v1/openclaw/skill', {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  }, baseUrl)
+}
+
+export async function apiCheckHealth(baseUrl?: string, timeoutMs = 2500) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), Math.max(500, timeoutMs))
+  try {
+    const response = await fetch(`${resolveBaseUrl(baseUrl)}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    })
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
+    if (!response.ok) {
+      const message = typeof payload?.message === 'string' ? payload.message : `Health check failed: ${response.status}`
+      throw new Error(message)
+    }
+    return (payload || {}) as ServerHealthResponse
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('API health check timeout')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiKey: string) {

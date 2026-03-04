@@ -144,7 +144,7 @@ type RequestContext = {
   workspace?: WorkspaceRecord
 }
 
-const APP_VERSION = '0.1.0-api'
+const APP_VERSION = '0.2.0-api'
 const API_HOST = process.env.OPEN_CANVAS_API_HOST || '127.0.0.1'
 const API_PORT = Number(process.env.OPEN_CANVAS_API_PORT || '8787')
 const API_BASE_URL = process.env.OPEN_CANVAS_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
@@ -152,6 +152,7 @@ const WEB_ORIGIN = process.env.OPEN_CANVAS_WEB_ORIGIN || 'http://127.0.0.1:5173'
 const DB_PATH = path.join(process.cwd(), '.runtime', 'api-db.json')
 const SESSION_TTL_DAYS = 30
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
+const STANDARD_PREFIX = '/api/v1'
 
 const app = express()
 app.use(
@@ -161,6 +162,59 @@ app.use(
   }),
 )
 app.use(express.json({ limit: '2mb' }))
+
+function statusToErrorCode(status: number) {
+  if (status === 400) return 'bad_request'
+  if (status === 401) return 'unauthorized'
+  if (status === 403) return 'forbidden'
+  if (status === 404) return 'not_found'
+  if (status === 409) return 'conflict'
+  if (status === 429) return 'rate_limited'
+  if (status >= 500) return 'internal_error'
+  return 'request_failed'
+}
+
+// For /api/v1 requests, normalize internal { ok, ... } payloads into envelope format:
+// success -> { data, meta? }, error -> { error: { code, message, details? } }.
+app.use((req, res, next) => {
+  const isStandardPath = req.path.startsWith(STANDARD_PREFIX)
+  if (!isStandardPath) {
+    next()
+    return
+  }
+
+  const baseJson = res.json.bind(res)
+  ;(res as Response & { json: (body: unknown) => Response }).json = ((body: unknown) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const payload = body as Record<string, unknown>
+      if (payload.ok === true) {
+        const rawData = 'data' in payload ? payload.data : undefined
+        const derivedData =
+          rawData !== undefined
+            ? rawData
+            : (() => {
+                const clone = { ...payload }
+                delete clone.ok
+                delete clone.message
+                return clone
+              })()
+        const meta = payload.message ? { message: String(payload.message) } : undefined
+        return baseJson({ data: derivedData ?? null, ...(meta ? { meta } : {}) })
+      }
+      if (payload.ok === false) {
+        const error = {
+          code: typeof payload.code === 'string' ? payload.code : statusToErrorCode(res.statusCode || 500),
+          message: typeof payload.message === 'string' ? payload.message : 'Request failed',
+          ...(payload.details !== undefined ? { details: payload.details } : {}),
+        }
+        return baseJson({ error })
+      }
+    }
+    return baseJson({ data: body ?? null })
+  }) as Response['json']
+
+  next()
+})
 
 const db = loadDb()
 
@@ -465,7 +519,117 @@ app.get('/health', (_req, res) => {
   })
 })
 
-app.post('/v1/auth/demo-login', (req, res) => {
+app.get('/openapi.json', (_req, res) => {
+  res.json({
+    openapi: '3.1.0',
+    info: {
+      title: 'Open Canvas API',
+      version: APP_VERSION,
+      description:
+        'Open Canvas REST API for OpenClaw integrations. Standard routes are under /api/v1 and use envelope responses.',
+    },
+    servers: [{ url: API_BASE_URL }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'API Key / Access Token',
+        },
+      },
+    },
+    paths: {
+      '/api/v1/auth/demo-login': {
+        post: {
+          summary: 'Create demo session for account',
+        },
+      },
+      '/api/v1/auth/api-keys': {
+        post: {
+          summary: 'Create API key',
+          security: [{ bearerAuth: [] }],
+        },
+        get: {
+          summary: 'List API keys',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/openclaw/skill': {
+        get: {
+          summary: 'Get OpenClaw skill template',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/state': {
+        get: {
+          summary: 'Get workspace state',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/config': {
+        get: {
+          summary: 'Get API config for current key workspace',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/grids': {
+        post: {
+          summary: 'Create grid',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/cards': {
+        post: {
+          summary: 'Create card',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/cards/{cardId}': {
+        patch: {
+          summary: 'Update card',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/cards/{cardId}/append-note': {
+        post: {
+          summary: 'Append note content',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+    },
+  })
+})
+
+app.get('/llms-api.txt', (_req, res) => {
+  const content = `# Open Canvas API Reference
+# Base URL: ${API_BASE_URL}
+# Standard Prefix: /api/v1
+
+## Auth
+- Session token endpoints (settings / key management):
+  Authorization: Bearer <ACCESS_TOKEN>
+- Canvas operation endpoints:
+  Authorization: Bearer <API_KEY>
+
+## Envelope
+- Success: { "data": ... , "meta"?: { ... } }
+- Error: { "error": { "code": string, "message": string, "details"?: any } }
+
+## Key Endpoints
+- POST /api/v1/auth/demo-login
+- POST /api/v1/auth/api-keys
+- GET  /api/v1/auth/api-keys
+- GET  /api/v1/openclaw/skill
+- GET  /api/v1/state?full=1
+- POST /api/v1/grids
+- POST /api/v1/cards
+- PATCH /api/v1/cards/:cardId
+- POST /api/v1/cards/:cardId/append-note
+`
+  res.type('text/plain').send(content)
+})
+
+app.post('/api/v1/auth/demo-login', (req, res) => {
   const body = req.body as { name?: string; email?: string; provider?: AccountProvider; avatarUrl?: string }
 
   const name = normalizeName(String(body?.name || ''))
@@ -518,7 +682,7 @@ app.post('/v1/auth/demo-login', (req, res) => {
   })
 })
 
-app.get('/v1/auth/me', requireSession, (req, res) => {
+app.get('/api/v1/auth/me', requireSession, (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.account || !ctx.session) {
     res.status(500).json({ ok: false, message: 'Session context missing' })
@@ -535,7 +699,7 @@ app.get('/v1/auth/me', requireSession, (req, res) => {
   })
 })
 
-app.post('/v1/auth/api-keys', requireSession, (req, res) => {
+app.post('/api/v1/auth/api-keys', requireSession, (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.account) {
     res.status(500).json({ ok: false, message: 'Account context missing' })
@@ -581,7 +745,7 @@ app.post('/v1/auth/api-keys', requireSession, (req, res) => {
   })
 })
 
-app.get('/v1/auth/api-keys', requireSession, (req, res) => {
+app.get('/api/v1/auth/api-keys', requireSession, (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.account) {
     res.status(500).json({ ok: false, message: 'Account context missing' })
@@ -603,7 +767,7 @@ app.get('/v1/auth/api-keys', requireSession, (req, res) => {
   res.json({ ok: true, keys })
 })
 
-app.post('/v1/auth/api-keys/:keyId/revoke', requireSession, (req, res) => {
+app.post('/api/v1/auth/api-keys/:keyId/revoke', requireSession, (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.account) {
     res.status(500).json({ ok: false, message: 'Account context missing' })
@@ -622,7 +786,7 @@ app.post('/v1/auth/api-keys/:keyId/revoke', requireSession, (req, res) => {
   res.json({ ok: true, keyId: target.id, revokedAt: target.revokedAt })
 })
 
-app.get('/v1/openclaw/skill', requireSession, (req, res) => {
+app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.account) {
     res.status(500).json({ ok: false, message: 'Account context missing' })
@@ -639,15 +803,15 @@ app.get('/v1/openclaw/skill', requireSession, (req, res) => {
       'X-Open-Canvas-Source': 'openclaw',
     },
     endpoints: {
-      createGrid: { method: 'POST', path: '/v1/grids' },
-      createCard: { method: 'POST', path: '/v1/cards' },
-      updateCard: { method: 'PATCH', path: '/v1/cards/:cardId' },
-      appendNote: { method: 'POST', path: '/v1/cards/:cardId/append-note' },
-      getState: { method: 'GET', path: '/v1/state?full=1' },
+      createGrid: { method: 'POST', path: '/api/v1/grids' },
+      createCard: { method: 'POST', path: '/api/v1/cards' },
+      updateCard: { method: 'PATCH', path: '/api/v1/cards/:cardId' },
+      appendNote: { method: 'POST', path: '/api/v1/cards/:cardId/append-note' },
+      getState: { method: 'GET', path: '/api/v1/state?full=1' },
     },
     exampleCreateCard: {
       method: 'POST',
-      path: '/v1/cards',
+      path: '/api/v1/cards',
       body: { kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
     },
   }
@@ -657,14 +821,14 @@ app.get('/v1/openclaw/skill', requireSession, (req, res) => {
     account: toPublicAccount(ctx.account),
     skill,
     setup: {
-      step1: 'Generate API key from /v1/auth/api-keys.',
+      step1: 'Generate API key from /api/v1/auth/api-keys.',
       step2: 'Put API key into OpenClaw skill auth bearer token.',
-      step3: 'Call /v1/cards or /v1/grids directly from skill.',
+      step3: 'Call /api/v1/cards or /api/v1/grids directly from skill.',
     },
   })
 })
 
-app.get('/v1/state', requireApiKey('canvas:read'), (req, res) => {
+app.get('/api/v1/state', requireApiKey('canvas:read'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace || !ctx.account || !ctx.apiKey) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
@@ -694,7 +858,7 @@ app.get('/v1/state', requireApiKey('canvas:read'), (req, res) => {
   })
 })
 
-app.get('/v1/config', requireApiKey('canvas:read'), (req, res) => {
+app.get('/api/v1/config', requireApiKey('canvas:read'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace || !ctx.account) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
@@ -712,7 +876,7 @@ app.get('/v1/config', requireApiKey('canvas:read'), (req, res) => {
   })
 })
 
-app.post('/v1/grids', requireApiKey('canvas:write'), (req, res) => {
+app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
@@ -740,7 +904,7 @@ app.post('/v1/grids', requireApiKey('canvas:write'), (req, res) => {
   })
 })
 
-app.post('/v1/cards', requireApiKey('canvas:write'), (req, res) => {
+app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
@@ -799,7 +963,7 @@ app.post('/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   })
 })
 
-app.patch('/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => {
+app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
@@ -845,7 +1009,7 @@ app.patch('/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => {
   res.json({ ok: true, message: 'Card updated', data: { cardId, gridId: targetGridId, card: updatedCard } })
 })
 
-app.post('/v1/cards/:cardId/append-note', requireApiKey('canvas:write'), (req, res) => {
+app.post('/api/v1/cards/:cardId/append-note', requireApiKey('canvas:write'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })

@@ -1,10 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, FormEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import './App.css'
-import { apiCreateKey, apiDemoLogin, apiGetSkillTemplate, buildOpenClawSkillConfig, getApiBaseUrl } from './apiClient'
+import { apiCheckHealth, apiCreateKey, apiDemoLogin, apiGetSkillTemplate, buildOpenClawSkillConfig, getApiBaseUrl } from './apiClient'
 
 type LanguageCode = 'zh' | 'en'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
+type ApiHealthState = 'idle' | 'checking' | 'online' | 'offline'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
 type CalendarViewMode = 'month' | 'week'
 type TodoLane = 'todo' | 'doing' | 'done'
@@ -986,6 +987,8 @@ const writeJson = <T,>(key: string, value: T) => {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+const maskSecret = (value: string, visible = 18) => (value.length > visible ? `${value.slice(0, visible)}...` : value)
+
 const trimConfigValue = (value: unknown, maxLength = 260) =>
   typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
 
@@ -1348,6 +1351,7 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('')
   const [googleLoginPending, setGoogleLoginPending] = useState(false)
   const [openClawNotice, setOpenClawNotice] = useState('')
+  const [apiHealthState, setApiHealthState] = useState<ApiHealthState>('idle')
   const [serverAuth, setServerAuth] = useState<ServerAuthState | null>(null)
   const [apiKeyMasked, setApiKeyMasked] = useState('')
   const [apiActionPending, setApiActionPending] = useState(false)
@@ -1455,7 +1459,7 @@ function App() {
     }
     if (normalizedServerAuth) {
       setServerAuth(normalizedServerAuth)
-      setApiKeyMasked(normalizedServerAuth.lastApiKey ? `${normalizedServerAuth.lastApiKey.slice(0, 18)}...` : '')
+      setApiKeyMasked(normalizedServerAuth.lastApiKey ? maskSecret(normalizedServerAuth.lastApiKey) : '')
     }
     if (setting) setSettings({ ...DEFAULT_SETTINGS, ...setting })
     if (openClaw) setOpenClawConfig(normalizeOpenClawConfig({ ...DEFAULT_OPENCLAW_CONFIG, ...openClaw }))
@@ -1590,7 +1594,7 @@ function App() {
   }, [openClawNotice])
 
   useEffect(() => {
-    setApiKeyMasked(serverAuth?.lastApiKey ? `${serverAuth.lastApiKey.slice(0, 18)}...` : '')
+    setApiKeyMasked(serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '')
   }, [serverAuth?.lastApiKey])
 
   const persistServerAuth = useCallback((next: ServerAuthState | null) => {
@@ -1602,16 +1606,64 @@ function App() {
     window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
   }, [])
 
+  const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
+
+  const checkApiService = useCallback(async () => {
+    const baseUrl = resolveApiBaseUrl()
+    setApiHealthState('checking')
+    try {
+      await apiCheckHealth(baseUrl)
+      setApiHealthState('online')
+      return { ok: true, baseUrl }
+    } catch {
+      setApiHealthState('offline')
+      return { ok: false, baseUrl }
+    }
+  }, [resolveApiBaseUrl])
+
+  const assertApiService = useCallback(async () => {
+    const result = await checkApiService()
+    if (result.ok) return result.baseUrl
+
+    throw new Error(
+      settings.language === 'zh'
+        ? `本地 API 服务不可用，请先启动：npm run api:dev（地址：${result.baseUrl}）`
+        : `Local API is unavailable. Start it first with: npm run api:dev (base URL: ${result.baseUrl})`,
+    )
+  }, [checkApiService, settings.language])
+
+  useEffect(() => {
+    if (!settingsOpen) return
+
+    let cancelled = false
+    const run = async () => {
+      const status = await checkApiService()
+      if (cancelled) return
+      setApiHealthState(status.ok ? 'online' : 'offline')
+    }
+
+    void run()
+    const timer = window.setInterval(() => {
+      void run()
+    }, 12000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [checkApiService, settingsOpen])
+
   const bindAccountToApi = useCallback(
     async (user: AccountUser) => {
       setApiActionPending(true)
       try {
+        const apiBaseUrl = await assertApiService()
         const response = await apiDemoLogin({
           name: user.name,
           email: user.email,
           provider: user.provider,
           avatarUrl: user.avatarUrl,
-        })
+        }, apiBaseUrl)
 
         const nextAuth: ServerAuthState = {
           accountId: response.account.id,
@@ -1631,11 +1683,12 @@ function App() {
         setApiActionPending(false)
       }
     },
-    [persistServerAuth, serverAuth?.accountId, serverAuth?.lastApiKey, serverAuth?.lastApiKeyId, settings.language],
+    [assertApiService, persistServerAuth, serverAuth?.accountId, serverAuth?.lastApiKey, serverAuth?.lastApiKeyId, settings.language],
   )
 
   const ensureApiSession = useCallback(async () => {
     if (!account) throw new Error(settings.language === 'zh' ? '请先登录账号。' : 'Please sign in first.')
+    const apiBaseUrl = await assertApiService()
 
     if (serverAuth && serverAuth.accountId === account.id && new Date(serverAuth.expiresAt).getTime() > Date.now() + 5_000) {
       return serverAuth
@@ -1646,7 +1699,7 @@ function App() {
       email: account.email,
       provider: account.provider,
       avatarUrl: account.avatarUrl,
-    })
+    }, apiBaseUrl)
 
     const nextAuth: ServerAuthState = {
       accountId: response.account.id,
@@ -1658,20 +1711,20 @@ function App() {
     }
     persistServerAuth(nextAuth)
     return nextAuth
-  }, [account, persistServerAuth, serverAuth])
+  }, [account, assertApiService, persistServerAuth, serverAuth, settings.language])
 
   const generateApiKeyForSkill = useCallback(async () => {
     setApiActionPending(true)
     try {
       const session = await ensureApiSession()
-      const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key')
+      const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key', session.apiBaseUrl)
       const nextAuth: ServerAuthState = {
         ...session,
         lastApiKey: created.apiKey,
         lastApiKeyId: created.key.id,
       }
       persistServerAuth(nextAuth)
-      setApiKeyMasked(`${created.apiKey.slice(0, 18)}...`)
+      setApiKeyMasked(maskSecret(created.apiKey))
       setOpenClawNotice(settings.language === 'zh' ? '已生成 API Key（仅本地保存）。' : 'API key generated and saved locally.')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1688,14 +1741,14 @@ function App() {
       let apiKey = session.lastApiKey
       let nextSession = session
       if (!apiKey) {
-        const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key')
+        const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key', session.apiBaseUrl)
         apiKey = created.apiKey
         nextSession = { ...session, lastApiKey: created.apiKey, lastApiKeyId: created.key.id }
         persistServerAuth(nextSession)
-        setApiKeyMasked(`${created.apiKey.slice(0, 18)}...`)
+        setApiKeyMasked(maskSecret(created.apiKey))
       }
 
-      const skillTemplate = await apiGetSkillTemplate(nextSession.accessToken)
+      const skillTemplate = await apiGetSkillTemplate(nextSession.accessToken, nextSession.apiBaseUrl)
       const config = buildOpenClawSkillConfig(skillTemplate, apiKey)
       await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
       setOpenClawNotice(settings.language === 'zh' ? '已复制 OpenClaw Skill JSON。' : 'OpenClaw skill JSON copied.')
@@ -2138,6 +2191,44 @@ function App() {
       setOpenClawNotice(text.openclawConfigCopyFailed)
     }
   }
+
+  const copyTextWithNotice = useCallback(
+    async (value: string, successZh: string, successEn: string, errorZhPrefix: string, errorEnPrefix: string) => {
+      try {
+        await navigator.clipboard.writeText(value)
+        setOpenClawNotice(settings.language === 'zh' ? successZh : successEn)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setOpenClawNotice(
+          settings.language === 'zh' ? `${errorZhPrefix}${message}` : `${errorEnPrefix}${message}`,
+        )
+      }
+    },
+    [settings.language],
+  )
+
+  const downloadSkillMarkdown = useCallback(
+    (content: string) => {
+      try {
+        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = 'SKILL.md'
+        document.body.appendChild(anchor)
+        anchor.click()
+        document.body.removeChild(anchor)
+        URL.revokeObjectURL(url)
+        setOpenClawNotice(settings.language === 'zh' ? '已下载 SKILL.md。' : 'SKILL.md downloaded.')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setOpenClawNotice(
+          settings.language === 'zh' ? `下载 SKILL.md 失败：${message}` : `Failed to download SKILL.md: ${message}`,
+        )
+      }
+    },
+    [settings.language],
+  )
 
   const beginEditGrid = (grid: GridData) => {
     setEditingGridId(grid.id)
@@ -3147,7 +3238,86 @@ function App() {
       : apiSessionConnected
         ? 'API connected'
         : 'API not connected'
-  const apiBaseLabel = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
+  const apiBaseLabel = resolveApiBaseUrl()
+  const apiHealthLabel =
+    apiHealthState === 'online'
+      ? settings.language === 'zh'
+        ? '在线'
+        : 'Online'
+      : apiHealthState === 'checking'
+        ? settings.language === 'zh'
+          ? '检测中...'
+          : 'Checking...'
+        : apiHealthState === 'offline'
+          ? settings.language === 'zh'
+            ? '离线'
+            : 'Offline'
+          : settings.language === 'zh'
+            ? '未检测'
+            : 'Unchecked'
+  const webOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:5173'
+  const apiKeyPreview = serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '<your-api-key>'
+  const openClawInstallCmd = 'mkdir -p ~/.openclaw/skills/open-canvas && cp SKILL.md ~/.openclaw/skills/open-canvas/SKILL.md'
+  const openClawBotConfigSnippet = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          skills: {
+            'open-canvas': {
+              enabled: true,
+              env: {
+                OPEN_CANVAS_API_URL: apiBaseLabel,
+                OPEN_CANVAS_API_KEY: apiKeyPreview,
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    [apiBaseLabel, apiKeyPreview],
+  )
+  const openClawSkillMarkdown = useMemo(
+    () => `---
+name: open-canvas
+description: Create and manage Open Canvas grids and cards through REST API.
+homepage: ${webOrigin}
+user-invocable: true
+metadata:
+  clawdbot:
+    requires:
+      env:
+        - OPEN_CANVAS_API_URL
+        - OPEN_CANVAS_API_KEY
+---
+
+# Open Canvas Skill
+
+You can control Open Canvas via REST API.
+
+## Configuration
+
+- Base URL: \`$OPEN_CANVAS_API_URL\` (example: \`${apiBaseLabel}\`)
+- Auth: Bearer token via \`$OPEN_CANVAS_API_KEY\`
+- Header: \`Authorization: Bearer $OPEN_CANVAS_API_KEY\`
+
+## Endpoints
+
+- \`GET /api/v1/state?full=1\` Read full workspace state
+- \`POST /api/v1/grids\` Create grid
+- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar)
+- \`PATCH /api/v1/cards/:cardId\` Update card fields
+- \`POST /api/v1/cards/:cardId/append-note\` Append note content
+
+## Best Practices
+
+1. Read \`/api/v1/state?full=1\` before write operations.
+2. Confirm destructive or batch changes with the user first.
+3. Keep \`kind\` explicit when creating cards.
+4. Prefer \`append-note\` for incremental writing.
+`,
+    [apiBaseLabel, webOrigin],
+  )
 
   return (
     <main className="app-shell">
@@ -4015,6 +4185,29 @@ function App() {
               </label>
 
               <label className="input-row">
+                <span>{settings.language === 'zh' ? 'API 服务状态' : 'API Service Status'}</span>
+                <div className={`settings-api-status ${apiHealthState}`}>
+                  <strong>{apiHealthLabel}</strong>
+                  <button
+                    type="button"
+                    className="mini-btn"
+                    disabled={apiHealthState === 'checking'}
+                    onClick={() => {
+                      void checkApiService()
+                    }}
+                  >
+                    {settings.language === 'zh'
+                      ? apiHealthState === 'checking'
+                        ? '检测中...'
+                        : '重新检测'
+                      : apiHealthState === 'checking'
+                        ? 'Checking...'
+                        : 'Check again'}
+                  </button>
+                </div>
+              </label>
+
+              <label className="input-row">
                 <span>{settings.language === 'zh' ? '最新 API Key' : 'Latest API Key'}</span>
                 <input
                   type="text"
@@ -4055,6 +4248,91 @@ function App() {
                       ? 'Working...'
                       : 'Copy skill JSON'}
                 </button>
+              </div>
+
+              <div className="openclaw-steps">
+                <section className="openclaw-step">
+                  <div className="openclaw-step-head">
+                    <strong>{settings.language === 'zh' ? '步骤 2：SKILL.md' : 'Step 2: SKILL.md'}</strong>
+                    <div className="panel-actions">
+                      <button
+                        className="mini-btn"
+                        onClick={() => {
+                          void copyTextWithNotice(
+                            openClawSkillMarkdown,
+                            '已复制 SKILL.md。',
+                            'SKILL.md copied.',
+                            '复制 SKILL.md 失败：',
+                            'Failed to copy SKILL.md: ',
+                          )
+                        }}
+                      >
+                        {settings.language === 'zh' ? '复制' : 'Copy'}
+                      </button>
+                      <button
+                        className="mini-btn"
+                        onClick={() => {
+                          downloadSkillMarkdown(openClawSkillMarkdown)
+                        }}
+                      >
+                        {settings.language === 'zh' ? '下载' : 'Download'}
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="openclaw-code"><code>{openClawSkillMarkdown}</code></pre>
+                </section>
+
+                <section className="openclaw-step">
+                  <div className="openclaw-step-head">
+                    <strong>{settings.language === 'zh' ? '步骤 3：openclaw.json' : 'Step 3: openclaw.json'}</strong>
+                    <button
+                      className="mini-btn"
+                      onClick={() => {
+                        void copyTextWithNotice(
+                          openClawBotConfigSnippet,
+                          '已复制 openclaw.json 配置。',
+                          'openclaw.json snippet copied.',
+                          '复制 openclaw.json 失败：',
+                          'Failed to copy openclaw.json snippet: ',
+                        )
+                      }}
+                    >
+                      {settings.language === 'zh' ? '复制' : 'Copy'}
+                    </button>
+                  </div>
+                  <p>
+                    {settings.language === 'zh'
+                      ? '把下面片段加入 openclaw.json / moltbot.json，并替换真实 API key。'
+                      : 'Add this snippet to openclaw.json or moltbot.json, then replace with your real API key.'}
+                  </p>
+                  <pre className="openclaw-code"><code>{openClawBotConfigSnippet}</code></pre>
+                </section>
+
+                <section className="openclaw-step">
+                  <div className="openclaw-step-head">
+                    <strong>{settings.language === 'zh' ? '步骤 4：安装命令' : 'Step 4: Install command'}</strong>
+                    <button
+                      className="mini-btn"
+                      onClick={() => {
+                        void copyTextWithNotice(
+                          openClawInstallCmd,
+                          '已复制安装命令。',
+                          'Install command copied.',
+                          '复制安装命令失败：',
+                          'Failed to copy install command: ',
+                        )
+                      }}
+                    >
+                      {settings.language === 'zh' ? '复制' : 'Copy'}
+                    </button>
+                  </div>
+                  <pre className="openclaw-code"><code>{openClawInstallCmd}</code></pre>
+                  <ol className="openclaw-quickstart">
+                    <li>{settings.language === 'zh' ? '下载并安装 SKILL.md 到 ~/.openclaw/skills/open-canvas/SKILL.md。' : 'Download and install SKILL.md to ~/.openclaw/skills/open-canvas/SKILL.md.'}</li>
+                    <li>{settings.language === 'zh' ? '把上面的配置片段加入 openclaw.json。' : 'Add the snippet above into openclaw.json.'}</li>
+                    <li>{settings.language === 'zh' ? '替换为真实 API key，重启 OpenClaw。' : 'Replace with real API key and restart OpenClaw.'}</li>
+                  </ol>
+                </section>
               </div>
 
               {openClawNotice ? <p>{openClawNotice}</p> : null}

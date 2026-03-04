@@ -1268,6 +1268,61 @@
   line-height: 1.5;
 }
 
+.openclaw-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.openclaw-step {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--app-bg) 82%, transparent);
+  display: grid;
+  gap: 8px;
+}
+
+.openclaw-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.openclaw-step-head strong {
+  color: var(--text-main);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.openclaw-code {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-bg) 90%, transparent);
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.openclaw-code code {
+  font-family: var(--font-mono);
+  color: var(--text-soft);
+  white-space: pre;
+}
+
+.openclaw-quickstart {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  display: grid;
+  gap: 4px;
+}
+
 .toggle-row {
   display: flex;
   gap: 8px;
@@ -1298,6 +1353,35 @@
 
 .settings-text-input {
   width: 100% !important;
+}
+
+.settings-api-status {
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--icon-bg);
+  padding: 8px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-api-status strong {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+
+.settings-api-status.online strong {
+  color: #73e2a7;
+}
+
+.settings-api-status.offline strong {
+  color: #f28686;
+}
+
+.settings-api-status.checking strong {
+  color: #f2c36f;
 }
 
 .language-switch {

@@ -6,12 +6,17 @@
 
 ### 启动方式
 
-1. 启动 API：
+1. 推荐一键后台启动（同时启动 Web + API）：
+```bash
+start-open-canvas-web-background.cmd
+```
+
+2. 或手动启动 API：
 ```bash
 npm run api:dev
 ```
 
-2. 启动 Web：
+3. 手动启动 Web：
 ```bash
 npm run dev
 ```
@@ -25,21 +30,29 @@ npm run dev
 
 ### API 能力
 
-当前 Skill 已开放以下 API：
-- `POST /v1/grids` 创建画布
-- `POST /v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar）
-- `PATCH /v1/cards/:cardId` 更新卡片
-- `POST /v1/cards/:cardId/append-note` 追加文本
-- `GET /v1/state?full=1` 获取全量画布状态
-- `GET /v1/config` 获取 API 配置
+当前 Skill 已开放以下 API（标准前缀）：
+- `POST /api/v1/grids` 创建画布
+- `POST /api/v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar）
+- `PATCH /api/v1/cards/:cardId` 更新卡片
+- `POST /api/v1/cards/:cardId/append-note` 追加文本
+- `GET /api/v1/state?full=1` 获取全量画布状态
+- `GET /api/v1/config` 获取 API 配置
 
 示例（创建卡片）：
 ```bash
-curl -X POST http://127.0.0.1:8787/v1/cards \
+curl -X POST http://127.0.0.1:8787/api/v1/cards \
   -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"kind":"note","title":"From OpenClaw","content":"Auto created by API"}'
 ```
+
+响应格式（标准路由）：
+- 成功：`{ "data": ... , "meta"?: {...} }`
+- 失败：`{ "error": { "code": "...", "message": "...", "details"?: ... } }`
+
+兼容说明：
+- 仅保留标准路径 `/api/v1/*`
+- 旧路径 `/v1/*` 已移除
 
 ## 2. OpenClaw 网关参数（仍保留）
 
@@ -103,6 +116,7 @@ Open Canvas 的 Settings 中 `OpenClaw 集成` 分组包含两部分：
 
 2. API 账号与 Skill（OpenClaw Skill 侧）
 - `API Base URL`
+- `API 服务状态（在线/离线）`
 - `API Key`
 - “生成 API Key”
 - “复制 Skill JSON”

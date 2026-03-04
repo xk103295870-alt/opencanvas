@@ -29,38 +29,42 @@ try {
   exit 1
 }
 
-$login = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/v1/auth/demo-login" -Body @{
+$loginResp = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/api/v1/auth/demo-login" -Body @{
   name = "Smoke User"
   email = "smoke@open-canvas.local"
   provider = "demo"
 }
+$login = $loginResp.data
 
 if (-not $login.accessToken) {
   Write-Error "No access token returned"
   exit 1
 }
 
-$key = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/v1/auth/api-keys" -Headers @{ Authorization = "Bearer $($login.accessToken)" } -Body @{
+$keyResp = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/api/v1/auth/api-keys" -Headers @{ Authorization = "Bearer $($login.accessToken)" } -Body @{
   name = "Smoke Key"
   scopes = @("canvas:read", "canvas:write")
 }
+$key = $keyResp.data
 
 if (-not $key.apiKey) {
   Write-Error "No API key returned"
   exit 1
 }
 
-$card = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/v1/cards" -Headers @{ Authorization = "Bearer $($key.apiKey)" } -Body @{
+$cardResp = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/api/v1/cards" -Headers @{ Authorization = "Bearer $($key.apiKey)" } -Body @{
   kind = "note"
   title = "Smoke"
   content = "From smoke test"
 }
+$card = $cardResp.data
 
-if (-not $card.data.cardId) {
+if (-not $card.cardId) {
   Write-Error "Card creation failed"
   exit 1
 }
 
-$state = Invoke-RestMethod -Method "GET" -Uri "$ApiBaseUrl/v1/state?full=1" -Headers @{ Authorization = "Bearer $($key.apiKey)" }
+$stateResp = Invoke-RestMethod -Method "GET" -Uri "$ApiBaseUrl/api/v1/state?full=1" -Headers @{ Authorization = "Bearer $($key.apiKey)" }
+$state = $stateResp.data
 
-Write-Output ("OK: card {0} grid {1} cards {2}" -f $card.data.cardId, $card.data.gridId, $state.workspace.grids[0].cardCount)
+Write-Output ("OK: card {0} grid {1} cards {2}" -f $card.cardId, $card.gridId, $state.workspace.grids[0].cardCount)
