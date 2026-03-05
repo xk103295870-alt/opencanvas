@@ -24,6 +24,15 @@ export type ServerApiKeyResponse = {
   }
 }
 
+export type ServerSessionResponse = {
+  account: ServerAccount
+  session: {
+    id: string
+    expiresAt: string
+    lastUsedAt: string
+  }
+}
+
 export type ServerSkillResponse = {
   account: ServerAccount
   skill: {
@@ -111,6 +120,13 @@ export async function apiCreateKey(accessToken: string, name = 'OpenClaw Skill K
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ name, scopes: ['canvas:read', 'canvas:write'] }),
+  }, baseUrl)
+}
+
+export async function apiGetSessionMe(accessToken: string, baseUrl?: string) {
+  return requestJson<ServerSessionResponse>('/api/v1/auth/me', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
   }, baseUrl)
 }
 

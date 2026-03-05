@@ -1,9 +1,18 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, FormEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import './App.css'
-import { apiCheckHealth, apiCreateKey, apiDemoLogin, apiGetSkillTemplate, buildOpenClawSkillConfig, getApiBaseUrl } from './apiClient'
+import {
+  apiCheckHealth,
+  apiCreateKey,
+  apiDemoLogin,
+  apiGetSessionMe,
+  apiGetSkillTemplate,
+  buildOpenClawSkillConfig,
+  getApiBaseUrl,
+} from './apiClient'
 
 type LanguageCode = 'zh' | 'en'
+type ThemeMode = 'system' | 'light' | 'dark'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
 type ApiHealthState = 'idle' | 'checking' | 'online' | 'offline'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
@@ -114,6 +123,7 @@ type PersistedAppState = {
 
 type AppSettings = {
   language: LanguageCode
+  themeMode: ThemeMode
   autoSync: boolean
   syncOnStartup: boolean
   syncDebounceMs: number
@@ -232,6 +242,11 @@ type I18nText = {
   languageHint: string
   languageZh: string
   languageEn: string
+  themeTitle: string
+  themeHint: string
+  themeSystem: string
+  themeLight: string
+  themeDark: string
   unnamedGrid: string
   unnamedCard: string
   demoUser: string
@@ -473,6 +488,7 @@ const CARD_MAX_HEIGHT = 1200
 
 const DEFAULT_SETTINGS: AppSettings = {
   language: 'zh',
+  themeMode: 'system',
   autoSync: true,
   syncOnStartup: true,
   syncDebounceMs: 2400,
@@ -552,6 +568,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageHint: '当前支持中英文切换',
     languageZh: '中文',
     languageEn: 'English',
+    themeTitle: '主题',
+    themeHint: '可跟随系统，也可手动切换浅色或深色',
+    themeSystem: '跟随系统',
+    themeLight: '浅色',
+    themeDark: '深色',
     unnamedGrid: '未命名画布',
     unnamedCard: '未命名卡片',
     demoUser: '演示用户',
@@ -635,6 +656,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageHint: 'Currently supports Chinese and English',
     languageZh: '中文',
     languageEn: 'English',
+    themeTitle: 'Theme',
+    themeHint: 'Follow system or switch manually between light and dark',
+    themeSystem: 'System',
+    themeLight: 'Light',
+    themeDark: 'Dark',
     unnamedGrid: 'Untitled Grid',
     unnamedCard: 'Untitled Card',
     demoUser: 'Demo User',
@@ -991,6 +1017,34 @@ const maskSecret = (value: string, visible = 18) => (value.length > visible ? `$
 
 const trimConfigValue = (value: unknown, maxLength = 260) =>
   typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
+
+const normalizeThemeMode = (value: unknown): ThemeMode => {
+  const mode = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (mode === 'light') return 'light'
+  if (mode === 'dark') return 'dark'
+  return 'system'
+}
+
+const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppSettings => {
+  const language = input?.language === 'en' ? 'en' : 'zh'
+  const themeMode = normalizeThemeMode(input?.themeMode)
+  const autoSync = typeof input?.autoSync === 'boolean' ? input.autoSync : DEFAULT_SETTINGS.autoSync
+  const syncOnStartup = typeof input?.syncOnStartup === 'boolean' ? input.syncOnStartup : DEFAULT_SETTINGS.syncOnStartup
+  const syncDebounceMsRaw = Number(input?.syncDebounceMs)
+  const syncDebounceMs = Number.isFinite(syncDebounceMsRaw)
+    ? Math.max(500, Math.min(12_000, Math.round(syncDebounceMsRaw)))
+    : DEFAULT_SETTINGS.syncDebounceMs
+
+  return {
+    language,
+    themeMode,
+    autoSync,
+    syncOnStartup,
+    syncDebounceMs,
+  }
+}
 
 const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefined): OpenClawConfig => {
   const gatewayUrl = trimConfigValue(input?.gatewayUrl || DEFAULT_OPENCLAW_CONFIG.gatewayUrl, 280)
@@ -1430,19 +1484,26 @@ function App() {
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const applyTheme = () => {
-      document.documentElement.dataset.theme = media.matches ? 'dark' : 'light'
+      const mode = settings.themeMode || 'system'
+      const resolvedTheme = mode === 'system' ? (media.matches ? 'dark' : 'light') : mode
+      document.documentElement.dataset.theme = resolvedTheme
+    }
+
+    const onSystemThemeChange = () => {
+      if ((settings.themeMode || 'system') !== 'system') return
+      applyTheme()
     }
 
     applyTheme()
 
     if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', applyTheme)
-      return () => media.removeEventListener('change', applyTheme)
+      media.addEventListener('change', onSystemThemeChange)
+      return () => media.removeEventListener('change', onSystemThemeChange)
     }
 
-    media.addListener(applyTheme)
-    return () => media.removeListener(applyTheme)
-  }, [])
+    media.addListener(onSystemThemeChange)
+    return () => media.removeListener(onSystemThemeChange)
+  }, [settings.themeMode])
 
   useEffect(() => {
     const auth = readJson<unknown>(AUTH_STORAGE_KEY)
@@ -1461,7 +1522,7 @@ function App() {
       setServerAuth(normalizedServerAuth)
       setApiKeyMasked(normalizedServerAuth.lastApiKey ? maskSecret(normalizedServerAuth.lastApiKey) : '')
     }
-    if (setting) setSettings({ ...DEFAULT_SETTINGS, ...setting })
+    if (setting) setSettings(normalizeSettings(setting))
     if (openClaw) setOpenClawConfig(normalizeOpenClawConfig({ ...DEFAULT_OPENCLAW_CONFIG, ...openClaw }))
     if (meta) setSyncMeta(meta)
   }, [])
@@ -1550,7 +1611,7 @@ function App() {
 
   const updateSettings = useCallback((partial: Partial<AppSettings>) => {
     setSettings((current) => {
-      const next = { ...current, ...partial }
+      const next = normalizeSettings({ ...current, ...partial })
       writeJson(SETTINGS_STORAGE_KEY, next)
       return next
     })
@@ -1687,11 +1748,23 @@ function App() {
   )
 
   const ensureApiSession = useCallback(async () => {
-    if (!account) throw new Error(settings.language === 'zh' ? '请先登录账号。' : 'Please sign in first.')
+    if (!account) {
+      setShowLoginForm(true)
+      throw new Error(
+        settings.language === 'zh'
+          ? '请先在账号区域登录（演示登录或 Google 登录），再生成 API Key。'
+          : 'Please sign in from the Account section first, then generate API key.',
+      )
+    }
     const apiBaseUrl = await assertApiService()
 
     if (serverAuth && serverAuth.accountId === account.id && new Date(serverAuth.expiresAt).getTime() > Date.now() + 5_000) {
-      return serverAuth
+      try {
+        await apiGetSessionMe(serverAuth.accessToken, serverAuth.apiBaseUrl || apiBaseUrl)
+        return serverAuth
+      } catch {
+        // Session may be stale on server side; fallback to re-login below.
+      }
     }
 
     const response = await apiDemoLogin({
@@ -4009,6 +4082,31 @@ You can control Open Canvas via REST API.
             </div>
 
             <div className="settings-group">
+              <h3>{text.themeTitle}</h3>
+              <p>{text.themeHint}</p>
+              <div className="language-switch">
+                <button
+                  className={`lang-option ${settings.themeMode === 'system' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ themeMode: 'system' })}
+                >
+                  {text.themeSystem}
+                </button>
+                <button
+                  className={`lang-option ${settings.themeMode === 'light' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ themeMode: 'light' })}
+                >
+                  {text.themeLight}
+                </button>
+                <button
+                  className={`lang-option ${settings.themeMode === 'dark' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ themeMode: 'dark' })}
+                >
+                  {text.themeDark}
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-group">
               <h3>{text.accountTitle}</h3>
               {account ? (
                 <div className="account-user-card">
@@ -4220,7 +4318,7 @@ You can control Open Canvas via REST API.
               <div className="panel-actions">
                 <button
                   className="mini-btn"
-                  disabled={apiActionPending || !account}
+                  disabled={apiActionPending}
                   onClick={() => {
                     void generateApiKeyForSkill()
                   }}
@@ -4235,7 +4333,7 @@ You can control Open Canvas via REST API.
                 </button>
                 <button
                   className="mini-btn"
-                  disabled={apiActionPending || !account}
+                  disabled={apiActionPending}
                   onClick={() => {
                     void copyOpenClawSkillJson()
                   }}
@@ -4249,6 +4347,8 @@ You can control Open Canvas via REST API.
                       : 'Copy skill JSON'}
                 </button>
               </div>
+
+              {openClawNotice ? <p className="openclaw-inline-notice">{openClawNotice}</p> : null}
 
               <div className="openclaw-steps">
                 <section className="openclaw-step">
@@ -4335,7 +4435,6 @@ You can control Open Canvas via REST API.
                 </section>
               </div>
 
-              {openClawNotice ? <p>{openClawNotice}</p> : null}
             </div>
 
             <div className="settings-group">

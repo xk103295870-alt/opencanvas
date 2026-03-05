@@ -1384,6 +1384,18 @@
   color: #f2c36f;
 }
 
+.openclaw-inline-notice {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--icon-bg);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .language-switch {
   display: inline-flex;
   border: 1px solid var(--line);
