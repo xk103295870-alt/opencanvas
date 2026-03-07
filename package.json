@@ -8,6 +8,7 @@
     "api:dev": "tsx server/index.ts",
     "dev:webapi": "tsx --tsconfig tsconfig.node.json server/index.ts",
     "build": "tsc -b && vite build",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "lint": "eslint .",
     "smoke:api": "pwsh -File scripts/smoke-openclaw.ps1",
     "preview": "vite preview"
