@@ -37,7 +37,6 @@
 .brand-block {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 6px 8px;
   border-radius: 9px;
 }
@@ -78,25 +77,10 @@
   white-space: nowrap;
 }
 
-.brand-settings-btn {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--icon-bg);
-  color: var(--text-soft);
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.brand-settings-btn:hover {
-  border-color: var(--line-strong);
-  color: var(--text-main);
-}
-
 .action-btn,
 .icon-btn,
 .grid-item,
 .zoom-btn,
-.brand-settings-btn,
 .mini-btn,
 .settings-close {
   font-family: inherit;

@@ -3421,18 +3421,15 @@ You can control Open Canvas via REST API.
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-meta">
-            <div className="brand-logo" aria-hidden>
-              <img className="brand-logo-image" src="/ai-sticky-notes-logo.svg" alt="" />
+        <aside className="sidebar">
+          <div className="brand-block">
+            <div className="brand-meta">
+              <div className="brand-logo" aria-hidden>
+                <img className="brand-logo-image" src="/ai-sticky-notes-logo.svg" alt="" />
+              </div>
+              <span className="brand-name">AI Sticky Notes</span>
             </div>
-            <span className="brand-name">AI Sticky Notes</span>
           </div>
-          <button className="brand-settings-btn" onClick={() => setSettingsOpen(true)}>
-            {text.settings}
-          </button>
-        </div>
 
         <button className="action-btn" onClick={addNoteCard}>
           {text.newNoteCard}
