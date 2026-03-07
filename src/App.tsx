@@ -12,7 +12,7 @@ import {
 } from './apiClient'
 
 type LanguageCode = 'zh' | 'en'
-type ThemeMode = 'system' | 'light' | 'dark'
+type ThemeMode = 'system' | 'light' | 'dark' | 'glass'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
 type ApiHealthState = 'idle' | 'checking' | 'online' | 'offline'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
@@ -207,6 +207,7 @@ type I18nText = {
   newTodoCard: string
   newCalendarCard: string
   newGridAria: string
+  removeGridAria: string
   grids: string
   reset: string
   resizeCardAria: string
@@ -247,6 +248,7 @@ type I18nText = {
   themeSystem: string
   themeLight: string
   themeDark: string
+  themeGlass: string
   unnamedGrid: string
   unnamedCard: string
   demoUser: string
@@ -533,6 +535,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
     newGridAria: '新建画布',
+    removeGridAria: '删除画布',
     grids: '画布',
     reset: '重置',
     resizeCardAria: '缩放卡片',
@@ -569,10 +572,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageZh: '中文',
     languageEn: 'English',
     themeTitle: '主题',
-    themeHint: '可跟随系统，也可手动切换浅色或深色',
+    themeHint: '可跟随系统，也可切换浅色、深色或 Apple 风格液体玻璃',
     themeSystem: '跟随系统',
     themeLight: '浅色',
     themeDark: '深色',
+    themeGlass: '液体玻璃',
     unnamedGrid: '未命名画布',
     unnamedCard: '未命名卡片',
     demoUser: '演示用户',
@@ -621,6 +625,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ New todo card',
     newCalendarCard: '+ New calendar card',
     newGridAria: 'New grid',
+    removeGridAria: 'Remove grid',
     grids: 'GRIDS',
     reset: 'Reset',
     resizeCardAria: 'Resize card',
@@ -657,10 +662,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageZh: '中文',
     languageEn: 'English',
     themeTitle: 'Theme',
-    themeHint: 'Follow system or switch manually between light and dark',
+    themeHint: 'Follow system or switch manually between light, dark, or an Apple-style liquid glass look',
     themeSystem: 'System',
     themeLight: 'Light',
     themeDark: 'Dark',
+    themeGlass: 'Liquid Glass',
     unnamedGrid: 'Untitled Grid',
     unnamedCard: 'Untitled Card',
     demoUser: 'Demo User',
@@ -1024,6 +1030,7 @@ const normalizeThemeMode = (value: unknown): ThemeMode => {
     .toLowerCase()
   if (mode === 'light') return 'light'
   if (mode === 'dark') return 'dark'
+  if (mode === 'glass') return 'glass'
   return 'system'
 }
 
@@ -2492,6 +2499,26 @@ function App() {
     createGridInternal({ activate: true })
   }
 
+  const removeGrid = (gridId: string) => {
+    setGrids((current) => {
+      if (current.length <= 1) return current
+
+      const targetIndex = current.findIndex((grid) => grid.id === gridId)
+      if (targetIndex < 0) return current
+
+      const next = current.filter((grid) => grid.id !== gridId)
+      if (activeGridId === gridId) {
+        const fallbackGrid = next[Math.max(0, targetIndex - 1)] ?? next[0]
+        if (fallbackGrid) setActiveGridId(fallbackGrid.id)
+      }
+      if (editingGridId === gridId) {
+        setEditingGridId(null)
+        setGridNameDraft('')
+      }
+      return next
+    })
+  }
+
   const addNoteCard = () => {
     createCardInternal({
       kind: 'note',
@@ -3398,9 +3425,9 @@ You can control Open Canvas via REST API.
         <div className="brand-block">
           <div className="brand-meta">
             <div className="brand-logo" aria-hidden>
-              OC
+              <img className="brand-logo-image" src="/ai-sticky-notes-logo.svg" alt="" />
             </div>
-            <span className="brand-name">Open Canvas</span>
+            <span className="brand-name">AI Sticky Notes</span>
           </div>
           <button className="brand-settings-btn" onClick={() => setSettingsOpen(true)}>
             {text.settings}
@@ -3500,7 +3527,23 @@ You can control Open Canvas via REST API.
                     {grid.name}
                   </span>
                 )}
-                <span className="grid-badge">{index + 1}</span>
+                <span className="grid-item-actions">
+                  <span className="grid-badge">{index + 1}</span>
+                  {grids.length > 1 ? (
+                    <button
+                      type="button"
+                      className="grid-remove-btn"
+                      aria-label={text.removeGridAria}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        removeGrid(grid.id)
+                      }}
+                    >
+                      x
+                    </button>
+                  ) : null}
+                </span>
               </button>
             ))}
           </div>
@@ -4102,6 +4145,12 @@ You can control Open Canvas via REST API.
                   onClick={() => updateSettings({ themeMode: 'dark' })}
                 >
                   {text.themeDark}
+                </button>
+                <button
+                  className={`lang-option ${settings.themeMode === 'glass' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ themeMode: 'glass' })}
+                >
+                  {text.themeGlass}
                 </button>
               </div>
             </div>

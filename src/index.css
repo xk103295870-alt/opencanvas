@@ -3,6 +3,7 @@
 :root {
   --font-main: 'Space Grotesk', 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --app-overlay: transparent;
   color: var(--text-main);
   font-family: var(--font-main);
   font-synthesis: none;
@@ -63,6 +64,41 @@
   --card-drag-outline: rgba(47, 140, 163, 0.55);
   --card-drag-shadow: rgba(20, 35, 50, 0.3);
   --card-header-bg: rgba(255, 255, 255, 0.65);
+}
+
+:root[data-theme='glass'] {
+  --canvas-base: #dfe7f2;
+  --line: rgba(255, 255, 255, 0.36);
+  --line-strong: rgba(255, 255, 255, 0.78);
+  --text-main: #11263d;
+  --text-soft: #48647e;
+  --text-dim: rgba(32, 56, 80, 0.66);
+  --accent: #72a7ff;
+  --body-bg:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.96), transparent 18%),
+    radial-gradient(circle at 90% 2%, rgba(171, 208, 255, 0.62), transparent 24%),
+    radial-gradient(circle at 70% 84%, rgba(255, 241, 248, 0.42), transparent 18%),
+    linear-gradient(140deg, #edf4ff 0%, #f6f9ff 22%, #fbfdff 48%, #e4efff 74%, #f5f8ff 100%);
+  --app-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(229, 239, 251, 0.24) 100%);
+  --app-glow: rgba(160, 201, 255, 0.56);
+  --app-overlay:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.9), transparent 30%),
+    radial-gradient(circle at 78% 0%, rgba(143, 189, 255, 0.4), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 100%);
+  --sidebar-bg-top: rgba(255, 255, 255, 0.56);
+  --sidebar-bg-bottom: rgba(241, 247, 255, 0.34);
+  --action-bg: rgba(255, 255, 255, 0.34);
+  --icon-bg: rgba(255, 255, 255, 0.3);
+  --grid-active-bg: rgba(255, 255, 255, 0.46);
+  --badge-bg: rgba(120, 163, 255, 0.22);
+  --canvas-dot: rgba(79, 108, 147, 0.15);
+  --canvas-fade: rgba(211, 224, 241, 0.18);
+  --card-bg-top: rgba(255, 255, 255, 0.46);
+  --card-bg-bottom: rgba(231, 242, 255, 0.28);
+  --card-shadow: rgba(81, 110, 154, 0.2);
+  --card-drag-outline: rgba(114, 167, 255, 0.9);
+  --card-drag-shadow: rgba(87, 118, 165, 0.28);
+  --card-header-bg: rgba(255, 255, 255, 0.28);
 }
 
 * {

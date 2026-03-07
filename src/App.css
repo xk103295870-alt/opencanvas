@@ -1,4 +1,6 @@
 .app-shell {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: 280px 1fr;
   height: 100vh;
@@ -8,6 +10,15 @@
     var(--app-bg);
 }
 
+.app-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--app-overlay);
+}
+
 .sidebar {
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg-bottom) 100%);
@@ -15,6 +26,12 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.sidebar,
+.canvas {
+  position: relative;
+  z-index: 1;
 }
 
 .brand-block {
@@ -29,24 +46,36 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .brand-logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  border: 1px solid var(--line-strong);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  width: 34px;
+  height: 34px;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+
+.brand-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
 }
 
 .brand-name {
-  font-size: 20px;
+  font-size: 18px;
   letter-spacing: 0.02em;
+  line-height: 1.05;
+  color: var(--text-main);
+  white-space: nowrap;
 }
 
 .brand-settings-btn {
@@ -339,6 +368,30 @@
   font-size: 12px;
 }
 
+.grid-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.grid-remove-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.grid-remove-btn:hover {
+  border-color: var(--line);
+  color: #d98383;
+}
+
 .canvas {
   position: relative;
   overflow: hidden;
@@ -559,27 +612,30 @@
 
 .card-resize-handle {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 16px;
-  height: 16px;
+  right: 10px;
+  bottom: 10px;
+  width: 22px;
+  height: 22px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--card-header-bg) 74%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--card-header-bg) 80%, transparent);
   cursor: nwse-resize;
-  z-index: 5;
+  z-index: 8;
   touch-action: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--line-strong) 50%, transparent),
+    0 8px 16px color-mix(in srgb, var(--card-shadow) 62%, transparent);
 }
 
 .card-resize-handle::before {
   content: '';
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 7px;
-  height: 7px;
-  border-right: 1px solid var(--text-dim);
-  border-bottom: 1px solid var(--text-dim);
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--text-main) 62%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--text-main) 62%, transparent);
 }
 
 .card-resize-handle:hover {
@@ -1420,6 +1476,157 @@
 .lang-option.active {
   background: var(--grid-active-bg);
   color: var(--text-main);
+}
+
+:root[data-theme='glass'] .sidebar,
+:root[data-theme='glass'] .panel-block,
+:root[data-theme='glass'] .action-btn,
+:root[data-theme='glass'] .icon-btn,
+:root[data-theme='glass'] .grid-item,
+:root[data-theme='glass'] .canvas-toolbar,
+:root[data-theme='glass'] .zoom-btn,
+:root[data-theme='glass'] .todo-lane,
+:root[data-theme='glass'] .todo-board-item,
+:root[data-theme='glass'] .calendar-day,
+:root[data-theme='glass'] .calendar-day-preview-item,
+:root[data-theme='glass'] .calendar-event-item,
+:root[data-theme='glass'] .settings-group,
+:root[data-theme='glass'] .settings-api-status,
+:root[data-theme='glass'] .openclaw-step,
+:root[data-theme='glass'] .openclaw-code,
+:root[data-theme='glass'] .openclaw-inline-notice,
+:root[data-theme='glass'] .language-switch,
+:root[data-theme='glass'] .calendar-view-switch,
+:root[data-theme='glass'] .todo-add-btn,
+:root[data-theme='glass'] .calendar-add-btn,
+:root[data-theme='glass'] .calendar-nav-btn,
+:root[data-theme='glass'] .brand-settings-btn,
+:root[data-theme='glass'] .mini-btn,
+:root[data-theme='glass'] .settings-close {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+:root[data-theme='glass'] .sidebar {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    18px 0 42px rgba(120, 149, 188, 0.16);
+}
+
+:root[data-theme='glass'] .panel-block,
+:root[data-theme='glass'] .action-btn,
+:root[data-theme='glass'] .icon-btn,
+:root[data-theme='glass'] .grid-item,
+:root[data-theme='glass'] .canvas-toolbar,
+:root[data-theme='glass'] .zoom-btn,
+:root[data-theme='glass'] .todo-lane,
+:root[data-theme='glass'] .todo-board-item,
+:root[data-theme='glass'] .calendar-day,
+:root[data-theme='glass'] .calendar-day-preview-item,
+:root[data-theme='glass'] .calendar-event-item,
+:root[data-theme='glass'] .settings-group,
+:root[data-theme='glass'] .settings-api-status,
+:root[data-theme='glass'] .openclaw-step,
+:root[data-theme='glass'] .openclaw-code,
+:root[data-theme='glass'] .openclaw-inline-notice,
+:root[data-theme='glass'] .todo-add-btn,
+:root[data-theme='glass'] .calendar-add-btn,
+:root[data-theme='glass'] .calendar-nav-btn,
+:root[data-theme='glass'] .brand-settings-btn,
+:root[data-theme='glass'] .mini-btn,
+:root[data-theme='glass'] .settings-close {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.56),
+    0 14px 34px rgba(96, 124, 166, 0.12);
+}
+
+:root[data-theme='glass'] .brand-logo {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.14) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 10px 24px rgba(103, 129, 170, 0.16);
+}
+
+:root[data-theme='glass'] .card,
+:root[data-theme='glass'] .settings-dialog {
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+}
+
+:root[data-theme='glass'] .card {
+  box-shadow:
+    0 26px 62px rgba(84, 112, 154, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    inset 0 -12px 32px rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme='glass'] .settings-dialog {
+  box-shadow:
+    0 30px 72px rgba(84, 110, 148, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+:root[data-theme='glass'] .card::before,
+:root[data-theme='glass'] .settings-dialog::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.56) 0%, rgba(255, 255, 255, 0.16) 34%, rgba(255, 255, 255, 0.02) 62%, transparent 100%),
+    radial-gradient(circle at 100% 0%, rgba(130, 178, 255, 0.22), transparent 34%);
+}
+
+:root[data-theme='glass'] .card > :not(.card-resize-handle),
+:root[data-theme='glass'] .settings-dialog > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme='glass'] .grid-item.active,
+:root[data-theme='glass'] .calendar-day.selected,
+:root[data-theme='glass'] .lang-option.active,
+:root[data-theme='glass'] .calendar-view-btn.active {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.24) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 10px 20px rgba(104, 131, 171, 0.14);
+}
+
+:root[data-theme='glass'] .canvas.is-file-over::after {
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  color: var(--text-main);
+}
+
+:root[data-theme='glass'] .card-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.08) 100%);
+}
+
+:root[data-theme='glass'] .card-resize-handle {
+  border-color: rgba(255, 255, 255, 0.74);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(226, 239, 255, 0.34) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 10px 24px rgba(99, 125, 166, 0.22);
+}
+
+:root[data-theme='glass'] .card-resize-handle::before {
+  border-right-color: rgba(23, 45, 74, 0.56);
+  border-bottom-color: rgba(23, 45, 74, 0.56);
+}
+
+:root[data-theme='glass'] .grid-remove-btn {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(229, 240, 255, 0.22) 100%);
+  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 8px 16px rgba(103, 129, 170, 0.12);
+}
+
+:root[data-theme='glass'] .media-video {
+  background: linear-gradient(180deg, rgba(12, 22, 40, 0.9) 0%, rgba(18, 28, 48, 0.96) 100%);
 }
 
 @keyframes settings-in {
