@@ -6,19 +6,44 @@
 
 ### 启动方式
 
-1. 推荐一键后台启动（同时启动 Web + API）：
+1. 推荐一键启动（同时启动 Web + API）：
 ```bash
-start-open-canvas-web-background.cmd
+open-canvas start
 ```
 
-2. 或手动启动 API：
+2. 如果你只想后台启动但不自动打开浏览器：
+```bash
+open-canvas start --no-open
+```
+
+3. 仍可手动启动 API：
 ```bash
 npm run api:dev
 ```
 
-3. 手动启动 Web：
+4. 手动启动 Web：
 ```bash
 npm run dev
+```
+
+### 另一台电脑安装 CLI
+
+如果你想在另一台电脑上直接装出同样的 `open-canvas` 命令：
+
+```bash
+npm install -g git+https://github.com/xk103295870-alt/opencanvas.git
+```
+
+或者使用仓库里的安装脚本：
+
+```bash
+bash scripts/install-open-canvas.sh
+```
+
+Windows PowerShell：
+
+```powershell
+./scripts/install-open-canvas.ps1
 ```
 
 ### 账号绑定与 Skill 配置
