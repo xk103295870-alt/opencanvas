@@ -4,7 +4,9 @@ import './App.css'
 import {
   apiCheckHealth,
   apiCreateKey,
+  apiCreateCard,
   apiDemoLogin,
+  apiDeleteCard,
   apiGetSessionMe,
   apiGetSkillTemplate,
   apiGetWorkspaceState,
@@ -159,6 +161,10 @@ type SyncMeta = {
   lastLocalUpdateAt: number
   lastSyncAt: number | null
 }
+
+type OpenClawCardPatch = Partial<
+  Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'>
+>
 
 type OpenClawLayoutSyncMeta = {
   lastLayoutMutationAt: number
@@ -342,6 +348,7 @@ type ExternalCalendarInput = Partial<Omit<CalendarState, 'events'>> & {
 }
 
 type OpenCanvasCreateCardPayload = {
+  id?: string
   kind?: CardKind | string
   gridId?: string
   title?: string
@@ -385,6 +392,10 @@ type OpenCanvasCommand =
         y?: number
         width?: number
         height?: number
+        fileName?: string
+        externalUrl?: string
+        todoItems?: TodoItem[]
+        calendar?: CalendarState
       }
     }
   | {
@@ -437,6 +448,10 @@ type OpenCanvasGlobalApi = {
     y?: number
     width?: number
     height?: number
+    fileName?: string
+    externalUrl?: string
+    todoItems?: TodoItem[]
+    calendar?: CalendarState
     requestId?: string
   }) => Promise<OpenCanvasCommandResult>
   getState: (requestId?: string) => Promise<OpenCanvasCommandResult>
@@ -1457,6 +1472,8 @@ function App() {
   const assetUrlsRef = useRef(assetUrls)
   const syncMetaRef = useRef(syncMeta)
   const openClawLayoutSyncRef = useRef<OpenClawLayoutSyncMeta>(DEFAULT_OPENCLAW_LAYOUT_SYNC_META)
+  const openClawPatchTimerRef = useRef<Record<string, number>>({})
+  const openClawPendingPatchRef = useRef<Record<string, OpenClawCardPatch>>({})
 
   const dragStateRef = useRef<DragState>(null)
   const panStateRef = useRef<PanState>(null)
@@ -1662,12 +1679,111 @@ function App() {
     })
   }, [])
 
+  const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
+
   const updateOpenClawLayoutSyncMeta = useCallback((partial: Partial<OpenClawLayoutSyncMeta>) => {
     const next = normalizeOpenClawLayoutSyncMeta({ ...openClawLayoutSyncRef.current, ...partial })
     openClawLayoutSyncRef.current = next
     writeJson(OPENCLAW_LAYOUT_SYNC_KEY, next)
     return next
   }, [])
+
+  const clearOpenClawPatchTimer = useCallback((cardId: string) => {
+    const timer = openClawPatchTimerRef.current[cardId]
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      delete openClawPatchTimerRef.current[cardId]
+    }
+    delete openClawPendingPatchRef.current[cardId]
+  }, [])
+
+  const persistOpenClawCardPatch = useCallback(
+    async (cardId: string, updates: OpenClawCardPatch) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw card patch:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
+  const scheduleOpenClawCardPatch = useCallback(
+    (cardId: string, updates: OpenClawCardPatch, delayMs = 500) => {
+      const next = { ...(openClawPendingPatchRef.current[cardId] ?? {}), ...updates }
+      openClawPendingPatchRef.current[cardId] = next
+
+      const existingTimer = openClawPatchTimerRef.current[cardId]
+      if (existingTimer !== undefined) {
+        window.clearTimeout(existingTimer)
+      }
+
+      openClawPatchTimerRef.current[cardId] = window.setTimeout(() => {
+        const patch = openClawPendingPatchRef.current[cardId]
+        delete openClawPendingPatchRef.current[cardId]
+        delete openClawPatchTimerRef.current[cardId]
+        if (!patch) return
+        void persistOpenClawCardPatch(cardId, patch)
+      }, delayMs)
+    },
+    [persistOpenClawCardPatch],
+  )
+
+  const persistOpenClawCardCreate = useCallback(
+    async (gridId: string, card: CardData, activateGrid = false) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiCreateCard(
+          serverAuth.lastApiKey,
+          {
+            id: card.id,
+            kind: card.kind,
+            gridId,
+            title: card.title,
+            content: card.content,
+            x: card.x,
+            y: card.y,
+            width: card.width,
+            height: card.height,
+            activateGrid,
+            fileName: card.fileName,
+            mediaUrl: card.externalUrl,
+            todoItems: card.todoItems,
+            calendar: card.calendar,
+          },
+          resolveApiBaseUrl(),
+        )
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw card creation:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
+  const persistOpenClawCardDelete = useCallback(
+    async (cardId: string) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiDeleteCard(serverAuth.lastApiKey, cardId, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw card deletion:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
 
   useEffect(() => {
     window.dispatchEvent(
@@ -1689,6 +1805,15 @@ function App() {
     setApiKeyMasked(serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '')
   }, [serverAuth?.lastApiKey])
 
+  useEffect(
+    () => () => {
+      Object.values(openClawPatchTimerRef.current).forEach((timer) => window.clearTimeout(timer))
+      openClawPatchTimerRef.current = {}
+      openClawPendingPatchRef.current = {}
+    },
+    [],
+  )
+
   const persistServerAuth = useCallback((next: ServerAuthState | null) => {
     setServerAuth(next)
     if (next) {
@@ -1697,8 +1822,6 @@ function App() {
     }
     window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
   }, [])
-
-  const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
 
   const checkApiService = useCallback(async () => {
     const baseUrl = resolveApiBaseUrl()
@@ -2523,6 +2646,7 @@ function App() {
     if (!editingCardId) return
 
     const nextTitle = cardTitleDraft.trim() || text.unnamedCard
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -2532,6 +2656,7 @@ function App() {
         }
       }),
     )
+    void persistOpenClawCardPatch(editingCardId, { title: nextTitle })
     setEditingCardId(null)
     setCardTitleDraft('')
   }
@@ -2600,7 +2725,7 @@ function App() {
       const height = clamp(toFiniteNumber(payload?.height, defaultSize.height), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
       const title = String(payload?.title ?? '').trim() || defaultTitle
       const content = String(payload?.content ?? '').trim()
-      const cardId = uid(kind)
+      const cardId = String(payload?.id || '').trim() || uid(kind)
       const externalTodoItems = toTodoItems(payload?.todoItems)
 
       const cardBase: CardData = {
@@ -2658,10 +2783,12 @@ function App() {
       setGrids((current) =>
         current.map((grid) => (grid.id === targetGridId ? { ...grid, cards: [...grid.cards, cardWithTypeData] } : grid)),
       )
+      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
       if (payload?.activateGrid) {
         setActiveGridId(targetGridId)
       }
       pushParticleImpulse(baseX, baseY, 0.22)
+      void persistOpenClawCardCreate(targetGridId, cardWithTypeData, Boolean(payload?.activateGrid))
 
       return { cardId, gridId: targetGridId }
     },
@@ -2670,6 +2797,8 @@ function App() {
       calendarText.title,
       grids,
       pushParticleImpulse,
+      persistOpenClawCardCreate,
+      updateOpenClawLayoutSyncMeta,
       text.newNoteCard,
       text.notePlaceholder,
       text.unnamedCard,
@@ -2743,6 +2872,19 @@ function App() {
       return { ok: false, message: `Card not found: ${cardId}` } satisfies OpenCanvasCommandResult
     }
 
+    const patch: OpenClawCardPatch = {}
+    if (typeof payload.title === 'string') patch.title = payload.title.trim() || undefined
+    if (typeof payload.content === 'string') patch.content = payload.content
+    if (typeof payload.x === 'number') patch.x = clamp(payload.x, -200, SCENE_WIDTH - 60)
+    if (typeof payload.y === 'number') patch.y = clamp(payload.y, -200, SCENE_HEIGHT - 60)
+    if (typeof payload.width === 'number') patch.width = clamp(payload.width, CARD_MIN_WIDTH, CARD_MAX_WIDTH)
+    if (typeof payload.height === 'number') patch.height = clamp(payload.height, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
+    if (typeof payload.fileName === 'string') patch.fileName = payload.fileName.trim() || undefined
+    if (typeof payload.externalUrl === 'string') patch.externalUrl = payload.externalUrl.trim() || undefined
+    if (payload.todoItems !== undefined) patch.todoItems = payload.todoItems
+    if (payload.calendar !== undefined) patch.calendar = payload.calendar
+
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => ({
         ...grid,
@@ -2766,8 +2908,10 @@ function App() {
       })),
     )
 
+    void persistOpenClawCardPatch(cardId, patch)
+
     return { ok: true, message: 'Card updated', data: { cardId } } satisfies OpenCanvasCommandResult
-  }, [grids])
+  }, [grids, persistOpenClawCardPatch, updateOpenClawLayoutSyncMeta])
 
   const handleOpenCanvasCommand = useCallback(
     (command: OpenCanvasCommand): OpenCanvasCommandResult => {
@@ -2806,10 +2950,13 @@ function App() {
           return { ok: false, requestId, message: 'cardId and text are required' }
         }
 
-        const exists = grids.some((grid) => grid.cards.some((card) => card.id === cardId))
+        const targetCard = grids.flatMap((grid) => grid.cards).find((card) => card.id === cardId)
+        const exists = Boolean(targetCard)
         if (!exists) {
           return { ok: false, requestId, message: `Card not found: ${cardId}` }
         }
+
+        const nextContent = targetCard?.content ? `${targetCard.content}\n${appendText}` : appendText
 
         setGrids((current) =>
           current.map((grid) => ({
@@ -2824,6 +2971,7 @@ function App() {
             ),
           })),
         )
+        void persistOpenClawCardPatch(cardId, { content: nextContent })
         return { ok: true, requestId, message: 'Content appended', data: { cardId } }
       }
 
@@ -2886,7 +3034,17 @@ function App() {
 
       return { ok: false, requestId, message: 'Unsupported command' }
     },
-    [account, activeGridId, createCardInternal, createGridInternal, grids, openClawConfig, saveOpenClawConfig, updateCardInternal],
+    [
+      account,
+      activeGridId,
+      createCardInternal,
+      createGridInternal,
+      grids,
+      openClawConfig,
+      persistOpenClawCardPatch,
+      saveOpenClawConfig,
+      updateCardInternal,
+    ],
   )
 
   useEffect(() => {
@@ -2977,12 +3135,18 @@ function App() {
       setCardTitleDraft('')
     }
 
+    clearOpenClawPatchTimer(cardId)
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
         return { ...grid, cards: grid.cards.filter((card) => card.id !== cardId) }
       }),
     )
+
+    if (targetCard) {
+      void persistOpenClawCardDelete(cardId)
+    }
 
     if (!targetCard?.fileId) return
 
@@ -3071,6 +3235,7 @@ function App() {
   }
 
   const updateCardContent = (cardId: string, content: string) => {
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -3080,77 +3245,77 @@ function App() {
         }
       }),
     )
+    scheduleOpenClawCardPatch(cardId, { content })
   }
 
   const addTodoItem = (cardId: string, lane: TodoLane = 'todo') => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'todo') return
+
+    const textValue = targetCard.content.trim()
+    if (!textValue) return
+
+    const nextTodoItems = [...(targetCard.todoItems ?? []), createTodoItem(textValue, lane)]
+    clearOpenClawPatchTimer(cardId)
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => {
-            if (card.id !== cardId || card.kind !== 'todo') return card
-
-            const textValue = card.content.trim()
-            if (!textValue) return card
-
-            return {
-              ...card,
-              content: '',
-              todoItems: [...(card.todoItems ?? []), createTodoItem(textValue, lane)],
-            }
-          }),
-        }
-      }),
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) =>
+                card.id === cardId ? { ...card, content: '', todoItems: nextTodoItems } : card,
+              ),
+            },
+      ),
     )
+    void persistOpenClawCardPatch(cardId, { content: '', todoItems: nextTodoItems })
   }
 
   const moveTodoItem = (cardId: string, itemId: string, nextLane: TodoLane, targetItemId: string | null = null) => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'todo' || targetItemId === itemId) return
+
+    const lanes: Record<TodoLane, TodoItem[]> = { todo: [], doing: [], done: [] }
+    let movingItem: TodoItem | null = null
+
+    for (const todoItem of targetCard.todoItems ?? []) {
+      const normalizedLane = normalizeTodoLane(todoItem.status)
+      if (todoItem.id === itemId) {
+        movingItem = { ...todoItem, status: nextLane }
+        continue
+      }
+      lanes[normalizedLane].push({ ...todoItem, status: normalizedLane })
+    }
+
+    if (!movingItem) return
+
+    const targetLaneItems = lanes[nextLane]
+    if (targetItemId) {
+      const targetIndex = targetLaneItems.findIndex((todoItem) => todoItem.id === targetItemId)
+      if (targetIndex >= 0) {
+        targetLaneItems.splice(targetIndex, 0, movingItem)
+      } else {
+        targetLaneItems.push(movingItem)
+      }
+    } else {
+      targetLaneItems.push(movingItem)
+    }
+
+    const nextTodoItems = [...lanes.todo, ...lanes.doing, ...lanes.done]
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => {
-            if (card.id !== cardId || card.kind !== 'todo') return card
-            if (targetItemId === itemId) return card
-
-            const lanes: Record<TodoLane, TodoItem[]> = { todo: [], doing: [], done: [] }
-            let movingItem: TodoItem | null = null
-
-            for (const todoItem of card.todoItems ?? []) {
-              const normalizedLane = normalizeTodoLane(todoItem.status)
-              if (todoItem.id === itemId) {
-                movingItem = { ...todoItem, status: nextLane }
-                continue
-              }
-              lanes[normalizedLane].push({ ...todoItem, status: normalizedLane })
-            }
-
-            if (!movingItem) return card
-
-            const targetLaneItems = lanes[nextLane]
-            if (targetItemId) {
-              const targetIndex = targetLaneItems.findIndex((todoItem) => todoItem.id === targetItemId)
-              if (targetIndex >= 0) {
-                targetLaneItems.splice(targetIndex, 0, movingItem)
-              } else {
-                targetLaneItems.push(movingItem)
-              }
-            } else {
-              targetLaneItems.push(movingItem)
-            }
-
-            return {
-              ...card,
-              todoItems: [...lanes.todo, ...lanes.doing, ...lanes.done],
-            }
-          }),
-        }
-      }),
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, todoItems: nextTodoItems } : card)),
+            },
+      ),
     )
+    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const onTodoDragStart = (
@@ -3211,62 +3376,60 @@ function App() {
       current && current.cardId === cardId && current.itemId === todoId ? null : current,
     )
 
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'todo') return
+
+    const nextTodoItems = (targetCard.todoItems ?? []).filter((item) => item.id !== todoId)
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => {
-            if (card.id !== cardId || card.kind !== 'todo') return card
-
-            return {
-              ...card,
-              todoItems: (card.todoItems ?? []).filter((item) => item.id !== todoId),
-            }
-          }),
-        }
-      }),
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, todoItems: nextTodoItems } : card)),
+            },
+      ),
     )
+    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const updateTodoText = (cardId: string, todoId: string, value: string) => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'todo') return
+
+    const nextTodoItems = (targetCard.todoItems ?? []).map((item) => (item.id === todoId ? { ...item, text: value } : item))
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => {
-            if (card.id !== cardId || card.kind !== 'todo') return card
-
-            return {
-              ...card,
-              todoItems: (card.todoItems ?? []).map((item) =>
-                item.id === todoId ? { ...item, text: value } : item,
-              ),
-            }
-          }),
-        }
-      }),
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, todoItems: nextTodoItems } : card)),
+            },
+      ),
     )
+    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const updateCalendarCard = (cardId: string, updater: (state: CalendarState) => CalendarState) => {
-    setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'calendar') return
 
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => {
-            if (card.id !== cardId || card.kind !== 'calendar') return card
-            const baseState = withCalendarDefaults(card.calendar)
-            return { ...card, calendar: withCalendarDefaults(updater(baseState)) }
-          }),
-        }
-      }),
+    const nextCalendar = withCalendarDefaults(updater(withCalendarDefaults(targetCard.calendar)))
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids((current) =>
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, calendar: nextCalendar } : card)),
+            },
+      ),
     )
+    void persistOpenClawCardPatch(cardId, { calendar: nextCalendar })
   }
 
   const setCalendarViewMode = (cardId: string, mode: CalendarViewMode) => {
@@ -3601,8 +3764,9 @@ You can control Open Canvas via REST API.
 
 - \`GET /api/v1/state?full=1\` Read full workspace state
 - \`POST /api/v1/grids\` Create grid
-- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar)
+- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar, optional id)
 - \`PATCH /api/v1/cards/:cardId\` Update card fields
+- \`DELETE /api/v1/cards/:cardId\` Delete card
 - \`POST /api/v1/cards/:cardId/append-note\` Append note content
 
 ## Best Practices

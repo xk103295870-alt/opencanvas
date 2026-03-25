@@ -77,11 +77,61 @@ export type ServerWorkspaceCard = {
   }
 }
 
+export type ServerCardCreateResponse = {
+  cardId: string
+  gridId: string
+  card: ServerWorkspaceCard
+}
+
 export type ServerCardUpdateResponse = {
   cardId: string
   gridId: string
   card: ServerWorkspaceCard
 }
+
+export type ServerCardDeleteResponse = {
+  cardId: string
+  gridId: string
+}
+
+export type ServerCardCreatePayload = {
+  id?: string
+  kind?: ServerWorkspaceCard['kind']
+  gridId?: string
+  title?: string
+  content?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  activateGrid?: boolean
+  fileName?: string
+  mediaUrl?: string
+  todoItems?: Array<string | { text?: string; done?: boolean; status?: 'todo' | 'doing' | 'done' }>
+  calendar?: {
+    monthCursor?: string
+    selectedDate?: string
+    viewMode?: 'month' | 'week'
+    draftTitle?: string
+    draftAllDay?: boolean
+    draftStartTime?: string
+    draftEndTime?: string
+    events?: Array<{
+      title?: string
+      date?: string
+      allDay?: boolean
+      startTime?: string
+      endTime?: string
+    }>
+  }
+}
+
+export type ServerCardUpdatePayload = Partial<
+  Pick<
+    ServerWorkspaceCard,
+    'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'
+  >
+>
 
 export type ServerStateResponse = {
   account: ServerAccount
@@ -206,6 +256,14 @@ export async function apiGetSkillTemplate(accessToken: string, baseUrl?: string)
   }, baseUrl)
 }
 
+export async function apiCreateCard(apiKey: string, payload: ServerCardCreatePayload, baseUrl?: string) {
+  return requestJson<ServerCardCreateResponse>('/api/v1/cards', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+  }, baseUrl)
+}
+
 export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
   return requestJson<ServerStateResponse>('/api/v1/state?full=1', {
     method: 'GET',
@@ -216,13 +274,20 @@ export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
 export async function apiUpdateCard(
   apiKey: string,
   cardId: string,
-  updates: Partial<Pick<ServerWorkspaceCard, 'x' | 'y' | 'width' | 'height' | 'title' | 'content'>>,
+  updates: ServerCardUpdatePayload,
   baseUrl?: string,
 ) {
   return requestJson<ServerCardUpdateResponse>(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(updates),
+  }, baseUrl)
+}
+
+export async function apiDeleteCard(apiKey: string, cardId: string, baseUrl?: string) {
+  return requestJson<ServerCardDeleteResponse>(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${apiKey}` },
   }, baseUrl)
 }
 

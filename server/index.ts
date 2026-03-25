@@ -108,6 +108,8 @@ type ApiDb = {
 }
 
 type OpenCanvasCreateCardPayload = {
+  id?: string
+  cardId?: string
   kind?: CardKind | string
   gridId?: string
   title?: string
@@ -179,6 +181,11 @@ function statusToErrorCode(status: number) {
 function toFiniteNumber(value: unknown, fallback: number) {
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeCardId(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw.length > 0 ? raw.slice(0, 120) : null
 }
 
 // For /api/v1 requests, normalize internal { ok, ... } payloads into envelope format:
@@ -734,6 +741,10 @@ app.get('/openapi.json', (_req, res) => {
           summary: 'Update card',
           security: [{ bearerAuth: [] }],
         },
+        delete: {
+          summary: 'Delete card',
+          security: [{ bearerAuth: [] }],
+        },
       },
       '/api/v1/cards/{cardId}/append-note': {
         post: {
@@ -770,6 +781,7 @@ app.get('/llms-api.txt', (_req, res) => {
 - POST /api/v1/grids
 - POST /api/v1/cards
 - PATCH /api/v1/cards/:cardId
+- DELETE /api/v1/cards/:cardId
 - POST /api/v1/cards/:cardId/append-note
 `
   res.type('text/plain').send(content)
@@ -952,13 +964,14 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       createGrid: { method: 'POST', path: '/api/v1/grids' },
       createCard: { method: 'POST', path: '/api/v1/cards' },
       updateCard: { method: 'PATCH', path: '/api/v1/cards/:cardId' },
+      deleteCard: { method: 'DELETE', path: '/api/v1/cards/:cardId' },
       appendNote: { method: 'POST', path: '/api/v1/cards/:cardId/append-note' },
       getState: { method: 'GET', path: '/api/v1/state?full=1' },
     },
     exampleCreateCard: {
       method: 'POST',
       path: '/api/v1/cards',
-      body: { kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
+      body: { id: 'note-example', kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
     },
   }
 
@@ -1113,6 +1126,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
 
   const body = (req.body || {}) as OpenCanvasCreateCardPayload
   const kind = parseCardKind(body.kind)
+  const requestedCardId = normalizeCardId(body.id ?? body.cardId)
 
   const targetGrid =
     (body.gridId ? ctx.workspace.grids.find((grid) => grid.id === body.gridId) : null) ||
@@ -1124,13 +1138,19 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
+  const cardId = requestedCardId || `${kind}-${uid(14)}`
+  if (targetGrid.cards.some((card) => card.id === cardId)) {
+    res.status(409).json({ ok: false, message: `Card already exists: ${cardId}` })
+    return
+  }
+
   const width = clamp(toFiniteNumber(body.width, kind === 'calendar' ? 760 : kind === 'todo' ? 760 : 420), 220, 1400)
   const height = clamp(toFiniteNumber(body.height, kind === 'calendar' ? 520 : kind === 'todo' ? 420 : 300), 160, 1200)
   const x = clamp(toFiniteNumber(body.x, randomInt(120, 860)), -200, 6000)
   const y = clamp(toFiniteNumber(body.y, randomInt(120, 860)), -200, 4000)
 
   const card: CardData = {
-    id: `${kind}-${uid(14)}`,
+    id: cardId,
     kind,
     title: String(body.title || '').trim() || inferDefaultTitle(kind),
     content: String(body.content || ''),
@@ -1176,7 +1196,11 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
     return
   }
 
-  const body = req.body as Partial<Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height'>>
+  const body = req.body as Partial<
+    Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'>
+  > & {
+    mediaUrl?: string
+  }
   let updatedCard: CardData | null = null
   let targetGridId: string | null = null
 
@@ -1193,6 +1217,18 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
       width: body.width !== undefined ? clamp(toFiniteNumber(body.width, current.width), 220, 1400) : current.width,
       height: body.height !== undefined ? clamp(toFiniteNumber(body.height, current.height), 160, 1200) : current.height,
     }
+    if (body.fileName !== undefined) {
+      next.fileName = String(body.fileName || '').trim() || undefined
+    }
+    if (body.externalUrl !== undefined || body.mediaUrl !== undefined) {
+      next.externalUrl = String(body.externalUrl ?? body.mediaUrl ?? '').trim() || undefined
+    }
+    if (body.todoItems !== undefined) {
+      next.todoItems = normalizeTodoItems(body.todoItems)
+    }
+    if (body.calendar !== undefined) {
+      next.calendar = normalizeCalendar(body.calendar)
+    }
     grid.cards[index] = next
     updatedCard = next
     targetGridId = grid.id
@@ -1207,6 +1243,33 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
   ctx.workspace.updatedAt = nowIso()
   saveDb()
   res.json({ ok: true, message: 'Card updated', data: { cardId, gridId: targetGridId, card: updatedCard } })
+})
+
+app.delete('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const cardId = String(req.params.cardId || '').trim()
+  if (!cardId) {
+    res.status(400).json({ ok: false, message: 'cardId is required' })
+    return
+  }
+
+  for (const grid of ctx.workspace.grids) {
+    const index = grid.cards.findIndex((card) => card.id === cardId)
+    if (index < 0) continue
+
+    grid.cards.splice(index, 1)
+    ctx.workspace.updatedAt = nowIso()
+    saveDb()
+    res.json({ ok: true, message: 'Card deleted', data: { cardId, gridId: grid.id } })
+    return
+  }
+
+  res.status(404).json({ ok: false, message: `Card not found: ${cardId}` })
 })
 
 app.post('/api/v1/cards/:cardId/append-note', requireApiKey('canvas:write'), (req, res) => {
