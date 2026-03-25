@@ -3821,7 +3821,7 @@ function App() {
   const openClawSkillMarkdown = useMemo(
     () => `---
 name: open-canvas
-description: Create and manage Open Canvas grids and cards through REST API. Todo and calendar cards are singleton per grid.
+description: Create and manage Open Canvas grids and cards through REST API. Note cards are free-form, while todo and calendar cards are singleton per grid.
 homepage: ${webOrigin}
 user-invocable: true
 metadata:
@@ -3851,6 +3851,78 @@ You can control Open Canvas via REST API.
 - \`DELETE /api/v1/cards/:cardId\` Delete card
 - \`POST /api/v1/cards/:cardId/append-note\` Append note content
 
+## Card Writing Templates
+
+### Note cards
+
+- Use notes for free-form writing.
+- Keep \`title\` short.
+- Put the full write-up in \`content\`.
+- Create notes freely.
+
+Example:
+
+\`\`\`json
+{
+  "kind": "note",
+  "title": "Project update",
+  "content": "Ship checklist and next steps."
+}
+\`\`\`
+
+### Todo cards
+
+- Todo cards are singleton per grid.
+- Reuse the existing todo card and PATCH it instead of creating a duplicate.
+- Put tasks in \`todoItems\`.
+- Keep the card title as the project label.
+- Do not store the task list in \`content\`.
+
+Example PATCH body:
+
+\`\`\`json
+{
+  "todoItems": [
+    { "text": "Review requirements", "status": "todo" },
+    { "text": "Draft implementation", "status": "doing" },
+    { "text": "Send summary", "status": "done" }
+  ]
+}
+\`\`\`
+
+### Calendar cards
+
+- Calendar cards are singleton per grid.
+- Reuse the existing calendar card and PATCH it instead of creating a duplicate.
+- Put events in \`calendar.events\`.
+- Keep the card title as the calendar label.
+- Do not store the event list in \`content\`.
+
+Example PATCH body:
+
+\`\`\`json
+{
+  "calendar": {
+    "selectedDate": "2026-03-25",
+    "monthCursor": "2026-03",
+    "viewMode": "month",
+    "draftTitle": "",
+    "draftAllDay": true,
+    "draftStartTime": "09:00",
+    "draftEndTime": "10:00",
+    "events": [
+      {
+        "date": "2026-03-25",
+        "title": "Team sync",
+        "allDay": false,
+        "startTime": "09:00",
+        "endTime": "09:30"
+      }
+    ]
+  }
+}
+\`\`\`
+
 ## Best Practices
 
 1. Read \`/api/v1/state?full=1\` before write operations.
@@ -3858,7 +3930,7 @@ You can control Open Canvas via REST API.
 3. Keep \`kind\` explicit when creating cards.
 4. Prefer \`append-note\` for incremental writing.
 5. Todo and calendar cards are singleton per grid. Reuse the existing card and PATCH it instead of creating duplicates.
-6. For todo and calendar work, always target the fixed singleton card in the current grid.
+6. For todo work, update \`todoItems\` on the fixed card. For calendar work, update \`calendar.events\` on the fixed card.
 7. Create new cards freely only for notes or other non-singleton kinds.
 `,
     [apiBaseLabel, webOrigin],

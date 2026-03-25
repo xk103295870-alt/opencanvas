@@ -76,6 +76,13 @@ Windows PowerShell：
 - 如果目标 grid 已经有同类卡片，`POST /api/v1/cards` 会复用现有卡片。
 - 更新固定卡请用 `PATCH /api/v1/cards/:cardId`。
 
+卡片写法建议：
+
+- `note`：标题短一点，正文写完整内容。
+- `todo`：把任务条目写进 `todoItems`，不要把清单直接塞进 `content`。
+- `calendar`：把事件写进 `calendar.events`，不要把事件列表直接塞进 `content`。
+- 如果要做增量补充，优先用 `append-note`。
+
 示例（创建卡片）：
 ```bash
 curl -X POST http://127.0.0.1:8787/api/v1/cards \

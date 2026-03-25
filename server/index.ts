@@ -964,7 +964,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
   const skill = {
     name: 'open-canvas-api',
     description:
-      'Open Canvas API skill for account bound automation. Todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates.',
+      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates.',
     auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
     baseUrl: API_BASE_URL,
     defaultHeaders: {
@@ -987,6 +987,46 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       path: '/api/v1/cards',
       body: { id: 'note-example', kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
     },
+    exampleUpdateTodoCard: {
+      method: 'PATCH',
+      path: '/api/v1/cards/todo-example',
+      body: {
+        todoItems: [
+          { text: 'Review requirements', status: 'todo' },
+          { text: 'Draft implementation', status: 'doing' },
+          { text: 'Send summary', status: 'done' },
+        ],
+      },
+    },
+    exampleUpdateCalendarCard: {
+      method: 'PATCH',
+      path: '/api/v1/cards/calendar-example',
+      body: {
+        calendar: {
+          selectedDate: '2026-03-25',
+          monthCursor: '2026-03',
+          viewMode: 'month',
+          draftTitle: '',
+          draftAllDay: true,
+          draftStartTime: '09:00',
+          draftEndTime: '10:00',
+          events: [
+            {
+              date: '2026-03-25',
+              title: 'Team sync',
+              allDay: false,
+              startTime: '09:00',
+              endTime: '09:30',
+            },
+          ],
+        },
+      },
+    },
+    exampleAppendNote: {
+      method: 'POST',
+      path: '/api/v1/cards/note-example/append-note',
+      body: { text: 'Add a short follow-up line' },
+    },
   }
 
   res.json({
@@ -997,7 +1037,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       step1: 'Generate API key from /api/v1/auth/api-keys.',
       step2: 'Put API key into OpenClaw skill auth bearer token.',
       step3:
-        'Call /api/v1/cards or /api/v1/grids directly from skill. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates.',
+        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates.',
     },
   })
 })

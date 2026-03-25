@@ -171,6 +171,10 @@ Returns:
 - `accountId`
 - `supportedKinds`
 - `cardPolicies.singletonKinds`
+- `exampleCreateCard`
+- `exampleUpdateTodoCard`
+- `exampleUpdateCalendarCard`
+- `exampleAppendNote`
 
 ### `POST /api/v1/grids`
 
@@ -233,6 +237,13 @@ Card policy:
 - `todo` and `calendar` cards are singleton per grid.
 - If a singleton card already exists in the target grid, the create endpoint reuses it instead of creating a duplicate.
 - Use `PATCH /api/v1/cards/:cardId` to modify the fixed `todo` or `calendar` card.
+
+Card writing guidance for agents:
+
+- `note`: keep `title` short and put the full write-up in `content`.
+- `todo`: keep the fixed card title as the project label and mutate `todoItems` for task rows.
+- `calendar`: keep the fixed card title as the calendar label and mutate `calendar.events` for events.
+- Use `append-note` only for incremental note writing.
 
 Server normalization:
 

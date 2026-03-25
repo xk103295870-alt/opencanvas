@@ -46,6 +46,9 @@ export type ServerSkillResponse = {
     }
     endpoints: Record<string, { method: string; path: string }>
     exampleCreateCard: { method: string; path: string; body: Record<string, unknown> }
+    exampleUpdateTodoCard: { method: string; path: string; body: Record<string, unknown> }
+    exampleUpdateCalendarCard: { method: string; path: string; body: Record<string, unknown> }
+    exampleAppendNote: { method: string; path: string; body: Record<string, unknown> }
   }
 }
 
@@ -341,6 +344,9 @@ export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiK
     endpoints: skillPayload.skill.endpoints,
     examples: {
       createCard: skillPayload.skill.exampleCreateCard,
+      updateTodoCard: skillPayload.skill.exampleUpdateTodoCard,
+      updateCalendarCard: skillPayload.skill.exampleUpdateCalendarCard,
+      appendNote: skillPayload.skill.exampleAppendNote,
     },
   }
 }
