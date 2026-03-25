@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect } from 'react'
 import type { DragEvent as ReactDragEvent, FormEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import './App.css'
 import {
@@ -160,6 +161,14 @@ type ServerAuthState = {
 type SyncMeta = {
   lastLocalUpdateAt: number
   lastSyncAt: number | null
+}
+
+type PersistedAppStateSnapshot = {
+  version: number
+  grids: GridData[]
+  activeGridId: string
+  viewport: ViewportState
+  savedAt: number
 }
 
 type OpenClawCardPatch = Partial<
@@ -494,6 +503,7 @@ const DB_VERSION = 1
 const STORE_APP = 'app_state'
 const STORE_ASSETS = 'assets'
 const APP_STATE_KEY = 'main'
+const PERSISTED_APP_STATE_SHADOW_KEY = 'open-canvas-app-state-shadow'
 const AUTH_STORAGE_KEY = 'open-canvas-fake-auth'
 const SETTINGS_STORAGE_KEY = 'open-canvas-settings'
 const OPENCLAW_SETTINGS_KEY = 'open-canvas-openclaw-settings'
@@ -1373,6 +1383,29 @@ const putPersistedState = async (state: PersistedAppState) => {
   })
 }
 
+const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnapshot | null => {
+  if (!input || typeof input !== 'object') return null
+
+  const raw = input as Record<string, unknown>
+  const version = Number(raw.version)
+  const grids = Array.isArray(raw.grids) ? (raw.grids as GridData[]) : null
+  const activeGridId = typeof raw.activeGridId === 'string' ? raw.activeGridId.trim() : ''
+  const viewport = raw.viewport && typeof raw.viewport === 'object' ? (raw.viewport as ViewportState) : null
+  const savedAt = Number(raw.savedAt)
+
+  if (!Number.isFinite(version) || version < 1 || !grids || !activeGridId || !viewport) {
+    return null
+  }
+
+  return {
+    version,
+    grids,
+    activeGridId,
+    viewport,
+    savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
+  }
+}
+
 const getAllAssets = async () => {
   const db = await openDatabase()
 
@@ -1578,14 +1611,16 @@ function App() {
 
     const hydrate = async () => {
       try {
+        const persistedShadow = normalizePersistedStateSnapshot(readJson<unknown>(PERSISTED_APP_STATE_SHADOW_KEY))
         const [stateFromDb, assetsFromDb] = await Promise.all([getPersistedState(), getAllAssets()])
         if (cancelled) return
 
-        if (stateFromDb && stateFromDb.grids.length > 0) {
-          const normalizedGrids = normalizeGridsForTodoBoard(stateFromDb.grids)
+        const persistedState = persistedShadow ?? stateFromDb
+        if (persistedState && persistedState.grids.length > 0) {
+          const normalizedGrids = normalizeGridsForTodoBoard(persistedState.grids)
           setGrids(normalizedGrids)
-          setActiveGridId(stateFromDb.activeGridId || normalizedGrids[0].id)
-          setViewport(stateFromDb.viewport ?? initialViewport)
+          setActiveGridId(persistedState.activeGridId || normalizedGrids[0].id)
+          setViewport(persistedState.viewport ?? initialViewport)
         }
 
         const urls: Record<string, string> = {}
@@ -1678,6 +1713,32 @@ function App() {
       return next
     })
   }, [])
+
+  const persistLocalStateSnapshot = useCallback((state: PersistedAppState) => {
+    const snapshot: PersistedAppStateSnapshot = {
+      ...state,
+      savedAt: Date.now(),
+    }
+    writeJson(PERSISTED_APP_STATE_SHADOW_KEY, snapshot)
+
+    const nextMeta: SyncMeta = {
+      ...syncMetaRef.current,
+      lastLocalUpdateAt: snapshot.savedAt,
+    }
+    syncMetaRef.current = nextMeta
+    writeJson(SYNC_META_KEY, nextMeta)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!hydrated) return
+
+    persistLocalStateSnapshot({
+      version: 1,
+      grids,
+      activeGridId,
+      viewport,
+    })
+  }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, viewport])
 
   const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
 
