@@ -1322,6 +1322,46 @@
   gap: 8px;
 }
 
+.openclaw-advanced {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-bg) 82%, transparent);
+  overflow: clip;
+}
+
+.openclaw-advanced summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.openclaw-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.openclaw-advanced summary::after {
+  content: '+';
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.openclaw-advanced[open] summary::after {
+  content: '−';
+}
+
+.openclaw-step-compact {
+  margin: 0 10px 10px;
+}
+
 .openclaw-step-head {
   display: flex;
   align-items: center;
@@ -1476,6 +1516,7 @@
 :root[data-theme='glass'] .calendar-event-item,
 :root[data-theme='glass'] .settings-group,
 :root[data-theme='glass'] .settings-api-status,
+:root[data-theme='glass'] .openclaw-advanced,
 :root[data-theme='glass'] .openclaw-step,
 :root[data-theme='glass'] .openclaw-code,
 :root[data-theme='glass'] .openclaw-inline-notice,
@@ -1510,6 +1551,7 @@
 :root[data-theme='glass'] .calendar-event-item,
 :root[data-theme='glass'] .settings-group,
 :root[data-theme='glass'] .settings-api-status,
+:root[data-theme='glass'] .openclaw-advanced,
 :root[data-theme='glass'] .openclaw-step,
 :root[data-theme='glass'] .openclaw-code,
 :root[data-theme='glass'] .openclaw-inline-notice,

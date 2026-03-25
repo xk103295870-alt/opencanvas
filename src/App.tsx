@@ -140,12 +140,6 @@ type AccountUser = {
 }
 
 type OpenClawConfig = {
-  gatewayUrl: string
-  gatewayPort: string
-  gatewayToken: string
-  sessionKey: string
-  sessionKeys: string
-  source: string
   googleClientId: string
 }
 
@@ -259,17 +253,6 @@ type I18nText = {
   syncDebounceLabel: string
   openclawTitle: string
   openclawHint: string
-  openclawGatewayUrl: string
-  openclawGatewayPort: string
-  openclawGatewayToken: string
-  openclawSessionKey: string
-  openclawSessionKeys: string
-  openclawSource: string
-  openclawSave: string
-  openclawSaved: string
-  openclawCopyConfig: string
-  openclawConfigCopied: string
-  openclawConfigCopyFailed: string
   futureTitle: string
   futureLine1: string
   futureLine2: string
@@ -497,12 +480,6 @@ const DEFAULT_SETTINGS: AppSettings = {
 }
 
 const DEFAULT_OPENCLAW_CONFIG: OpenClawConfig = {
-  gatewayUrl: 'ws://localhost:18789',
-  gatewayPort: '18789',
-  gatewayToken: '',
-  sessionKey: '',
-  sessionKeys: '',
-  source: 'openclaw',
   googleClientId: '',
 }
 
@@ -586,18 +563,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncOnStartupLabel: '启动后自动检查云端版本',
     syncDebounceLabel: '自动同步延迟（毫秒）',
     openclawTitle: 'OpenClaw 集成',
-    openclawHint: '在这里配置网关与会话参数，供 OpenClaw 调用。',
-    openclawGatewayUrl: '网关 URL',
-    openclawGatewayPort: '网关端口',
-    openclawGatewayToken: '网关 Token',
-    openclawSessionKey: 'Session Key',
-    openclawSessionKeys: 'Session Keys（逗号分隔）',
-    openclawSource: '消息源标识',
-    openclawSave: '保存配置',
-    openclawSaved: '配置已保存。',
-    openclawCopyConfig: '复制 JSON',
-    openclawConfigCopied: '已复制 OpenClaw 配置。',
-    openclawConfigCopyFailed: '复制配置失败。',
+    openclawHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
     futureTitle: '未来扩展',
     futureLine1: '登录、同步、安装器会逐步替换为真实服务。',
     futureLine2: '当前结构已支持 Web + 桌面 + 多平台扩展。',
@@ -676,18 +642,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncOnStartupLabel: 'Check cloud snapshot on startup',
     syncDebounceLabel: 'Auto sync debounce (ms)',
     openclawTitle: 'OpenClaw Integration',
-    openclawHint: 'Configure gateway and session parameters for OpenClaw calls.',
-    openclawGatewayUrl: 'Gateway URL',
-    openclawGatewayPort: 'Gateway Port',
-    openclawGatewayToken: 'Gateway Token',
-    openclawSessionKey: 'Session Key',
-    openclawSessionKeys: 'Session Keys (comma separated)',
-    openclawSource: 'Message Source',
-    openclawSave: 'Save config',
-    openclawSaved: 'Config saved.',
-    openclawCopyConfig: 'Copy JSON',
-    openclawConfigCopied: 'OpenClaw config copied.',
-    openclawConfigCopyFailed: 'Failed to copy config.',
+    openclawHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
     futureTitle: 'Future Extension',
     futureLine1: 'Auth, sync and installers will be replaced with real services.',
     futureLine2: 'Current architecture already supports Web + Desktop + multi-platform.',
@@ -1054,21 +1009,9 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
 }
 
 const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefined): OpenClawConfig => {
-  const gatewayUrl = trimConfigValue(input?.gatewayUrl || DEFAULT_OPENCLAW_CONFIG.gatewayUrl, 280)
-  const gatewayPort = trimConfigValue(input?.gatewayPort || DEFAULT_OPENCLAW_CONFIG.gatewayPort, 12)
-  const gatewayToken = trimConfigValue(input?.gatewayToken, 512)
-  const sessionKey = trimConfigValue(input?.sessionKey, 256)
-  const sessionKeys = trimConfigValue(input?.sessionKeys, 1024)
-  const source = trimConfigValue(input?.source || DEFAULT_OPENCLAW_CONFIG.source, 64)
   const googleClientId = trimConfigValue(input?.googleClientId, 240)
 
   return {
-    gatewayUrl: gatewayUrl || DEFAULT_OPENCLAW_CONFIG.gatewayUrl,
-    gatewayPort: gatewayPort || DEFAULT_OPENCLAW_CONFIG.gatewayPort,
-    gatewayToken,
-    sessionKey,
-    sessionKeys,
-    source: source || DEFAULT_OPENCLAW_CONFIG.source,
     googleClientId,
   }
 }
@@ -2255,23 +2198,6 @@ function App() {
     setSyncMessage(text.signedOut)
   }
 
-  const saveOpenClawSettings = () => {
-    const normalized = normalizeOpenClawConfig(openClawConfig)
-    saveOpenClawConfig(normalized)
-    setOpenClawNotice(text.openclawSaved)
-  }
-
-  const copyOpenClawConfig = async () => {
-    const payload = JSON.stringify(openClawConfig, null, 2)
-
-    try {
-      await navigator.clipboard.writeText(payload)
-      setOpenClawNotice(text.openclawConfigCopied)
-    } catch {
-      setOpenClawNotice(text.openclawConfigCopyFailed)
-    }
-  }
-
   const copyTextWithNotice = useCallback(
     async (value: string, successZh: string, successEn: string, errorZhPrefix: string, errorEnPrefix: string) => {
       try {
@@ -2741,17 +2667,7 @@ function App() {
         handleOpenCanvasCommand({
           type: 'set-config',
           requestId: payload?.requestId,
-          payload: payload
-            ? {
-                gatewayUrl: payload.gatewayUrl,
-                gatewayPort: payload.gatewayPort,
-                gatewayToken: payload.gatewayToken,
-                sessionKey: payload.sessionKey,
-                sessionKeys: payload.sessionKeys,
-                source: payload.source,
-                googleClientId: payload.googleClientId,
-              }
-            : undefined,
+          payload: payload ? { googleClientId: payload.googleClientId } : undefined,
         }),
     }
 
@@ -4232,71 +4148,6 @@ You can control Open Canvas via REST API.
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="settings-group">
-              <h3>{text.openclawTitle}</h3>
-              <p>{text.openclawHint}</p>
-
-              <label className="input-row">
-                <span>{text.openclawGatewayUrl}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={openClawConfig.gatewayUrl}
-                  onChange={(event) => updateOpenClawConfig({ gatewayUrl: event.target.value })}
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.openclawGatewayPort}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={openClawConfig.gatewayPort}
-                  onChange={(event) => updateOpenClawConfig({ gatewayPort: event.target.value })}
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.openclawGatewayToken}</span>
-                <input
-                  type="password"
-                  className="settings-text-input"
-                  value={openClawConfig.gatewayToken}
-                  onChange={(event) => updateOpenClawConfig({ gatewayToken: event.target.value })}
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.openclawSessionKey}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={openClawConfig.sessionKey}
-                  onChange={(event) => updateOpenClawConfig({ sessionKey: event.target.value })}
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.openclawSessionKeys}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={openClawConfig.sessionKeys}
-                  onChange={(event) => updateOpenClawConfig({ sessionKeys: event.target.value })}
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.openclawSource}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={openClawConfig.source}
-                  onChange={(event) => updateOpenClawConfig({ source: event.target.value })}
-                />
-              </label>
 
               <label className="input-row">
                 <span>{text.googleClientIdLabel}</span>
@@ -4308,19 +4159,13 @@ You can control Open Canvas via REST API.
                 />
               </label>
               <p>{text.googleClientIdHint}</p>
+            </div>
 
-              <div className="panel-actions">
-                <button className="mini-btn" onClick={saveOpenClawSettings}>
-                  {text.openclawSave}
-                </button>
-                <button
-                  className="mini-btn"
-                  onClick={() => {
-                    void copyOpenClawConfig()
-                  }}
-                >
-                  {text.openclawCopyConfig}
-                </button>
+            <div className="settings-group">
+              <h3>{text.openclawTitle}</h3>
+              <p>{text.openclawHint}</p>
+              <div className="openclaw-step-head">
+                <strong>{settings.language === 'zh' ? '步骤 1：API / Key' : 'Step 1: API / Key'}</strong>
               </div>
 
               <label className="input-row">
@@ -4428,31 +4273,40 @@ You can control Open Canvas via REST API.
                   <pre className="openclaw-code"><code>{openClawSkillMarkdown}</code></pre>
                 </section>
 
-                <section className="openclaw-step">
-                  <div className="openclaw-step-head">
-                    <strong>{settings.language === 'zh' ? '步骤 3：openclaw.json' : 'Step 3: openclaw.json'}</strong>
-                    <button
-                      className="mini-btn"
-                      onClick={() => {
-                        void copyTextWithNotice(
-                          openClawBotConfigSnippet,
-                          '已复制 openclaw.json 配置。',
-                          'openclaw.json snippet copied.',
-                          '复制 openclaw.json 失败：',
-                          'Failed to copy openclaw.json snippet: ',
-                        )
-                      }}
-                    >
-                      {settings.language === 'zh' ? '复制' : 'Copy'}
-                    </button>
-                  </div>
-                  <p>
-                    {settings.language === 'zh'
-                      ? '把下面片段加入 openclaw.json / moltbot.json，并替换真实 API key。'
-                      : 'Add this snippet to openclaw.json or moltbot.json, then replace with your real API key.'}
-                  </p>
-                  <pre className="openclaw-code"><code>{openClawBotConfigSnippet}</code></pre>
-                </section>
+                <details className="openclaw-advanced">
+                  <summary>
+                    <span>
+                      {settings.language === 'zh'
+                        ? '高级：openclaw.json 配置'
+                        : 'Advanced: openclaw.json config'}
+                    </span>
+                  </summary>
+                  <section className="openclaw-step openclaw-step-compact">
+                    <div className="openclaw-step-head">
+                      <strong>{settings.language === 'zh' ? '步骤 3：openclaw.json' : 'Step 3: openclaw.json'}</strong>
+                      <button
+                        className="mini-btn"
+                        onClick={() => {
+                          void copyTextWithNotice(
+                            openClawBotConfigSnippet,
+                            '已复制 openclaw.json 配置。',
+                            'openclaw.json snippet copied.',
+                            '复制 openclaw.json 失败：',
+                            'Failed to copy openclaw.json snippet: ',
+                          )
+                        }}
+                      >
+                        {settings.language === 'zh' ? '复制' : 'Copy'}
+                      </button>
+                    </div>
+                    <p>
+                      {settings.language === 'zh'
+                        ? '如果你要手动把 Skill 片段写进 openclaw.json / moltbot.json，就展开这里。'
+                        : 'Expand this section if you want to paste the Skill snippet into openclaw.json or moltbot.json manually.'}
+                    </p>
+                    <pre className="openclaw-code"><code>{openClawBotConfigSnippet}</code></pre>
+                  </section>
+                </details>
 
                 <section className="openclaw-step">
                   <div className="openclaw-step-head">

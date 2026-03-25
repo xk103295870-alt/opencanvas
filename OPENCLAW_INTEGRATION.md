@@ -79,9 +79,9 @@ curl -X POST http://127.0.0.1:8787/api/v1/cards \
 - 仅保留标准路径 `/api/v1/*`
 - 旧路径 `/v1/*` 已移除
 
-## 2. OpenClaw 网关参数（仍保留）
+## 2. OpenClaw 网关参数（旧版兼容）
 
-如果你仍需要对接 OpenClaw 网关（例如现有 OpenClaw Assistant），连接参数优先级如下：
+如果你仍需要对接旧版 OpenClaw 网关（例如现有 OpenClaw Assistant），连接参数优先级如下：
 
 1. 环境变量
 - `OPENCLAW_GATEWAY_URL`（如 `ws://localhost:18789`）
@@ -129,15 +129,10 @@ window.postMessage({
 
 ## 4. 设置面板配置
 
-Open Canvas 的 Settings 中 `OpenClaw 集成` 分组包含两部分：
+Open Canvas 的 Settings 里现在只保留真正需要的配置：
 
-1. 网关参数（OpenClaw Assistant 侧）
-- `gatewayUrl`
-- `gatewayPort`
-- `gatewayToken`
-- `sessionKey`
-- `sessionKeys`
-- `source`
+1. 账号区
+- `Google Client ID`（用于 Google 快捷登录）
 
 2. API 账号与 Skill（OpenClaw Skill 侧）
 - `API Base URL`
@@ -145,6 +140,12 @@ Open Canvas 的 Settings 中 `OpenClaw 集成` 分组包含两部分：
 - `API Key`
 - “生成 API Key”
 - “复制 Skill JSON”
+
+3. 高级项
+- `openclaw.json` 配置片段
+- 如果你需要手动维护 OpenClaw / moltbot 配置，再展开这块
+
+旧网关字段已从主设置页收起，仅保留兼容说明。
 
 配置会实时持久化，并广播事件：
 ```js
