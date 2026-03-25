@@ -53,6 +53,10 @@ export type ServerHealthResponse = {
   version?: string
   apiBaseUrl?: string
   webOrigin?: string
+  currentRevision?: string | null
+  remoteRevision?: string | null
+  remoteName?: string | null
+  branchName?: string | null
   updateAvailable?: boolean
 }
 

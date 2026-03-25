@@ -240,6 +240,81 @@ function isGitCheckout() {
   return fs.existsSync(path.join(process.cwd(), '.git'))
 }
 
+function readGitOutput(args: string[], timeoutMs = 1200) {
+  const result = spawnSync('git', args, {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  })
+
+  if (result.error || (typeof result.status === 'number' && result.status !== 0)) {
+    return null
+  }
+
+  const stdout = String(result.stdout || '').trim()
+  return stdout || null
+}
+
+function getGitStatus() {
+  if (!isGitCheckout()) {
+    return {
+      isGitCheckout: false,
+      currentRevision: null as string | null,
+      remoteRevision: null as string | null,
+      remoteName: null as string | null,
+      branchName: null as string | null,
+      updateAvailable: false,
+    }
+  }
+
+  const currentRevision = readGitOutput(['rev-parse', 'HEAD'])
+  const upstreamRef = readGitOutput(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
+
+  let remoteName: string | null = null
+  let branchName: string | null = null
+
+  if (upstreamRef && upstreamRef.includes('/')) {
+    const parts = upstreamRef.split('/')
+    remoteName = parts.shift() ?? null
+    branchName = parts.join('/') || null
+  } else {
+    branchName = readGitOutput(['rev-parse', '--abbrev-ref', 'HEAD'])
+    if (branchName === 'HEAD') branchName = null
+  }
+
+  if (!remoteName) {
+    const remoteHead = readGitOutput(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+    if (remoteHead && remoteHead.includes('/')) {
+      const parts = remoteHead.split('/')
+      remoteName = parts.shift() ?? null
+      branchName = branchName || (parts.join('/') || null)
+    }
+  }
+
+  if (!remoteName) remoteName = 'origin'
+
+  let remoteRevision: string | null = null
+  if (remoteName && branchName) {
+    const remoteBranch = readGitOutput(['ls-remote', remoteName, `refs/heads/${branchName}`], 1500)
+    remoteRevision = remoteBranch ? remoteBranch.split(/\s+/)[0] || null : null
+  }
+
+  if (!remoteRevision && remoteName) {
+    const remoteHead = readGitOutput(['ls-remote', remoteName, 'HEAD'], 1500)
+    remoteRevision = remoteHead ? remoteHead.split(/\s+/)[0] || null : null
+  }
+
+  return {
+    isGitCheckout: true,
+    currentRevision,
+    remoteRevision,
+    remoteName,
+    branchName,
+    updateAvailable: Boolean(currentRevision && (!remoteRevision || currentRevision !== remoteRevision)),
+  }
+}
+
 function isWorkingTreeClean() {
   const result = spawnSync('git', ['status', '--porcelain'], {
     cwd: process.cwd(),
@@ -564,12 +639,17 @@ function requireApiKey(scope: (typeof VALID_SCOPES)[number]) {
 }
 
 app.get('/health', (_req, res) => {
+  const gitStatus = getGitStatus()
   res.json({
     ok: true,
     version: APP_VERSION,
     apiBaseUrl: API_BASE_URL,
     webOrigin: WEB_ORIGIN,
-    updateAvailable: isGitCheckout(),
+    updateAvailable: gitStatus.updateAvailable,
+    currentRevision: gitStatus.currentRevision,
+    remoteRevision: gitStatus.remoteRevision,
+    remoteName: gitStatus.remoteName,
+    branchName: gitStatus.branchName,
   })
 })
 

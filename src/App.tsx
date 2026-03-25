@@ -258,6 +258,13 @@ type I18nText = {
   updateHint: string
   currentVersionLabel: string
   currentVersionUnknown: string
+  currentRevisionLabel: string
+  remoteRevisionLabel: string
+  updateStatusLabel: string
+  updateUpToDate: string
+  updateHasUpdate: string
+  updateTrackingLabel: string
+  updateRemoteRevisionUnavailable: string
   updateButton: string
   updateWorking: string
   updateSuccess: string
@@ -579,6 +586,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     updateHint: '点击后会先拉取最新代码、安装依赖，再重启本地服务。仅适用于 git 仓库安装，若有本地改动请先提交或暂存。',
     currentVersionLabel: '当前版本',
     currentVersionUnknown: '未知',
+    currentRevisionLabel: '当前修订',
+    remoteRevisionLabel: '远端修订',
+    updateStatusLabel: '更新状态',
+    updateUpToDate: '已是最新',
+    updateHasUpdate: '发现新版本',
+    updateTrackingLabel: '追踪分支',
+    updateRemoteRevisionUnavailable: '远端修订暂不可用',
     updateButton: '在线更新',
     updateWorking: '更新中...',
     updateSuccess: '更新已启动，服务重启后请刷新页面。',
@@ -668,6 +682,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     updateHint: 'Pull the latest code, install dependencies, and restart local services. Git checkout installs only. Commit or stash local changes first.',
     currentVersionLabel: 'Current version',
     currentVersionUnknown: 'Unknown',
+    currentRevisionLabel: 'Current revision',
+    remoteRevisionLabel: 'Remote revision',
+    updateStatusLabel: 'Update status',
+    updateUpToDate: 'Up to date',
+    updateHasUpdate: 'Update available',
+    updateTrackingLabel: 'Tracking branch',
+    updateRemoteRevisionUnavailable: 'Remote revision unavailable',
     updateButton: 'Update now',
     updateWorking: 'Updating...',
     updateSuccess: 'Update started. Refresh the page after services restart.',
@@ -3334,6 +3355,27 @@ function App() {
           : settings.language === 'zh'
             ? '未检测'
             : 'Unchecked'
+  const formatRevision = (revision?: string | null) => {
+    if (!revision) return text.currentVersionUnknown
+    return revision.length > 7 ? `${revision.slice(0, 7)}…` : revision
+  }
+  const currentVersionValue = apiHealthInfo?.version || text.currentVersionUnknown
+  const currentRevisionValue = formatRevision(apiHealthInfo?.currentRevision)
+  const remoteRevisionValue = formatRevision(apiHealthInfo?.remoteRevision)
+  const trackingBranchLabel =
+    apiHealthInfo?.remoteName && apiHealthInfo?.branchName
+      ? `${apiHealthInfo.remoteName}/${apiHealthInfo.branchName}`
+      : text.currentVersionUnknown
+  const updateStatusLabel =
+    !apiHealthInfo
+      ? text.currentVersionUnknown
+      : apiHealthInfo.currentRevision && apiHealthInfo.remoteRevision
+        ? apiHealthInfo.currentRevision === apiHealthInfo.remoteRevision
+          ? text.updateUpToDate
+          : text.updateHasUpdate
+        : apiHealthInfo.updateAvailable === false
+          ? text.updateUnavailable
+          : text.updateRemoteRevisionUnavailable
   const webOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:5173'
   const apiKeyPreview = serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '<your-api-key>'
   const openClawInstallCmd = 'mkdir -p ~/.openclaw/skills/open-canvas && cp SKILL.md ~/.openclaw/skills/open-canvas/SKILL.md'
@@ -4409,12 +4451,39 @@ You can control Open Canvas via REST API.
                 <input
                   type="text"
                   className="settings-text-input"
-                  value={apiHealthInfo?.version || text.currentVersionUnknown}
+                  value={currentVersionValue}
+                  title={apiHealthInfo?.version || text.currentVersionUnknown}
                   readOnly
                 />
               </label>
 
-              {apiHealthInfo?.updateAvailable === false ? <p>{text.updateUnavailable}</p> : null}
+              <label className="input-row">
+                <span>{text.currentRevisionLabel}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={currentRevisionValue}
+                  title={apiHealthInfo?.currentRevision || text.currentVersionUnknown}
+                  readOnly
+                />
+              </label>
+
+              <label className="input-row">
+                <span>{text.remoteRevisionLabel}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={remoteRevisionValue}
+                  title={apiHealthInfo?.remoteRevision || text.currentVersionUnknown}
+                  readOnly
+                />
+              </label>
+
+              {apiHealthInfo ? (
+                <p className="openclaw-inline-notice">
+                  {text.updateStatusLabel}: {updateStatusLabel} · {text.updateTrackingLabel}: {trackingBranchLabel}
+                </p>
+              ) : null}
 
               <div className="panel-actions">
                 <button
