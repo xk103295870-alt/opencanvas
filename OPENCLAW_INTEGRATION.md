@@ -26,6 +26,11 @@ npm run api:dev
 npm run dev
 ```
 
+5. 在线更新（原地升级）：
+```bash
+open-canvas update
+```
+
 ### 另一台电脑安装 CLI
 
 如果你想在另一台电脑上直接装出同样的 `open-canvas` 命令：
@@ -144,6 +149,12 @@ Open Canvas 的 Settings 里现在只保留真正需要的配置：
 3. 高级项
 - `openclaw.json` 配置片段
 - 如果你需要手动维护 OpenClaw / moltbot 配置，再展开这块
+
+4. 维护 / 更新
+- 当前版本
+- 在线更新按钮
+- 仅适用于 git 仓库安装
+- 有本地改动时先提交或暂存，再执行更新
 
 旧网关字段已从主设置页收起，仅保留兼容说明。
 

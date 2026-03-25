@@ -53,6 +53,13 @@ export type ServerHealthResponse = {
   version?: string
   apiBaseUrl?: string
   webOrigin?: string
+  updateAvailable?: boolean
+}
+
+export type ServerUpdateResponse = {
+  started: boolean
+  pid?: number
+  logPath?: string
 }
 
 type ApiErrorEnvelope = {
@@ -159,6 +166,13 @@ export async function apiCheckHealth(baseUrl?: string, timeoutMs = 2500) {
   } finally {
     window.clearTimeout(timeout)
   }
+}
+
+export async function apiTriggerUpdate(accessToken: string, baseUrl?: string) {
+  return requestJson<ServerUpdateResponse>('/api/v1/system/update', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }, baseUrl)
 }
 
 export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiKey: string) {

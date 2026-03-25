@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -25,12 +25,14 @@ Usage:
   open-canvas stop [--port <web-port>] [--api-port <api-port>]
   open-canvas restart [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
   open-canvas status [--port <web-port>] [--api-port <api-port>]
+  open-canvas update [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
 
 Examples:
   open-canvas start
   open-canvas start --no-open
   open-canvas stop
   open-canvas status
+  open-canvas update
 `)
 }
 
@@ -212,6 +214,43 @@ function resolveLocalBin(packageName) {
   }
 
   return path.resolve(path.dirname(packageJsonPath), relativeBin)
+}
+
+function runSyncCommand(command, args, extraEnv = {}) {
+  const result = spawnSync(command, args, {
+    cwd: REPO_ROOT,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      ...extraEnv,
+      FORCE_COLOR: process.stdout.isTTY ? '1' : '0',
+    },
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+  if (result.status !== 0) {
+    const code = result.status ?? result.signal ?? 'unknown'
+    throw new Error(`${command} ${args.join(' ')} failed (exit ${code})`)
+  }
+}
+
+function isGitCheckout() {
+  return fs.existsSync(path.join(REPO_ROOT, '.git'))
+}
+
+function isWorkingTreeClean() {
+  const result = spawnSync('git', ['status', '--porcelain'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return String(result.stdout || '').trim().length === 0
 }
 
 function spawnNodeScript(scriptPath, args, env, logPath) {
@@ -430,6 +469,31 @@ async function restartCommand(options) {
   await startCommand(options)
 }
 
+async function updateCommand(options) {
+  ensureRuntimeDir()
+
+  if (!isGitCheckout()) {
+    throw new Error(
+      'Online update is only available for git checkout installs. Reinstall from the repository to enable in-place updates.',
+    )
+  }
+
+  if (!isWorkingTreeClean()) {
+    throw new Error('Working tree has local changes. Commit or stash them before updating.')
+  }
+
+  console.log(`Updating Open Canvas in ${REPO_ROOT}...`)
+  console.log('Pulling the latest changes...')
+  runSyncCommand('git', ['pull', '--ff-only'])
+  console.log('Installing dependencies...')
+  runSyncCommand('npm', ['install'])
+
+  console.log('Restarting Open Canvas services...')
+  await stopCommand(options)
+  await startCommand(options)
+  console.log('Update complete.')
+}
+
 async function main() {
   const { command, options } = parseArgs(process.argv.slice(2))
 
@@ -453,6 +517,10 @@ async function main() {
   }
   if (command === 'restart') {
     await restartCommand(options)
+    return
+  }
+  if (command === 'update') {
+    await updateCommand(options)
     return
   }
   if (command === 'status') {

@@ -1,3 +1,4 @@
+import { spawn, spawnSync } from 'node:child_process'
 import cors from 'cors'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -150,6 +151,7 @@ const API_PORT = Number(process.env.OPEN_CANVAS_API_PORT || '8787')
 const API_BASE_URL = process.env.OPEN_CANVAS_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
 const WEB_ORIGIN = process.env.OPEN_CANVAS_WEB_ORIGIN || 'http://127.0.0.1:5173'
 const DB_PATH = path.join(process.cwd(), '.runtime', 'api-db.json')
+const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
 const STANDARD_PREFIX = '/api/v1'
@@ -232,6 +234,57 @@ function uid(length = 12) {
 
 function ensureDirFor(filePath: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
+}
+
+function isGitCheckout() {
+  return fs.existsSync(path.join(process.cwd(), '.git'))
+}
+
+function isWorkingTreeClean() {
+  const result = spawnSync('git', ['status', '--porcelain'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return String(result.stdout || '').trim().length === 0
+}
+
+function resolvePortFromOrigin(origin: string, fallback: number) {
+  try {
+    const parsed = new URL(origin)
+    const port = Number(parsed.port)
+    return Number.isInteger(port) && port > 0 ? port : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function spawnDetachedCommand(command: string, args: string[], env: NodeJS.ProcessEnv, logPath: string) {
+  ensureDirFor(logPath)
+  const logFd = fs.openSync(logPath, 'a')
+  try {
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      detached: true,
+      env: {
+        ...process.env,
+        ...env,
+        FORCE_COLOR: '0',
+      },
+      stdio: ['ignore', logFd, logFd],
+    })
+    if (!child.pid) {
+      throw new Error(`Failed to spawn ${path.basename(command)}`)
+    }
+    child.unref()
+    return child.pid
+  } finally {
+    fs.closeSync(logFd)
+  }
 }
 
 function loadDb(): ApiDb {
@@ -516,6 +569,7 @@ app.get('/health', (_req, res) => {
     version: APP_VERSION,
     apiBaseUrl: API_BASE_URL,
     webOrigin: WEB_ORIGIN,
+    updateAvailable: isGitCheckout(),
   })
 })
 
@@ -572,6 +626,12 @@ app.get('/openapi.json', (_req, res) => {
           security: [{ bearerAuth: [] }],
         },
       },
+      '/api/v1/system/update': {
+        post: {
+          summary: 'Start an in-place update',
+          security: [{ bearerAuth: [] }],
+        },
+      },
       '/api/v1/grids': {
         post: {
           summary: 'Create grid',
@@ -621,6 +681,7 @@ app.get('/llms-api.txt', (_req, res) => {
 - GET  /api/v1/auth/api-keys
 - GET  /api/v1/openclaw/skill
 - GET  /api/v1/state?full=1
+- POST /api/v1/system/update
 - POST /api/v1/grids
 - POST /api/v1/cards
 - PATCH /api/v1/cards/:cardId
@@ -874,6 +935,60 @@ app.get('/api/v1/config', requireApiKey('canvas:read'), (req, res) => {
       supportedKinds: ['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar'],
     },
   })
+})
+
+app.post('/api/v1/system/update', requireSession, (req, res) => {
+  if (!isGitCheckout()) {
+    res.status(400).json({
+      ok: false,
+      message:
+        'Online update is only available for git checkout installs. Reinstall from the repository to enable in-place updates.',
+    })
+    return
+  }
+
+  if (!isWorkingTreeClean()) {
+    res.status(409).json({
+      ok: false,
+      message: 'Working tree has local changes. Commit or stash them before updating.',
+    })
+    return
+  }
+
+  const webPort = resolvePortFromOrigin(WEB_ORIGIN, 5173)
+  const logPath = UPDATE_LOG_PATH
+  const cliBinPath = path.resolve(process.cwd(), 'bin', 'open-canvas.mjs')
+  if (!fs.existsSync(cliBinPath)) {
+    res.status(500).json({ ok: false, message: 'CLI entry point not found' })
+    return
+  }
+
+  try {
+    const pid = spawnDetachedCommand(
+      process.execPath,
+      [cliBinPath, 'update', '--no-open', '--port', String(webPort), '--api-port', String(API_PORT)],
+      {
+        OPEN_CANVAS_API_HOST: API_HOST,
+        OPEN_CANVAS_API_PORT: String(API_PORT),
+        OPEN_CANVAS_API_BASE_URL: API_BASE_URL,
+        OPEN_CANVAS_WEB_ORIGIN: WEB_ORIGIN,
+      },
+      logPath,
+    )
+
+    res.json({
+      ok: true,
+      message: 'Update started',
+      data: {
+        started: true,
+        pid,
+        logPath,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    res.status(500).json({ ok: false, message: `Failed to start update: ${message}` })
+  }
 })
 
 app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {

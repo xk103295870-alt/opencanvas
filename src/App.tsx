@@ -7,6 +7,7 @@ import {
   apiDemoLogin,
   apiGetSessionMe,
   apiGetSkillTemplate,
+  apiTriggerUpdate,
   buildOpenClawSkillConfig,
   getApiBaseUrl,
 } from './apiClient'
@@ -253,6 +254,16 @@ type I18nText = {
   syncDebounceLabel: string
   openclawTitle: string
   openclawHint: string
+  updateTitle: string
+  updateHint: string
+  currentVersionLabel: string
+  currentVersionUnknown: string
+  updateButton: string
+  updateWorking: string
+  updateSuccess: string
+  updateFailedPrefix: string
+  updateLoginRequired: string
+  updateUnavailable: string
   futureTitle: string
   futureLine1: string
   futureLine2: string
@@ -564,6 +575,16 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncDebounceLabel: '自动同步延迟（毫秒）',
     openclawTitle: 'OpenClaw 集成',
     openclawHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
+    updateTitle: '在线更新',
+    updateHint: '点击后会先拉取最新代码、安装依赖，再重启本地服务。仅适用于 git 仓库安装，若有本地改动请先提交或暂存。',
+    currentVersionLabel: '当前版本',
+    currentVersionUnknown: '未知',
+    updateButton: '在线更新',
+    updateWorking: '更新中...',
+    updateSuccess: '更新已启动，服务重启后请刷新页面。',
+    updateFailedPrefix: '更新失败：',
+    updateLoginRequired: '请先登录后再执行在线更新。',
+    updateUnavailable: '当前安装不是 git 仓库，无法在线更新。',
     futureTitle: '未来扩展',
     futureLine1: '登录、同步、安装器会逐步替换为真实服务。',
     futureLine2: '当前结构已支持 Web + 桌面 + 多平台扩展。',
@@ -643,6 +664,16 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncDebounceLabel: 'Auto sync debounce (ms)',
     openclawTitle: 'OpenClaw Integration',
     openclawHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
+    updateTitle: 'Online Update',
+    updateHint: 'Pull the latest code, install dependencies, and restart local services. Git checkout installs only. Commit or stash local changes first.',
+    currentVersionLabel: 'Current version',
+    currentVersionUnknown: 'Unknown',
+    updateButton: 'Update now',
+    updateWorking: 'Updating...',
+    updateSuccess: 'Update started. Refresh the page after services restart.',
+    updateFailedPrefix: 'Update failed: ',
+    updateLoginRequired: 'Please sign in before triggering an online update.',
+    updateUnavailable: 'This install is not a git checkout, so online updates are unavailable.',
     futureTitle: 'Future Extension',
     futureLine1: 'Auth, sync and installers will be replaced with real services.',
     futureLine2: 'Current architecture already supports Web + Desktop + multi-platform.',
@@ -1356,9 +1387,12 @@ function App() {
   const [googleLoginPending, setGoogleLoginPending] = useState(false)
   const [openClawNotice, setOpenClawNotice] = useState('')
   const [apiHealthState, setApiHealthState] = useState<ApiHealthState>('idle')
+  const [apiHealthInfo, setApiHealthInfo] = useState<Awaited<ReturnType<typeof apiCheckHealth>> | null>(null)
   const [serverAuth, setServerAuth] = useState<ServerAuthState | null>(null)
   const [apiKeyMasked, setApiKeyMasked] = useState('')
   const [apiActionPending, setApiActionPending] = useState(false)
+  const [updatePending, setUpdatePending] = useState(false)
+  const [updateNotice, setUpdateNotice] = useState('')
 
   const [account, setAccount] = useState<AccountUser | null>(null)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
@@ -1623,10 +1657,12 @@ function App() {
     const baseUrl = resolveApiBaseUrl()
     setApiHealthState('checking')
     try {
-      await apiCheckHealth(baseUrl)
+      const health = await apiCheckHealth(baseUrl)
+      setApiHealthInfo(health)
       setApiHealthState('online')
       return { ok: true, baseUrl }
     } catch {
+      setApiHealthInfo(null)
       setApiHealthState('offline')
       return { ok: false, baseUrl }
     }
@@ -1782,6 +1818,31 @@ function App() {
       setApiActionPending(false)
     }
   }, [ensureApiSession, persistServerAuth, settings.language])
+
+  const triggerOnlineUpdate = useCallback(async () => {
+    if (!account || !serverAuth?.accessToken) {
+      setUpdateNotice(text.updateLoginRequired)
+      return
+    }
+
+    if (apiHealthInfo?.updateAvailable === false) {
+      setUpdateNotice(text.updateUnavailable)
+      return
+    }
+
+    setUpdatePending(true)
+    setUpdateNotice('')
+    try {
+      const baseUrl = resolveApiBaseUrl()
+      await apiTriggerUpdate(serverAuth.accessToken, baseUrl)
+      setUpdateNotice(text.updateSuccess)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setUpdateNotice(`${text.updateFailedPrefix}${message}`)
+    } finally {
+      setUpdatePending(false)
+    }
+  }, [account, apiHealthInfo?.updateAvailable, resolveApiBaseUrl, serverAuth?.accessToken, text.updateFailedPrefix, text.updateLoginRequired, text.updateSuccess, text.updateUnavailable])
 
   const serializeAssetsForCloud = useCallback(async () => {
     const assets = await getAllAssets()
@@ -2105,6 +2166,7 @@ function App() {
     setSettingsOpen(false)
     setShowLoginForm(false)
     setOpenClawNotice('')
+    setUpdateNotice('')
   }
 
   const beginDemoLogin = () => {
@@ -2196,6 +2258,7 @@ function App() {
     setShowLoginForm(false)
     setSyncStatus('idle')
     setSyncMessage(text.signedOut)
+    setUpdateNotice('')
   }
 
   const copyTextWithNotice = useCallback(
@@ -4335,6 +4398,44 @@ You can control Open Canvas via REST API.
                 </section>
               </div>
 
+            </div>
+
+            <div className="settings-group">
+              <h3>{text.updateTitle}</h3>
+              <p>{text.updateHint}</p>
+
+              <label className="input-row">
+                <span>{text.currentVersionLabel}</span>
+                <input
+                  type="text"
+                  className="settings-text-input"
+                  value={apiHealthInfo?.version || text.currentVersionUnknown}
+                  readOnly
+                />
+              </label>
+
+              {apiHealthInfo?.updateAvailable === false ? <p>{text.updateUnavailable}</p> : null}
+
+              <div className="panel-actions">
+                <button
+                  className="mini-btn"
+                  disabled={
+                    updatePending ||
+                    apiActionPending ||
+                    apiHealthState !== 'online' ||
+                    !account ||
+                    !serverAuth?.accessToken ||
+                    apiHealthInfo?.updateAvailable === false
+                  }
+                  onClick={() => {
+                    void triggerOnlineUpdate()
+                  }}
+                >
+                  {updatePending ? text.updateWorking : text.updateButton}
+                </button>
+              </div>
+
+              {updateNotice ? <p className="openclaw-inline-notice">{updateNotice}</p> : null}
             </div>
 
             <div className="settings-group">
