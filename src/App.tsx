@@ -1439,8 +1439,8 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [openClawConfig, setOpenClawConfig] = useState<OpenClawConfig>(DEFAULT_OPENCLAW_CONFIG)
 
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
-  const [syncMessage, setSyncMessage] = useState('')
+  const [, setSyncStatus] = useState<SyncStatus>('idle')
+  const [, setSyncMessage] = useState('')
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(DEFAULT_SYNC_META)
 
   const [editingGridId, setEditingGridId] = useState<string | null>(null)
@@ -1555,11 +1555,6 @@ function App() {
     if (meta) setSyncMeta(meta)
     if (layoutMeta) openClawLayoutSyncRef.current = normalizeOpenClawLayoutSyncMeta(layoutMeta)
   }, [])
-
-  useEffect(() => {
-    if (syncStatus !== 'idle') return
-    setSyncMessage(account ? text.ready : text.syncNeedLogin)
-  }, [account, syncStatus, text.ready, text.syncNeedLogin])
 
   useEffect(() => {
     let cancelled = false
@@ -3641,31 +3636,6 @@ You can control Open Canvas via REST API.
         <button className="action-btn" onClick={addCalendarCard}>
           {calendarText.newCardButton}
         </button>
-
-        <section className="panel-block">
-          <header className="panel-title">{text.syncTitle}</header>
-          <p className="sync-hint">{syncMessage}</p>
-          <p className="sync-hint">
-            {syncMeta.lastSyncAt ? `${text.lastSyncPrefix}${formatLocalDateTime(syncMeta.lastSyncAt, settings.language)}` : text.lastSyncNever}
-          </p>
-          <p className="sync-hint">
-            {account ? `${text.accountPrefix}: ${account.email}` : text.accountSignedOutHint}
-          </p>
-          <div className="panel-actions">
-            <button
-              className="action-btn compact"
-              disabled={!account || syncStatus === 'syncing'}
-              onClick={() => {
-                void performSync(false)
-              }}
-            >
-              {text.syncNow}
-            </button>
-            <button className="action-btn compact" onClick={() => setSettingsOpen(true)}>
-              {text.settings}
-            </button>
-          </div>
-        </section>
 
         <section className="grid-panel">
           <header className="grid-panel-header">
