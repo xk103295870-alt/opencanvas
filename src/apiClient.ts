@@ -46,6 +46,58 @@ export type ServerSkillResponse = {
   }
 }
 
+export type ServerWorkspaceCard = {
+  id: string
+  kind: 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
+  title: string
+  content: string
+  x: number
+  y: number
+  width: number
+  height: number
+  fileName?: string
+  externalUrl?: string
+  todoItems?: Array<{ id: string; text: string; status: 'todo' | 'doing' | 'done' }>
+  calendar?: {
+    monthCursor: string
+    selectedDate: string
+    viewMode: 'month' | 'week'
+    draftTitle: string
+    draftAllDay: boolean
+    draftStartTime: string
+    draftEndTime: string
+    events: Array<{
+      id: string
+      date: string
+      title: string
+      allDay: boolean
+      startTime?: string
+      endTime?: string
+    }>
+  }
+}
+
+export type ServerStateResponse = {
+  account: ServerAccount
+  workspace: {
+    id: string
+    name: string
+    activeGridId: string
+    updatedAt: string
+    grids: Array<{
+      id: string
+      name: string
+      cardCount: number
+      cards?: ServerWorkspaceCard[]
+    }>
+  }
+  key: {
+    id: string
+    scopes: string[]
+    lastUsedAt: string
+  }
+}
+
 const API_BASE_URL = (import.meta.env.VITE_OPEN_CANVAS_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8787'
 
 export type ServerHealthResponse = {
@@ -145,6 +197,13 @@ export async function apiGetSkillTemplate(accessToken: string, baseUrl?: string)
   return requestJson<ServerSkillResponse>('/api/v1/openclaw/skill', {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` },
+  }, baseUrl)
+}
+
+export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
+  return requestJson<ServerStateResponse>('/api/v1/state?full=1', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
   }, baseUrl)
 }
 

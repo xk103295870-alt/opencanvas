@@ -7,6 +7,7 @@ import {
   apiDemoLogin,
   apiGetSessionMe,
   apiGetSkillTemplate,
+  apiGetWorkspaceState,
   apiTriggerUpdate,
   buildOpenClawSkillConfig,
   getApiBaseUrl,
@@ -526,7 +527,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     lastSyncNever: '上次同步：从未',
     accountPrefix: '账号',
     accountSignedOutHint: '账号：未登录（请在设置中登录）',
-    newNoteCard: '+ 新建笔记卡',
+    newNoteCard: '+ 新建便利贴',
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
     newGridAria: '新建画布',
@@ -1446,6 +1447,7 @@ function App() {
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
   const startupSyncUserRef = useRef<string | null>(null)
+  const lastOpenClawWorkspaceUpdatedAtRef = useRef<string | null>(null)
   const particleRuntimeRef = useRef<ParticleRuntime>({
     energy: 0,
     originX: 50,
@@ -1860,6 +1862,64 @@ function App() {
     }
   }, [ensureApiSession, persistServerAuth, settings.language])
 
+  const pullOpenClawWorkspace = useCallback(async () => {
+    if (!account || !serverAuth?.lastApiKey) return false
+
+    try {
+      const lastLocalUpdateAt = syncMetaRef.current.lastLocalUpdateAt
+      const lastSyncAt = syncMetaRef.current.lastSyncAt ?? 0
+      if (lastLocalUpdateAt > lastSyncAt + 1000) {
+        return false
+      }
+
+      const remote = await apiGetWorkspaceState(serverAuth.lastApiKey, resolveApiBaseUrl())
+      const remoteUpdatedAt = remote.workspace.updatedAt || null
+      if (remoteUpdatedAt && remoteUpdatedAt === lastOpenClawWorkspaceUpdatedAtRef.current) {
+        return false
+      }
+
+      const remoteGrids = Array.isArray(remote.workspace.grids)
+        ? remote.workspace.grids.map((grid) => ({
+            id: String(grid.id || ''),
+            name: String(grid.name || ''),
+            cards: Array.isArray(grid.cards) ? grid.cards.map((card) => ({ ...card })) : [],
+          }))
+        : []
+
+      const hasRemoteCards = remoteGrids.some((grid) => grid.cards.length > 0)
+      if (!hasRemoteCards && lastOpenClawWorkspaceUpdatedAtRef.current === null) {
+        lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+        return false
+      }
+
+      const nextGrids = normalizeGridsForTodoBoard(remoteGrids as GridData[])
+      if (!nextGrids.length) {
+        lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+        return false
+      }
+
+      skipLocalSyncMetaUpdateRef.current = true
+      setGrids(nextGrids)
+      setActiveGridId(
+        nextGrids.some((grid) => grid.id === remote.workspace.activeGridId)
+          ? remote.workspace.activeGridId
+          : nextGrids[0].id,
+      )
+      updateSyncMeta({
+        lastLocalUpdateAt: Date.now(),
+        lastSyncAt: Date.now(),
+      })
+      lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+      return true
+    } catch {
+      return false
+    } finally {
+      window.setTimeout(() => {
+        skipLocalSyncMetaUpdateRef.current = false
+      }, 0)
+    }
+  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateSyncMeta])
+
   const triggerOnlineUpdate = useCallback(async () => {
     if (!account || !serverAuth?.accessToken) {
       setUpdateNotice(text.updateLoginRequired)
@@ -2054,6 +2114,26 @@ function App() {
       window.clearTimeout(timer)
     }
   }, [activeGridId, account, grids, hydrated, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
+
+  useEffect(() => {
+    if (!hydrated || !account || !serverAuth?.lastApiKey) return
+
+    let cancelled = false
+    const run = async () => {
+      if (cancelled) return
+      await pullOpenClawWorkspace()
+    }
+
+    void run()
+    const timer = window.setInterval(() => {
+      void run()
+    }, 6000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [account, hydrated, pullOpenClawWorkspace, serverAuth?.lastApiKey])
 
   const toWorldPoint = useCallback((clientX: number, clientY: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect()
