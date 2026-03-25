@@ -77,6 +77,12 @@ export type ServerWorkspaceCard = {
   }
 }
 
+export type ServerCardUpdateResponse = {
+  cardId: string
+  gridId: string
+  card: ServerWorkspaceCard
+}
+
 export type ServerStateResponse = {
   account: ServerAccount
   workspace: {
@@ -204,6 +210,19 @@ export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
   return requestJson<ServerStateResponse>('/api/v1/state?full=1', {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
+  }, baseUrl)
+}
+
+export async function apiUpdateCard(
+  apiKey: string,
+  cardId: string,
+  updates: Partial<Pick<ServerWorkspaceCard, 'x' | 'y' | 'width' | 'height' | 'title' | 'content'>>,
+  baseUrl?: string,
+) {
+  return requestJson<ServerCardUpdateResponse>(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(updates),
   }, baseUrl)
 }
 

@@ -8,6 +8,7 @@ import {
   apiGetSessionMe,
   apiGetSkillTemplate,
   apiGetWorkspaceState,
+  apiUpdateCard,
   apiTriggerUpdate,
   buildOpenClawSkillConfig,
   getApiBaseUrl,
@@ -157,6 +158,11 @@ type ServerAuthState = {
 type SyncMeta = {
   lastLocalUpdateAt: number
   lastSyncAt: number | null
+}
+
+type OpenClawLayoutSyncMeta = {
+  lastLayoutMutationAt: number
+  lastLayoutSyncAt: number
 }
 
 type CloudAssetSnapshot = {
@@ -477,6 +483,7 @@ const AUTH_STORAGE_KEY = 'open-canvas-fake-auth'
 const SETTINGS_STORAGE_KEY = 'open-canvas-settings'
 const OPENCLAW_SETTINGS_KEY = 'open-canvas-openclaw-settings'
 const SYNC_META_KEY = 'open-canvas-sync-meta'
+const OPENCLAW_LAYOUT_SYNC_KEY = 'open-canvas-openclaw-layout-sync'
 const SERVER_AUTH_STORAGE_KEY = 'open-canvas-server-auth'
 const CLOUD_KEY_PREFIX = 'open-canvas-cloud-'
 const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
@@ -505,6 +512,11 @@ const DEFAULT_OPENCLAW_CONFIG: OpenClawConfig = {
 const DEFAULT_SYNC_META: SyncMeta = {
   lastLocalUpdateAt: Date.now(),
   lastSyncAt: null,
+}
+
+const DEFAULT_OPENCLAW_LAYOUT_SYNC_META: OpenClawLayoutSyncMeta = {
+  lastLayoutMutationAt: 0,
+  lastLayoutSyncAt: 0,
 }
 
 const I18N: Record<LanguageCode, I18nText> = {
@@ -1069,6 +1081,13 @@ const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefin
   }
 }
 
+const normalizeOpenClawLayoutSyncMeta = (
+  input: Partial<OpenClawLayoutSyncMeta> | null | undefined,
+): OpenClawLayoutSyncMeta => ({
+  lastLayoutMutationAt: Math.max(0, Number.isFinite(Number(input?.lastLayoutMutationAt)) ? Number(input?.lastLayoutMutationAt) : 0),
+  lastLayoutSyncAt: Math.max(0, Number.isFinite(Number(input?.lastLayoutSyncAt)) ? Number(input?.lastLayoutSyncAt) : 0),
+})
+
 const normalizeAccount = (raw: unknown): AccountUser | null => {
   if (!raw || typeof raw !== 'object') return null
   const value = raw as Partial<AccountUser>
@@ -1437,6 +1456,7 @@ function App() {
   const viewportRef = useRef(viewport)
   const assetUrlsRef = useRef(assetUrls)
   const syncMetaRef = useRef(syncMeta)
+  const openClawLayoutSyncRef = useRef<OpenClawLayoutSyncMeta>(DEFAULT_OPENCLAW_LAYOUT_SYNC_META)
 
   const dragStateRef = useRef<DragState>(null)
   const panStateRef = useRef<PanState>(null)
@@ -1517,6 +1537,7 @@ function App() {
     const setting = readJson<AppSettings>(SETTINGS_STORAGE_KEY)
     const openClaw = readJson<Partial<OpenClawConfig>>(OPENCLAW_SETTINGS_KEY)
     const meta = readJson<SyncMeta>(SYNC_META_KEY)
+    const layoutMeta = readJson<Partial<OpenClawLayoutSyncMeta>>(OPENCLAW_LAYOUT_SYNC_KEY)
     const serverSession = readJson<unknown>(SERVER_AUTH_STORAGE_KEY)
     const normalizedAccount = normalizeAccount(auth)
     const normalizedServerAuth = normalizeServerAuth(serverSession)
@@ -1532,6 +1553,7 @@ function App() {
     if (setting) setSettings(normalizeSettings(setting))
     if (openClaw) setOpenClawConfig(normalizeOpenClawConfig({ ...DEFAULT_OPENCLAW_CONFIG, ...openClaw }))
     if (meta) setSyncMeta(meta)
+    if (layoutMeta) openClawLayoutSyncRef.current = normalizeOpenClawLayoutSyncMeta(layoutMeta)
   }, [])
 
   useEffect(() => {
@@ -1643,6 +1665,13 @@ function App() {
       writeJson(SYNC_META_KEY, next)
       return next
     })
+  }, [])
+
+  const updateOpenClawLayoutSyncMeta = useCallback((partial: Partial<OpenClawLayoutSyncMeta>) => {
+    const next = normalizeOpenClawLayoutSyncMeta({ ...openClawLayoutSyncRef.current, ...partial })
+    openClawLayoutSyncRef.current = next
+    writeJson(OPENCLAW_LAYOUT_SYNC_KEY, next)
+    return next
   }, [])
 
   useEffect(() => {
@@ -1872,6 +1901,11 @@ function App() {
         return false
       }
 
+      const { lastLayoutMutationAt, lastLayoutSyncAt } = openClawLayoutSyncRef.current
+      if (lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
+        return false
+      }
+
       const remote = await apiGetWorkspaceState(serverAuth.lastApiKey, resolveApiBaseUrl())
       const remoteUpdatedAt = remote.workspace.updatedAt || null
       if (remoteUpdatedAt && remoteUpdatedAt === lastOpenClawWorkspaceUpdatedAtRef.current) {
@@ -1909,6 +1943,7 @@ function App() {
         lastLocalUpdateAt: Date.now(),
         lastSyncAt: Date.now(),
       })
+      updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
       lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
       return true
     } catch {
@@ -1918,7 +1953,26 @@ function App() {
         skipLocalSyncMetaUpdateRef.current = false
       }, 0)
     }
-  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateSyncMeta])
+  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateOpenClawLayoutSyncMeta, updateSyncMeta])
+
+  const persistOpenClawCardLayout = useCallback(
+    async (
+      cardId: string,
+      updates: { x?: number; y?: number; width?: number; height?: number },
+    ) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw card layout:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
 
   const triggerOnlineUpdate = useCallback(async () => {
     if (!account || !serverAuth?.accessToken) {
@@ -2265,7 +2319,31 @@ function App() {
       }
     }
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: PointerEvent) => {
+      const resizeState = resizeStateRef.current
+      if (resizeState) {
+        const world = toWorldPoint(event.clientX, event.clientY)
+        const deltaX = world.x - resizeState.startPointerWorldX
+        const deltaY = world.y - resizeState.startPointerWorldY
+        const nextWidth = clamp(resizeState.startWidth + deltaX, CARD_MIN_WIDTH, CARD_MAX_WIDTH)
+        const nextHeight = clamp(resizeState.startHeight + deltaY, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
+        void persistOpenClawCardLayout(resizeState.cardId, {
+          width: nextWidth,
+          height: nextHeight,
+        })
+      }
+
+      const dragState = dragStateRef.current
+      if (dragState) {
+        const world = toWorldPoint(event.clientX, event.clientY)
+        const nextX = clamp(world.x - dragState.pointerOffsetX, -200, SCENE_WIDTH - 60)
+        const nextY = clamp(world.y - dragState.pointerOffsetY, -200, SCENE_HEIGHT - 60)
+        void persistOpenClawCardLayout(dragState.cardId, {
+          x: nextX,
+          y: nextY,
+        })
+      }
+
       dragStateRef.current = null
       panStateRef.current = null
       resizeStateRef.current = null
@@ -2281,7 +2359,7 @@ function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [pushParticleImpulse, toWorldPoint])
+  }, [persistOpenClawCardLayout, pushParticleImpulse, toWorldPoint])
 
   const closeSettings = () => {
     setSettingsOpen(false)
@@ -2940,6 +3018,7 @@ function App() {
 
     resizeStateRef.current = null
     setResizingCardId(null)
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
 
     event.currentTarget.setPointerCapture(event.pointerId)
 
@@ -2961,6 +3040,7 @@ function App() {
 
     dragStateRef.current = null
     setDraggingCardId(null)
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
 
     event.currentTarget.setPointerCapture(event.pointerId)
 

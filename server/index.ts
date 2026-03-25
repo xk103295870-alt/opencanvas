@@ -176,6 +176,11 @@ function statusToErrorCode(status: number) {
   return 'request_failed'
 }
 
+function toFiniteNumber(value: unknown, fallback: number) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 // For /api/v1 requests, normalize internal { ok, ... } payloads into envelope format:
 // success -> { data, meta? }, error -> { error: { code, message, details? } }.
 app.use((req, res, next) => {
@@ -1119,10 +1124,10 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
-  const width = clamp(Number(body.width) || (kind === 'calendar' ? 760 : kind === 'todo' ? 760 : 420), 220, 1400)
-  const height = clamp(Number(body.height) || (kind === 'calendar' ? 520 : kind === 'todo' ? 420 : 300), 160, 1200)
-  const x = clamp(Number(body.x) || randomInt(120, 860), -200, 6000)
-  const y = clamp(Number(body.y) || randomInt(120, 860), -200, 4000)
+  const width = clamp(toFiniteNumber(body.width, kind === 'calendar' ? 760 : kind === 'todo' ? 760 : 420), 220, 1400)
+  const height = clamp(toFiniteNumber(body.height, kind === 'calendar' ? 520 : kind === 'todo' ? 420 : 300), 160, 1200)
+  const x = clamp(toFiniteNumber(body.x, randomInt(120, 860)), -200, 6000)
+  const y = clamp(toFiniteNumber(body.y, randomInt(120, 860)), -200, 4000)
 
   const card: CardData = {
     id: `${kind}-${uid(14)}`,
@@ -1183,10 +1188,10 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
       ...current,
       title: body.title !== undefined ? String(body.title || '').trim() || current.title : current.title,
       content: body.content !== undefined ? String(body.content || '') : current.content,
-      x: body.x !== undefined ? clamp(Number(body.x) || current.x, -200, 6000) : current.x,
-      y: body.y !== undefined ? clamp(Number(body.y) || current.y, -200, 4000) : current.y,
-      width: body.width !== undefined ? clamp(Number(body.width) || current.width, 220, 1400) : current.width,
-      height: body.height !== undefined ? clamp(Number(body.height) || current.height, 160, 1200) : current.height,
+      x: body.x !== undefined ? clamp(toFiniteNumber(body.x, current.x), -200, 6000) : current.x,
+      y: body.y !== undefined ? clamp(toFiniteNumber(body.y, current.y), -200, 4000) : current.y,
+      width: body.width !== undefined ? clamp(toFiniteNumber(body.width, current.width), 220, 1400) : current.width,
+      height: body.height !== undefined ? clamp(toFiniteNumber(body.height, current.height), 160, 1200) : current.height,
     }
     grid.cards[index] = next
     updatedCard = next
