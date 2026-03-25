@@ -48,6 +48,13 @@
   min-width: 0;
 }
 
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .brand-logo {
   width: 34px;
   height: 34px;
@@ -74,6 +81,15 @@
   letter-spacing: 0.02em;
   line-height: 1.05;
   color: var(--text-main);
+  white-space: nowrap;
+}
+
+.brand-subtitle {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+  color: var(--text-soft);
   white-space: nowrap;
 }
 

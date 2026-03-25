@@ -3944,7 +3944,10 @@ Example PATCH body:
               <div className="brand-logo" aria-hidden>
                 <img className="brand-logo-image" src="/ai-sticky-notes-logo.svg" alt="" />
               </div>
-              <span className="brand-name">AI Sticky Notes</span>
+              <div className="brand-copy">
+                <span className="brand-name">AI Sticky Notes</span>
+                <span className="brand-subtitle">(open-canvas)</span>
+              </div>
             </div>
           </div>
 
