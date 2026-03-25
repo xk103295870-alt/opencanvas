@@ -41,6 +41,9 @@ export type ServerSkillResponse = {
     auth: { type: string; header: string; format: string }
     baseUrl: string
     defaultHeaders: Record<string, string>
+    cardPolicies: {
+      singletonKinds: Array<'todo' | 'calendar'>
+    }
     endpoints: Record<string, { method: string; path: string }>
     exampleCreateCard: { method: string; path: string; body: Record<string, unknown> }
   }
@@ -334,6 +337,7 @@ export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiK
       format: 'Bearer {{token}}',
     },
     headers: skillPayload.skill.defaultHeaders,
+    cardPolicies: skillPayload.skill.cardPolicies,
     endpoints: skillPayload.skill.endpoints,
     examples: {
       createCard: skillPayload.skill.exampleCreateCard,

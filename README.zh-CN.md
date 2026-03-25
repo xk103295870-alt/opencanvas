@@ -14,6 +14,7 @@ Open Canvas 是一个基于浏览器的画布工作区，支持本地 API、`ope
 ## 主要能力
 
 - 便利贴、待办卡片、日历卡片、媒体卡片
+- 待办卡和日历卡按 grid 固定为一张，AI 只更新固定卡片
 - 卡片拖拽、缩放、编辑、删除后可持久化
 - 本地状态 + 远端状态同步
 - API Key 方式对接 OpenClaw
@@ -81,4 +82,3 @@ npm run dev
 - 英文入口：[`README.md`](./README.md)
 - API 说明：[`API_REFERENCE.md`](./API_REFERENCE.md)
 - OpenClaw 对接：[`OPENCLAW_INTEGRATION.md`](./OPENCLAW_INTEGRATION.md)
-

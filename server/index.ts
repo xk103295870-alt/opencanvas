@@ -456,6 +456,10 @@ function parseCardKind(input: unknown): CardKind {
   return 'note'
 }
 
+function isSingletonCardKind(kind: CardKind) {
+  return kind === 'todo' || kind === 'calendar'
+}
+
 function normalizeTodoLane(input: unknown, doneFallback = false): TodoLane {
   const value = String(input || '')
     .trim()
@@ -783,6 +787,12 @@ app.get('/llms-api.txt', (_req, res) => {
 - PATCH /api/v1/cards/:cardId
 - DELETE /api/v1/cards/:cardId
 - POST /api/v1/cards/:cardId/append-note
+
+## Card Rules
+- note cards can be created repeatedly
+- todo and calendar cards are singleton per grid
+- if a singleton card already exists, POST /api/v1/cards reuses it instead of creating a duplicate
+- use PATCH /api/v1/cards/:cardId to modify the fixed todo/calendar card
 `
   res.type('text/plain').send(content)
 })
@@ -953,12 +963,15 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
 
   const skill = {
     name: 'open-canvas-api',
-    description: 'Open Canvas API skill for account bound automation',
+    description: 'Open Canvas API skill for account bound automation with singleton todo/calendar cards per grid',
     auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
     baseUrl: API_BASE_URL,
     defaultHeaders: {
       'Content-Type': 'application/json',
       'X-Open-Canvas-Source': 'openclaw',
+    },
+    cardPolicies: {
+      singletonKinds: ['todo', 'calendar'],
     },
     endpoints: {
       createGrid: { method: 'POST', path: '/api/v1/grids' },
@@ -982,7 +995,8 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
     setup: {
       step1: 'Generate API key from /api/v1/auth/api-keys.',
       step2: 'Put API key into OpenClaw skill auth bearer token.',
-      step3: 'Call /api/v1/cards or /api/v1/grids directly from skill.',
+      step3:
+        'Call /api/v1/cards or /api/v1/grids directly from skill. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates.',
     },
   })
 })
@@ -1031,6 +1045,9 @@ app.get('/api/v1/config', requireApiKey('canvas:read'), (req, res) => {
       workspaceId: ctx.workspace.id,
       accountId: ctx.account.id,
       supportedKinds: ['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar'],
+      cardPolicies: {
+        singletonKinds: ['todo', 'calendar'],
+      },
     },
   })
 })
@@ -1135,6 +1152,23 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
 
   if (!targetGrid) {
     res.status(400).json({ ok: false, message: 'No grid available' })
+    return
+  }
+
+  const existingSingletonCard = isSingletonCardKind(kind)
+    ? targetGrid.cards.find((card) => card.kind === kind) ?? null
+    : null
+  if (existingSingletonCard) {
+    if (body.activateGrid) {
+      ctx.workspace.activeGridId = targetGrid.id
+      saveDb()
+    }
+
+    res.json({
+      ok: true,
+      message: 'Card reused',
+      data: { cardId: existingSingletonCard.id, gridId: targetGrid.id, card: existingSingletonCard },
+    })
     return
   }
 

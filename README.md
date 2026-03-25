@@ -33,6 +33,7 @@ npm run dev
 ## Features
 
 - Multi-card canvas for notes, todos, calendar items, and media
+- Todo and calendar cards are singleton per grid
 - Local persistence with workspace sync
 - API key-based OpenClaw integration
 - In-place update flow for git installs

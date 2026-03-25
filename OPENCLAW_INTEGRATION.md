@@ -62,12 +62,19 @@ Windows PowerShell：
 
 当前 Skill 已开放以下 API（标准前缀）：
 - `POST /api/v1/grids` 创建画布
-- `POST /api/v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar，可选传入 `id`）
+- `POST /api/v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar，可选传入 `id`；todo / calendar 在每个 grid 内仅保留一张）
 - `PATCH /api/v1/cards/:cardId` 更新卡片
 - `DELETE /api/v1/cards/:cardId` 删除卡片
 - `POST /api/v1/cards/:cardId/append-note` 追加文本
 - `GET /api/v1/state?full=1` 获取全量画布状态
 - `GET /api/v1/config` 获取 API 配置
+
+固定卡规则：
+
+- `note` 可以无限创建。
+- `todo` 和 `calendar` 是每个 grid 的固定卡片。
+- 如果目标 grid 已经有同类卡片，`POST /api/v1/cards` 会复用现有卡片。
+- 更新固定卡请用 `PATCH /api/v1/cards/:cardId`。
 
 示例（创建卡片）：
 ```bash

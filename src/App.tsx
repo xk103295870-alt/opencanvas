@@ -1259,6 +1259,8 @@ const normalizeCardKind = (value: unknown): CardKind => {
   return CARD_KIND_SET.has(raw as CardKind) ? (raw as CardKind) : 'note'
 }
 
+const isSingletonCardKind = (kind: CardKind) => kind === 'todo' || kind === 'calendar'
+
 const toFiniteNumber = (value: unknown, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
 
@@ -2754,6 +2756,16 @@ function App() {
       if (!targetGrid) return null
 
       const kind = normalizeCardKind(payload?.kind)
+      const existingSingletonCard = isSingletonCardKind(kind)
+        ? targetGrid.cards.find((card) => card.kind === kind) ?? null
+        : null
+      if (existingSingletonCard) {
+        if (payload?.activateGrid) {
+          setActiveGridId(targetGridId)
+        }
+        return { cardId: existingSingletonCard.id, gridId: targetGridId, reused: true }
+      }
+
       const baseX = clamp(toFiniteNumber(payload?.x, 140), -200, SCENE_WIDTH - 60)
       const baseY = clamp(toFiniteNumber(payload?.y, 140), -200, SCENE_HEIGHT - 60)
       const defaultTitle =
@@ -2851,7 +2863,7 @@ function App() {
       pushParticleImpulse(baseX, baseY, 0.22)
       void persistOpenClawCardCreate(targetGridId, cardWithTypeData, Boolean(payload?.activateGrid))
 
-      return { cardId, gridId: targetGridId }
+      return { cardId, gridId: targetGridId, reused: false }
     },
     [
       activeGridId,
@@ -2996,7 +3008,16 @@ function App() {
         if (!created) {
           return { ok: false, requestId, message: 'Failed to create card (grid not found)' }
         }
-        return { ok: true, requestId, message: 'Card created', data: created }
+        return {
+          ok: true,
+          requestId,
+          message: created.reused ? 'Card reused' : 'Card created',
+          data: {
+            cardId: created.cardId,
+            gridId: created.gridId,
+            reused: created.reused,
+          },
+        }
       }
 
       if (command.type === 'update-card') {
@@ -3825,7 +3846,7 @@ You can control Open Canvas via REST API.
 
 - \`GET /api/v1/state?full=1\` Read full workspace state
 - \`POST /api/v1/grids\` Create grid
-- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar, optional id)
+- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar, optional id; todo/calendar are singleton per grid)
 - \`PATCH /api/v1/cards/:cardId\` Update card fields
 - \`DELETE /api/v1/cards/:cardId\` Delete card
 - \`POST /api/v1/cards/:cardId/append-note\` Append note content
@@ -3836,6 +3857,7 @@ You can control Open Canvas via REST API.
 2. Confirm destructive or batch changes with the user first.
 3. Keep \`kind\` explicit when creating cards.
 4. Prefer \`append-note\` for incremental writing.
+5. Todo and calendar cards are singleton per grid. Reuse the existing card and PATCH it instead of creating duplicates.
 `,
     [apiBaseLabel, webOrigin],
   )

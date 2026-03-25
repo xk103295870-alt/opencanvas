@@ -170,6 +170,7 @@ Returns:
 - `workspaceId`
 - `accountId`
 - `supportedKinds`
+- `cardPolicies.singletonKinds`
 
 ### `POST /api/v1/grids`
 
@@ -225,6 +226,13 @@ Kind-specific fields:
 - media (`image|video|pdf`): `fileName`, `mediaUrl`
 - `todo`: `todoItems` (array of string or object `{ text, done?, status? }`)
 - `calendar`: `calendar` object with cursor/selected date/view/events
+
+Card policy:
+
+- `note` cards can be created repeatedly.
+- `todo` and `calendar` cards are singleton per grid.
+- If a singleton card already exists in the target grid, the create endpoint reuses it instead of creating a duplicate.
+- Use `PATCH /api/v1/cards/:cardId` to modify the fixed `todo` or `calendar` card.
 
 Server normalization:
 
