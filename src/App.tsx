@@ -3821,7 +3821,7 @@ function App() {
   const openClawSkillMarkdown = useMemo(
     () => `---
 name: open-canvas
-description: Create and manage Open Canvas grids and cards through REST API.
+description: Create and manage Open Canvas grids and cards through REST API. Todo and calendar cards are singleton per grid.
 homepage: ${webOrigin}
 user-invocable: true
 metadata:
@@ -3858,6 +3858,8 @@ You can control Open Canvas via REST API.
 3. Keep \`kind\` explicit when creating cards.
 4. Prefer \`append-note\` for incremental writing.
 5. Todo and calendar cards are singleton per grid. Reuse the existing card and PATCH it instead of creating duplicates.
+6. For todo and calendar work, always target the fixed singleton card in the current grid.
+7. Create new cards freely only for notes or other non-singleton kinds.
 `,
     [apiBaseLabel, webOrigin],
   )

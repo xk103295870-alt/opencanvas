@@ -963,7 +963,8 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
 
   const skill = {
     name: 'open-canvas-api',
-    description: 'Open Canvas API skill for account bound automation with singleton todo/calendar cards per grid',
+    description:
+      'Open Canvas API skill for account bound automation. Todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates.',
     auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
     baseUrl: API_BASE_URL,
     defaultHeaders: {
