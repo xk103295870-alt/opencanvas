@@ -1814,6 +1814,26 @@ function App() {
     }
   }, [ensureApiSession, persistServerAuth, settings.language])
 
+  const copyApiKeyToClipboard = useCallback(async () => {
+    setApiActionPending(true)
+    try {
+      const session = await ensureApiSession()
+      const apiKey = session.lastApiKey
+      if (!apiKey) {
+        setOpenClawNotice(settings.language === 'zh' ? '还没有可复制的 API Key，请先生成。' : 'No API key is available yet. Generate one first.')
+        return
+      }
+
+      await navigator.clipboard.writeText(apiKey)
+      setOpenClawNotice(settings.language === 'zh' ? '已复制 API Key。' : 'API key copied.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOpenClawNotice(settings.language === 'zh' ? `复制 API Key 失败：${message}` : `Failed to copy API key: ${message}`)
+    } finally {
+      setApiActionPending(false)
+    }
+  }, [ensureApiSession, settings.language])
+
   const copyOpenClawSkillJson = useCallback(async () => {
     setApiActionPending(true)
     try {
@@ -4331,16 +4351,16 @@ You can control Open Canvas via REST API.
                   className="mini-btn"
                   disabled={apiActionPending}
                   onClick={() => {
-                    void copyOpenClawSkillJson()
+                    void copyApiKeyToClipboard()
                   }}
                 >
                   {settings.language === 'zh'
                     ? apiActionPending
                       ? '处理中...'
-                      : '复制 Skill JSON'
+                      : '复制 API key'
                     : apiActionPending
                       ? 'Working...'
-                      : 'Copy skill JSON'}
+                      : 'Copy API key'}
                 </button>
               </div>
 
@@ -4389,20 +4409,32 @@ You can control Open Canvas via REST API.
                   <section className="openclaw-step openclaw-step-compact">
                     <div className="openclaw-step-head">
                       <strong>{settings.language === 'zh' ? '步骤 3：openclaw.json' : 'Step 3: openclaw.json'}</strong>
-                      <button
-                        className="mini-btn"
-                        onClick={() => {
-                          void copyTextWithNotice(
-                            openClawBotConfigSnippet,
-                            '已复制 openclaw.json 配置。',
-                            'openclaw.json snippet copied.',
-                            '复制 openclaw.json 失败：',
-                            'Failed to copy openclaw.json snippet: ',
-                          )
-                        }}
-                      >
-                        {settings.language === 'zh' ? '复制' : 'Copy'}
-                      </button>
+                      <div className="panel-actions">
+                        <button
+                          className="mini-btn"
+                          disabled={apiActionPending}
+                          onClick={() => {
+                            void copyTextWithNotice(
+                              openClawBotConfigSnippet,
+                              '已复制 openclaw.json 配置。',
+                              'openclaw.json snippet copied.',
+                              '复制 openclaw.json 失败：',
+                              'Failed to copy openclaw.json snippet: ',
+                            )
+                          }}
+                        >
+                          {settings.language === 'zh' ? '复制 openclaw.json' : 'Copy openclaw.json'}
+                        </button>
+                        <button
+                          className="mini-btn"
+                          disabled={apiActionPending}
+                          onClick={() => {
+                            void copyOpenClawSkillJson()
+                          }}
+                        >
+                          {settings.language === 'zh' ? '复制 Skill JSON' : 'Copy Skill JSON'}
+                        </button>
+                      </div>
                     </div>
                     <p>
                       {settings.language === 'zh'
