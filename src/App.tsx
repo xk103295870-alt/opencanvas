@@ -3644,15 +3644,6 @@ You can control Open Canvas via REST API.
 
         <section className="panel-block">
           <header className="panel-title">{text.syncTitle}</header>
-          <p className={`sync-state sync-${syncStatus}`}>
-            {syncStatus === 'syncing'
-              ? text.syncing
-              : syncStatus === 'ok'
-                ? text.synced
-                : syncStatus === 'error'
-                  ? text.syncError
-                  : text.ready}
-          </p>
           <p className="sync-hint">{syncMessage}</p>
           <p className="sync-hint">
             {syncMeta.lastSyncAt ? `${text.lastSyncPrefix}${formatLocalDateTime(syncMeta.lastSyncAt, settings.language)}` : text.lastSyncNever}

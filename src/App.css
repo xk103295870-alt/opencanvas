@@ -230,29 +230,6 @@
   color: #d98383;
 }
 
-.sync-state {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.sync-idle {
-  color: var(--text-soft);
-}
-
-.sync-syncing {
-  color: #d0ac5b;
-}
-
-.sync-ok {
-  color: #63b67e;
-}
-
-.sync-error {
-  color: #d98383;
-}
-
 .sync-hint {
   margin: 0;
   color: var(--text-dim);
