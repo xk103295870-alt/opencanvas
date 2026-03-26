@@ -6,12 +6,15 @@ import {
   apiCheckHealth,
   apiCreateKey,
   apiCreateCard,
+  apiCreateGrid,
   apiDemoLogin,
   apiDeleteCard,
+  apiDeleteGrid,
   apiGetSessionMe,
   apiGetSkillTemplate,
   apiGetWorkspaceState,
   apiUpdateCard,
+  apiUpdateGrid,
   apiTriggerUpdate,
   buildOpenClawSkillConfig,
   getApiBaseUrl,
@@ -1751,6 +1754,62 @@ function App() {
     return next
   }, [])
 
+  const persistOpenClawGridCreate = useCallback(
+    async (grid: GridData, activateGrid = false) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiCreateGrid(
+          serverAuth.lastApiKey,
+          {
+            id: grid.id,
+            name: grid.name,
+            activate: activateGrid,
+          },
+          resolveApiBaseUrl(),
+        )
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw grid creation:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
+  const persistOpenClawGridUpdate = useCallback(
+    async (gridId: string, updates: { name?: string; activate?: boolean }) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiUpdateGrid(serverAuth.lastApiKey, gridId, updates, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw grid update:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
+  const persistOpenClawGridDelete = useCallback(
+    async (gridId: string) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiDeleteGrid(serverAuth.lastApiKey, gridId, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw grid deletion:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
   const clearOpenClawPatchTimer = useCallback((cardId: string) => {
     const timer = openClawPatchTimerRef.current[cardId]
     if (timer !== undefined) {
@@ -2684,11 +2743,19 @@ function App() {
 
   const commitGridName = () => {
     if (!editingGridId) return
+    const targetGrid = grids.find((grid) => grid.id === editingGridId)
+    if (!targetGrid) {
+      setEditingGridId(null)
+      setGridNameDraft('')
+      return
+    }
 
     const nextName = gridNameDraft.trim() || text.unnamedGrid
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => (grid.id === editingGridId ? { ...grid, name: nextName } : grid)),
     )
+    void persistOpenClawGridUpdate(editingGridId, { name: nextName })
     setEditingGridId(null)
     setGridNameDraft('')
   }
@@ -2697,6 +2764,20 @@ function App() {
     setEditingGridId(null)
     setGridNameDraft('')
   }
+
+  const activateGrid = useCallback(
+    (gridId: string) => {
+      if (gridId === activeGridId) return
+
+      const targetGrid = grids.find((grid) => grid.id === gridId)
+      if (!targetGrid) return
+
+      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+      setActiveGridId(gridId)
+      void persistOpenClawGridUpdate(gridId, { activate: true })
+    },
+    [activeGridId, grids, persistOpenClawGridUpdate, updateOpenClawLayoutSyncMeta],
+  )
 
   const beginEditCardTitle = (card: CardData) => {
     setEditingCardId(card.id)
@@ -2736,14 +2817,17 @@ function App() {
         cards: [],
       }
 
+      const shouldActivateGrid = payload?.activate !== false
+      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
       setGrids((current) => [...current, newGrid])
-      if (payload?.activate !== false) {
+      if (shouldActivateGrid) {
         setActiveGridId(newGrid.id)
       }
+      void persistOpenClawGridCreate(newGrid, shouldActivateGrid)
 
       return newGrid
     },
-    [grids.length, text.gridPrefix],
+    [grids.length, persistOpenClawGridCreate, text.gridPrefix, updateOpenClawLayoutSyncMeta],
   )
 
   const createCardInternal = useCallback(
@@ -2883,23 +2967,25 @@ function App() {
   }
 
   const removeGrid = (gridId: string) => {
-    setGrids((current) => {
-      if (current.length <= 1) return current
+    if (grids.length <= 1) return
 
-      const targetIndex = current.findIndex((grid) => grid.id === gridId)
-      if (targetIndex < 0) return current
+    const targetIndex = grids.findIndex((grid) => grid.id === gridId)
+    if (targetIndex < 0) return
 
-      const next = current.filter((grid) => grid.id !== gridId)
-      if (activeGridId === gridId) {
-        const fallbackGrid = next[Math.max(0, targetIndex - 1)] ?? next[0]
-        if (fallbackGrid) setActiveGridId(fallbackGrid.id)
-      }
-      if (editingGridId === gridId) {
-        setEditingGridId(null)
-        setGridNameDraft('')
-      }
-      return next
-    })
+    const next = grids.filter((grid) => grid.id !== gridId)
+    const fallbackGrid = activeGridId === gridId ? next[Math.max(0, targetIndex - 1)] ?? next[0] : null
+
+    if (editingGridId === gridId) {
+      setEditingGridId(null)
+      setGridNameDraft('')
+    }
+
+    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids(next)
+    if (fallbackGrid) {
+      setActiveGridId(fallbackGrid.id)
+    }
+    void persistOpenClawGridDelete(gridId)
   }
 
   const addNoteCard = () => {
@@ -3973,7 +4059,7 @@ Example PATCH body:
                 key={grid.id}
                 className={`grid-item ${grid.id === activeGridId ? 'active' : ''}`}
                 onClick={() => {
-                  setActiveGridId(grid.id)
+                  activateGrid(grid.id)
                   if (editingGridId && editingGridId !== grid.id) cancelGridName()
                 }}
               >

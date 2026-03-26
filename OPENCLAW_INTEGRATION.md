@@ -61,7 +61,9 @@ Windows PowerShell：
 ### API 能力
 
 当前 Skill 已开放以下 API（标准前缀）：
-- `POST /api/v1/grids` 创建画布
+- `POST /api/v1/grids` 创建画布（可传 `id` / `name` / `activate`）
+- `PATCH /api/v1/grids/:gridId` 重命名或激活画布
+- `DELETE /api/v1/grids/:gridId` 删除画布
 - `POST /api/v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar，可选传入 `id`；todo / calendar 在每个 grid 内仅保留一张）
 - `PATCH /api/v1/cards/:cardId` 更新卡片
 - `DELETE /api/v1/cards/:cardId` 删除卡片
@@ -75,6 +77,7 @@ Windows PowerShell：
 - `todo` 和 `calendar` 是每个 grid 的固定卡片。
 - 如果目标 grid 已经有同类卡片，`POST /api/v1/cards` 会复用现有卡片。
 - 更新固定卡请用 `PATCH /api/v1/cards/:cardId`。
+- grid 的创建、重命名、激活、删除都会写入后端，因此刷新后不会回滚。
 
 卡片写法建议：
 

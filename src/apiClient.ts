@@ -45,9 +45,12 @@ export type ServerSkillResponse = {
       singletonKinds: Array<'todo' | 'calendar'>
     }
     endpoints: Record<string, { method: string; path: string }>
+    exampleCreateGrid: { method: string; path: string; body: Record<string, unknown> }
     exampleCreateCard: { method: string; path: string; body: Record<string, unknown> }
+    exampleUpdateGrid: { method: string; path: string; body: Record<string, unknown> }
     exampleUpdateTodoCard: { method: string; path: string; body: Record<string, unknown> }
     exampleUpdateCalendarCard: { method: string; path: string; body: Record<string, unknown> }
+    exampleDeleteGrid: { method: string; path: string; body: Record<string, unknown> }
     exampleAppendNote: { method: string; path: string; body: Record<string, unknown> }
   }
 }
@@ -98,6 +101,34 @@ export type ServerCardUpdateResponse = {
 export type ServerCardDeleteResponse = {
   cardId: string
   gridId: string
+}
+
+export type ServerGridCreatePayload = {
+  id?: string
+  name?: string
+  activate?: boolean
+}
+
+export type ServerGridCreateResponse = {
+  gridId: string
+  name: string
+  activeGridId: string
+}
+
+export type ServerGridUpdatePayload = {
+  name?: string
+  activate?: boolean
+}
+
+export type ServerGridUpdateResponse = {
+  gridId: string
+  name: string
+  activeGridId: string
+}
+
+export type ServerGridDeleteResponse = {
+  gridId: string
+  activeGridId: string
 }
 
 export type ServerCardCreatePayload = {
@@ -270,6 +301,34 @@ export async function apiCreateCard(apiKey: string, payload: ServerCardCreatePay
   }, baseUrl)
 }
 
+export async function apiCreateGrid(apiKey: string, payload: ServerGridCreatePayload, baseUrl?: string) {
+  return requestJson<ServerGridCreateResponse>('/api/v1/grids', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+  }, baseUrl)
+}
+
+export async function apiUpdateGrid(
+  apiKey: string,
+  gridId: string,
+  updates: ServerGridUpdatePayload,
+  baseUrl?: string,
+) {
+  return requestJson<ServerGridUpdateResponse>(`/api/v1/grids/${encodeURIComponent(gridId)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(updates),
+  }, baseUrl)
+}
+
+export async function apiDeleteGrid(apiKey: string, gridId: string, baseUrl?: string) {
+  return requestJson<ServerGridDeleteResponse>(`/api/v1/grids/${encodeURIComponent(gridId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }, baseUrl)
+}
+
 export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
   return requestJson<ServerStateResponse>('/api/v1/state?full=1', {
     method: 'GET',
@@ -343,9 +402,12 @@ export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiK
     cardPolicies: skillPayload.skill.cardPolicies,
     endpoints: skillPayload.skill.endpoints,
     examples: {
+      createGrid: skillPayload.skill.exampleCreateGrid,
       createCard: skillPayload.skill.exampleCreateCard,
+      updateGrid: skillPayload.skill.exampleUpdateGrid,
       updateTodoCard: skillPayload.skill.exampleUpdateTodoCard,
       updateCalendarCard: skillPayload.skill.exampleUpdateCalendarCard,
+      deleteGrid: skillPayload.skill.exampleDeleteGrid,
       appendNote: skillPayload.skill.exampleAppendNote,
     },
   }

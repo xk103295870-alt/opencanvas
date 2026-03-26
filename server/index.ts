@@ -140,6 +140,17 @@ type OpenCanvasCreateCardPayload = {
   }
 }
 
+type OpenCanvasGridCreatePayload = {
+  id?: string
+  name?: string
+  activate?: boolean
+}
+
+type OpenCanvasGridUpdatePayload = {
+  name?: string
+  activate?: boolean
+}
+
 type RequestContext = {
   account?: AccountRecord
   session?: SessionRecord
@@ -184,6 +195,11 @@ function toFiniteNumber(value: unknown, fallback: number) {
 }
 
 function normalizeCardId(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw.length > 0 ? raw.slice(0, 120) : null
+}
+
+function normalizeGridId(value: unknown) {
   const raw = typeof value === 'string' ? value.trim() : ''
   return raw.length > 0 ? raw.slice(0, 120) : null
 }
@@ -734,6 +750,16 @@ app.get('/openapi.json', (_req, res) => {
           security: [{ bearerAuth: [] }],
         },
       },
+      '/api/v1/grids/{gridId}': {
+        patch: {
+          summary: 'Update grid',
+          security: [{ bearerAuth: [] }],
+        },
+        delete: {
+          summary: 'Delete grid',
+          security: [{ bearerAuth: [] }],
+        },
+      },
       '/api/v1/cards': {
         post: {
           summary: 'Create card',
@@ -783,6 +809,8 @@ app.get('/llms-api.txt', (_req, res) => {
 - GET  /api/v1/state?full=1
 - POST /api/v1/system/update
 - POST /api/v1/grids
+- PATCH /api/v1/grids/:gridId
+- DELETE /api/v1/grids/:gridId
 - POST /api/v1/cards
 - PATCH /api/v1/cards/:cardId
 - DELETE /api/v1/cards/:cardId
@@ -793,6 +821,8 @@ app.get('/llms-api.txt', (_req, res) => {
 - todo and calendar cards are singleton per grid
 - if a singleton card already exists, POST /api/v1/cards reuses it instead of creating a duplicate
 - use PATCH /api/v1/cards/:cardId to modify the fixed todo/calendar card
+- use PATCH /api/v1/grids/:gridId to rename or activate a grid
+- use DELETE /api/v1/grids/:gridId to remove a grid
 `
   res.type('text/plain').send(content)
 })
@@ -964,7 +994,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
   const skill = {
     name: 'open-canvas-api',
     description:
-      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates.',
+      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates. Grid changes (create, rename, activate, delete) are also persisted through the API.',
     auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
     baseUrl: API_BASE_URL,
     defaultHeaders: {
@@ -976,16 +1006,28 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
     },
     endpoints: {
       createGrid: { method: 'POST', path: '/api/v1/grids' },
+      updateGrid: { method: 'PATCH', path: '/api/v1/grids/:gridId' },
+      deleteGrid: { method: 'DELETE', path: '/api/v1/grids/:gridId' },
       createCard: { method: 'POST', path: '/api/v1/cards' },
       updateCard: { method: 'PATCH', path: '/api/v1/cards/:cardId' },
       deleteCard: { method: 'DELETE', path: '/api/v1/cards/:cardId' },
       appendNote: { method: 'POST', path: '/api/v1/cards/:cardId/append-note' },
       getState: { method: 'GET', path: '/api/v1/state?full=1' },
     },
+    exampleCreateGrid: {
+      method: 'POST',
+      path: '/api/v1/grids',
+      body: { id: 'grid-work', name: 'Work', activate: true },
+    },
     exampleCreateCard: {
       method: 'POST',
       path: '/api/v1/cards',
       body: { id: 'note-example', kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
+    },
+    exampleUpdateGrid: {
+      method: 'PATCH',
+      path: '/api/v1/grids/grid-work',
+      body: { name: 'Workboard', activate: true },
     },
     exampleUpdateTodoCard: {
       method: 'PATCH',
@@ -1022,6 +1064,11 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
         },
       },
     },
+    exampleDeleteGrid: {
+      method: 'DELETE',
+      path: '/api/v1/grids/grid-work',
+      body: {},
+    },
     exampleAppendNote: {
       method: 'POST',
       path: '/api/v1/cards/note-example/append-note',
@@ -1037,7 +1084,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       step1: 'Generate API key from /api/v1/auth/api-keys.',
       step2: 'Put API key into OpenClaw skill auth bearer token.',
       step3:
-        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates.',
+        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates. Grid create, rename, activate, and delete are also persisted through the API.',
     },
   })
 })
@@ -1089,6 +1136,133 @@ app.get('/api/v1/config', requireApiKey('canvas:read'), (req, res) => {
       cardPolicies: {
         singletonKinds: ['todo', 'calendar'],
       },
+    },
+  })
+})
+
+app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const body = req.body as OpenCanvasGridCreatePayload
+  const requestedGridId = normalizeGridId(body?.id)
+  const gridId = requestedGridId || `grid-${uid(10)}`
+  const name = String(body?.name || '').trim() || `Grid ${ctx.workspace.grids.length + 1}`
+
+  if (ctx.workspace.grids.some((grid) => grid.id === gridId)) {
+    res.status(409).json({ ok: false, message: `Grid already exists: ${gridId}` })
+    return
+  }
+
+  const grid: GridData = { id: gridId, name, cards: [] }
+  ctx.workspace.grids.push(grid)
+  if (body?.activate !== false) ctx.workspace.activeGridId = gridId
+  ctx.workspace.updatedAt = nowIso()
+  saveDb()
+
+  res.json({
+    ok: true,
+    message: 'Grid created',
+    data: {
+      gridId,
+      name,
+      activeGridId: ctx.workspace.activeGridId,
+    },
+  })
+})
+
+app.patch('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const gridId = String(req.params.gridId || '').trim()
+  if (!gridId) {
+    res.status(400).json({ ok: false, message: 'gridId is required' })
+    return
+  }
+
+  const body = req.body as OpenCanvasGridUpdatePayload
+  const grid = ctx.workspace.grids.find((item) => item.id === gridId)
+  if (!grid) {
+    res.status(404).json({ ok: false, message: `Grid not found: ${gridId}` })
+    return
+  }
+
+  const hasName = Object.prototype.hasOwnProperty.call(body || {}, 'name')
+  const hasActivate = body?.activate === true
+  if (!hasName && !hasActivate) {
+    res.status(400).json({ ok: false, message: 'Grid update payload required' })
+    return
+  }
+
+  if (hasName) {
+    grid.name = String(body?.name || '').trim() || grid.name
+  }
+  if (hasActivate) {
+    ctx.workspace.activeGridId = grid.id
+  }
+
+  ctx.workspace.updatedAt = nowIso()
+  saveDb()
+
+  res.json({
+    ok: true,
+    message: hasName ? 'Grid updated' : 'Grid activated',
+    data: {
+      gridId: grid.id,
+      name: grid.name,
+      activeGridId: ctx.workspace.activeGridId,
+    },
+  })
+})
+
+app.delete('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const gridId = String(req.params.gridId || '').trim()
+  if (!gridId) {
+    res.status(400).json({ ok: false, message: 'gridId is required' })
+    return
+  }
+
+  if (ctx.workspace.grids.length <= 1) {
+    res.status(409).json({ ok: false, message: 'At least one grid must remain' })
+    return
+  }
+
+  const index = ctx.workspace.grids.findIndex((grid) => grid.id === gridId)
+  if (index < 0) {
+    res.status(404).json({ ok: false, message: `Grid not found: ${gridId}` })
+    return
+  }
+
+  ctx.workspace.grids.splice(index, 1)
+  if (ctx.workspace.activeGridId === gridId) {
+    const fallbackGrid = ctx.workspace.grids[Math.max(0, index - 1)] ?? ctx.workspace.grids[0]
+    if (fallbackGrid) {
+      ctx.workspace.activeGridId = fallbackGrid.id
+    }
+  }
+
+  ctx.workspace.updatedAt = nowIso()
+  saveDb()
+
+  res.json({
+    ok: true,
+    message: 'Grid deleted',
+    data: {
+      gridId,
+      activeGridId: ctx.workspace.activeGridId,
     },
   })
 })
@@ -1145,34 +1319,6 @@ app.post('/api/v1/system/update', requireSession, (req, res) => {
     const message = error instanceof Error ? error.message : String(error)
     res.status(500).json({ ok: false, message: `Failed to start update: ${message}` })
   }
-})
-
-app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {
-  const ctx = ensureCtx(req)
-  if (!ctx.workspace) {
-    res.status(500).json({ ok: false, message: 'Workspace context missing' })
-    return
-  }
-
-  const body = req.body as { name?: string; activate?: boolean }
-  const name = String(body?.name || '').trim() || `Grid ${ctx.workspace.grids.length + 1}`
-  const gridId = `grid-${uid(10)}`
-  const grid: GridData = { id: gridId, name, cards: [] }
-
-  ctx.workspace.grids.push(grid)
-  if (body?.activate !== false) ctx.workspace.activeGridId = gridId
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
-
-  res.json({
-    ok: true,
-    message: 'Grid created',
-    data: {
-      gridId,
-      name,
-      activeGridId: ctx.workspace.activeGridId,
-    },
-  })
 })
 
 app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {

@@ -171,10 +171,6 @@ Returns:
 - `accountId`
 - `supportedKinds`
 - `cardPolicies.singletonKinds`
-- `exampleCreateCard`
-- `exampleUpdateTodoCard`
-- `exampleUpdateCalendarCard`
-- `exampleAppendNote`
 
 ### `POST /api/v1/grids`
 
@@ -184,6 +180,7 @@ Request body:
 
 ```json
 {
+  "id": "grid-work",
   "name": "Work",
   "activate": true
 }
@@ -194,6 +191,39 @@ Response `data`:
 - `gridId`
 - `name`
 - `activeGridId`
+
+Notes:
+
+- `id` is optional. When provided, the server reuses the client-supplied grid id so local and remote state stay aligned.
+- `activate: true` makes the created grid the active grid.
+
+### `PATCH /api/v1/grids/:gridId`
+
+Scope required: `canvas:write`
+
+Request body:
+
+```json
+{
+  "name": "Workboard",
+  "activate": true
+}
+```
+
+Notes:
+
+- `name` renames the grid.
+- `activate: true` marks this grid as the active grid.
+
+### `DELETE /api/v1/grids/:gridId`
+
+Scope required: `canvas:write`
+
+Notes:
+
+- Deletes the grid from the workspace.
+- If the deleted grid was active, the server promotes a neighboring grid to active.
+- The server rejects deleting the last remaining grid.
 
 ### `POST /api/v1/cards`
 
