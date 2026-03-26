@@ -961,6 +961,32 @@ const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
   }))
 }
 
+const isMediaCardKind = (kind: CardKind): kind is Extract<CardKind, 'image' | 'video' | 'pdf'> =>
+  kind === 'image' || kind === 'video' || kind === 'pdf'
+
+const mergeRemoteGridsWithLocalMediaCards = (remoteGrids: GridData[], localGrids: GridData[]): GridData[] => {
+  if (!Array.isArray(remoteGrids) || !Array.isArray(localGrids)) return remoteGrids
+
+  const localById = new Map(localGrids.map((grid) => [grid.id, grid]))
+
+  return remoteGrids.map((remoteGrid) => {
+    const localGrid = localById.get(remoteGrid.id)
+    if (!localGrid) return remoteGrid
+
+    const remoteCardIds = new Set(remoteGrid.cards.map((card) => card.id))
+    const preservedMediaCards = localGrid.cards
+      .filter((card) => isMediaCardKind(card.kind) && !remoteCardIds.has(card.id))
+      .map((card) => ({ ...card }))
+
+    if (preservedMediaCards.length === 0) return remoteGrid
+
+    return {
+      ...remoteGrid,
+      cards: [...remoteGrid.cards, ...preservedMediaCards],
+    }
+  })
+}
+
 const createDefaultCalendarState = (): CalendarState => {
   const today = toDateKey(new Date())
   return {
@@ -1506,6 +1532,7 @@ function App() {
   const [todoDropTarget, setTodoDropTarget] = useState<{ cardId: string; lane: TodoLane; itemId: string | null } | null>(null)
 
   const canvasRef = useRef<HTMLElement | null>(null)
+  const gridsRef = useRef(grids)
   const viewportRef = useRef(viewport)
   const assetUrlsRef = useRef(assetUrls)
   const syncMetaRef = useRef(syncMeta)
@@ -1545,6 +1572,10 @@ function App() {
     doing: todoText.laneDoing,
     done: todoText.laneDone,
   }
+
+  useEffect(() => {
+    gridsRef.current = grids
+  }, [grids])
 
   useEffect(() => {
     viewportRef.current = viewport
@@ -2164,7 +2195,10 @@ function App() {
         return false
       }
 
-      const nextGrids = normalizeGridsForTodoBoard(remoteGrids as GridData[])
+      const nextGrids = mergeRemoteGridsWithLocalMediaCards(
+        normalizeGridsForTodoBoard(remoteGrids as GridData[]),
+        gridsRef.current,
+      )
       if (!nextGrids.length) {
         lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
         return false
