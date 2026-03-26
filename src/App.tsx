@@ -2076,14 +2076,12 @@ function App() {
     if (!account || !serverAuth?.lastApiKey) return false
 
     try {
-      const lastLocalUpdateAt = syncMetaRef.current.lastLocalUpdateAt
-      const lastSyncAt = syncMetaRef.current.lastSyncAt ?? 0
-      if (lastLocalUpdateAt > lastSyncAt + 1000) {
+      const { lastLayoutMutationAt, lastLayoutSyncAt } = openClawLayoutSyncRef.current
+      if (lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
         return false
       }
 
-      const { lastLayoutMutationAt, lastLayoutSyncAt } = openClawLayoutSyncRef.current
-      if (lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
+      if (Object.keys(openClawPendingPatchRef.current).length > 0) {
         return false
       }
 
