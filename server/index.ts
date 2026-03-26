@@ -50,6 +50,18 @@ type CardData = {
   calendar?: CalendarState
 }
 
+type AssetRecord = {
+  id: string
+  accountId: string
+  workspaceId: string
+  name: string
+  type: string
+  size: number
+  publicToken: string
+  createdAt: string
+  updatedAt: string
+}
+
 type GridData = {
   id: string
   name: string
@@ -105,6 +117,7 @@ type ApiDb = {
   sessions: SessionRecord[]
   apiKeys: ApiKeyRecord[]
   workspaces: WorkspaceRecord[]
+  assets: AssetRecord[]
 }
 
 type OpenCanvasCreateCardPayload = {
@@ -164,6 +177,7 @@ const API_PORT = Number(process.env.OPEN_CANVAS_API_PORT || '8787')
 const API_BASE_URL = process.env.OPEN_CANVAS_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
 const WEB_ORIGIN = process.env.OPEN_CANVAS_WEB_ORIGIN || 'http://127.0.0.1:5173'
 const DB_PATH = path.join(process.cwd(), '.runtime', 'api-db.json')
+const ASSET_ROOT = path.join(process.cwd(), '.runtime', 'assets')
 const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
@@ -176,7 +190,7 @@ app.use(
     credentials: false,
   }),
 )
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '50mb' }))
 
 function statusToErrorCode(status: number) {
   if (status === 400) return 'bad_request'
@@ -202,6 +216,50 @@ function normalizeCardId(value: unknown) {
 function normalizeGridId(value: unknown) {
   const raw = typeof value === 'string' ? value.trim() : ''
   return raw.length > 0 ? raw.slice(0, 120) : null
+}
+
+function normalizeAssetId(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw.length > 0 ? raw.slice(0, 120) : null
+}
+
+function normalizeAssetName(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw.length > 0 ? raw.slice(0, 240) : 'asset'
+}
+
+function sanitizeMimeType(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (raw.startsWith('image/')) return raw
+  if (raw.startsWith('video/')) return raw
+  if (raw === 'application/pdf') return raw
+  return 'application/octet-stream'
+}
+
+function parseDataUrl(input: unknown) {
+  const raw = String(input || '').trim()
+  const match = raw.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i)
+  if (!match) return null
+  const mimeType = sanitizeMimeType(match[1] || 'application/octet-stream')
+  const base64 = match[2]
+  if (!base64) return null
+
+  return {
+    mimeType,
+    buffer: Buffer.from(base64, 'base64'),
+  }
+}
+
+function ensureAssetDir(workspaceId: string) {
+  fs.mkdirSync(path.join(ASSET_ROOT, workspaceId), { recursive: true })
+}
+
+function getAssetFilePath(workspaceId: string, assetId: string) {
+  return path.join(ASSET_ROOT, workspaceId, assetId)
+}
+
+function toAssetUrl(assetId: string, publicToken: string) {
+  return `${API_BASE_URL}/api/v1/assets/${encodeURIComponent(assetId)}?token=${encodeURIComponent(publicToken)}`
 }
 
 // For /api/v1 requests, normalize internal { ok, ... } payloads into envelope format:
@@ -401,6 +459,7 @@ function loadDb(): ApiDb {
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
       apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : [],
       workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
+      assets: Array.isArray(parsed.assets) ? parsed.assets : [],
     }
   } catch {
     return createEmptyDb()
@@ -419,6 +478,7 @@ function createEmptyDb(): ApiDb {
     sessions: [],
     apiKeys: [],
     workspaces: [],
+    assets: [],
   }
 }
 
@@ -760,6 +820,21 @@ app.get('/openapi.json', (_req, res) => {
           security: [{ bearerAuth: [] }],
         },
       },
+      '/api/v1/assets': {
+        post: {
+          summary: 'Upload asset',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      '/api/v1/assets/{assetId}': {
+        get: {
+          summary: 'Fetch asset',
+        },
+        delete: {
+          summary: 'Delete asset',
+          security: [{ bearerAuth: [] }],
+        },
+      },
       '/api/v1/cards': {
         post: {
           summary: 'Create card',
@@ -811,6 +886,9 @@ app.get('/llms-api.txt', (_req, res) => {
 - POST /api/v1/grids
 - PATCH /api/v1/grids/:gridId
 - DELETE /api/v1/grids/:gridId
+- POST /api/v1/assets
+- GET  /api/v1/assets/:assetId
+- DELETE /api/v1/assets/:assetId
 - POST /api/v1/cards
 - PATCH /api/v1/cards/:cardId
 - DELETE /api/v1/cards/:cardId
@@ -994,7 +1072,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
   const skill = {
     name: 'open-canvas-api',
     description:
-      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates. Grid changes (create, rename, activate, delete) are also persisted through the API.',
+      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates. Grid changes (create, rename, activate, delete) and media asset uploads are also persisted through the API.',
     auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
     baseUrl: API_BASE_URL,
     defaultHeaders: {
@@ -1008,6 +1086,9 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       createGrid: { method: 'POST', path: '/api/v1/grids' },
       updateGrid: { method: 'PATCH', path: '/api/v1/grids/:gridId' },
       deleteGrid: { method: 'DELETE', path: '/api/v1/grids/:gridId' },
+      createAsset: { method: 'POST', path: '/api/v1/assets' },
+      fetchAsset: { method: 'GET', path: '/api/v1/assets/:assetId' },
+      deleteAsset: { method: 'DELETE', path: '/api/v1/assets/:assetId' },
       createCard: { method: 'POST', path: '/api/v1/cards' },
       updateCard: { method: 'PATCH', path: '/api/v1/cards/:cardId' },
       deleteCard: { method: 'DELETE', path: '/api/v1/cards/:cardId' },
@@ -1084,7 +1165,7 @@ app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
       step1: 'Generate API key from /api/v1/auth/api-keys.',
       step2: 'Put API key into OpenClaw skill auth bearer token.',
       step3:
-        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates. Grid create, rename, activate, and delete are also persisted through the API.',
+        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates. Grid create, rename, activate, and delete, plus media asset upload/delete, are also persisted through the API.',
     },
   })
 })
@@ -1265,6 +1346,128 @@ app.delete('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) =>
       activeGridId: ctx.workspace.activeGridId,
     },
   })
+})
+
+app.post('/api/v1/assets', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace || !ctx.account) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const body = req.body as { id?: string; name?: string; type?: string; dataUrl?: string }
+  const parsed = parseDataUrl(body?.dataUrl)
+  if (!parsed) {
+    res.status(400).json({ ok: false, message: 'Valid dataUrl is required' })
+    return
+  }
+
+  const assetId = normalizeAssetId(body?.id) || `asset-${uid(12)}`
+  const now = nowIso()
+  const existingIndex = db.assets.findIndex(
+    (asset) => asset.id === assetId && asset.workspaceId === ctx.workspace?.id,
+  )
+  const record: AssetRecord = {
+    id: assetId,
+    accountId: ctx.account.id,
+    workspaceId: ctx.workspace.id,
+    name: normalizeAssetName(body?.name),
+    type: sanitizeMimeType(body?.type || parsed.mimeType),
+    size: parsed.buffer.length,
+    publicToken: existingIndex >= 0 ? db.assets[existingIndex].publicToken : uid(24),
+    createdAt: existingIndex >= 0 ? db.assets[existingIndex].createdAt : now,
+    updatedAt: now,
+  }
+
+  ensureAssetDir(ctx.workspace.id)
+  const filePath = getAssetFilePath(ctx.workspace.id, assetId)
+  fs.writeFileSync(filePath, parsed.buffer)
+
+  if (existingIndex >= 0) {
+    db.assets[existingIndex] = record
+  } else {
+    db.assets.push(record)
+  }
+  saveDb()
+
+  res.json({
+    ok: true,
+    message: 'Asset uploaded',
+    data: {
+      assetId: record.id,
+      assetUrl: toAssetUrl(record.id, record.publicToken),
+      asset: {
+        id: record.id,
+        name: record.name,
+        type: record.type,
+        size: record.size,
+        assetUrl: toAssetUrl(record.id, record.publicToken),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      },
+    },
+  })
+})
+
+app.get('/api/v1/assets/:assetId', (req, res) => {
+  const assetId = String(req.params.assetId || '').trim()
+  const token = String(req.query.token || '').trim()
+  if (!assetId || !token) {
+    res.status(400).json({ ok: false, message: 'assetId and token are required' })
+    return
+  }
+
+  const record = db.assets.find((asset) => asset.id === assetId)
+  if (!record) {
+    res.status(404).json({ ok: false, message: `Asset not found: ${assetId}` })
+    return
+  }
+
+  if (record.publicToken !== token) {
+    res.status(403).json({ ok: false, message: 'Invalid asset token' })
+    return
+  }
+
+  const filePath = getAssetFilePath(record.workspaceId, record.id)
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ ok: false, message: 'Asset file missing' })
+    return
+  }
+
+  res.setHeader('Content-Type', record.type || 'application/octet-stream')
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  fs.createReadStream(filePath).pipe(res)
+})
+
+app.delete('/api/v1/assets/:assetId', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const assetId = String(req.params.assetId || '').trim()
+  if (!assetId) {
+    res.status(400).json({ ok: false, message: 'assetId is required' })
+    return
+  }
+
+  const index = db.assets.findIndex((asset) => asset.id === assetId && asset.workspaceId === ctx.workspace?.id)
+  if (index < 0) {
+    res.status(404).json({ ok: false, message: `Asset not found: ${assetId}` })
+    return
+  }
+
+  const record = db.assets[index]
+  const filePath = getAssetFilePath(record.workspaceId, record.id)
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath)
+  }
+
+  db.assets.splice(index, 1)
+  saveDb()
+
+  res.json({ ok: true, message: 'Asset deleted', data: { assetId } })
 })
 
 app.post('/api/v1/system/update', requireSession, (req, res) => {

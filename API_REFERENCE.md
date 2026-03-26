@@ -225,6 +225,50 @@ Notes:
 - If the deleted grid was active, the server promotes a neighboring grid to active.
 - The server rejects deleting the last remaining grid.
 
+### `POST /api/v1/assets`
+
+Scope required: `canvas:write`
+
+Request body:
+
+```json
+{
+  "id": "asset-image-1",
+  "name": "photo.png",
+  "type": "image/png",
+  "dataUrl": "data:image/png;base64,..."
+}
+```
+
+Response `data`:
+
+- `assetId`
+- `assetUrl`
+- `asset`
+
+Notes:
+
+- The server stores the binary asset on disk and returns a public URL with a signed token.
+- Use this for images, videos, and PDFs that need to survive refresh and OpenClaw sync.
+
+### `GET /api/v1/assets/:assetId`
+
+Public fetch route for stored assets.
+
+Notes:
+
+- Requires the `token` query parameter from the upload response URL.
+- Returns the raw file with the stored content type.
+
+### `DELETE /api/v1/assets/:assetId`
+
+Scope required: `canvas:write`
+
+Notes:
+
+- Deletes the stored asset file and metadata.
+- Use it when the last card referencing an uploaded media asset is removed.
+
 ### `POST /api/v1/cards`
 
 Scope required: `canvas:write`

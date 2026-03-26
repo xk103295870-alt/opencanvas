@@ -64,6 +64,9 @@ Windows PowerShell：
 - `POST /api/v1/grids` 创建画布（可传 `id` / `name` / `activate`）
 - `PATCH /api/v1/grids/:gridId` 重命名或激活画布
 - `DELETE /api/v1/grids/:gridId` 删除画布
+- `POST /api/v1/assets` 上传媒体资源
+- `GET /api/v1/assets/:assetId` 获取媒体资源
+- `DELETE /api/v1/assets/:assetId` 删除媒体资源
 - `POST /api/v1/cards` 创建卡片（note / hint / image / video / pdf / todo / calendar，可选传入 `id`；todo / calendar 在每个 grid 内仅保留一张）
 - `PATCH /api/v1/cards/:cardId` 更新卡片
 - `DELETE /api/v1/cards/:cardId` 删除卡片
@@ -78,6 +81,7 @@ Windows PowerShell：
 - 如果目标 grid 已经有同类卡片，`POST /api/v1/cards` 会复用现有卡片。
 - 更新固定卡请用 `PATCH /api/v1/cards/:cardId`。
 - grid 的创建、重命名、激活、删除都会写入后端，因此刷新后不会回滚。
+- 图片 / 视频 / PDF 会先上传成 asset，再写入卡片的 `externalUrl`，因此刷新后和 OpenClaw 轮询都能看到。
 
 卡片写法建议：
 

@@ -5,9 +5,11 @@ import './App.css'
 import {
   apiCheckHealth,
   apiCreateKey,
+  apiCreateAsset,
   apiCreateCard,
   apiCreateGrid,
   apiDemoLogin,
+  apiDeleteAsset,
   apiDeleteCard,
   apiDeleteGrid,
   apiGetSessionMe,
@@ -1841,6 +1843,48 @@ function App() {
     [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
   )
 
+  const persistOpenClawAssetUpload = useCallback(
+    async (assetId: string, name: string, type: string, blob: Blob) => {
+      if (!account || !serverAuth?.lastApiKey) return null
+
+      try {
+        const dataUrl = await blobToDataUrl(blob)
+        const uploaded = await apiCreateAsset(
+          serverAuth.lastApiKey,
+          {
+            id: assetId,
+            name,
+            type,
+            dataUrl,
+          },
+          resolveApiBaseUrl(),
+        )
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return uploaded.assetUrl
+      } catch (error) {
+        console.error('Failed to persist OpenClaw asset upload:', error)
+        return null
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
+  const persistOpenClawAssetDelete = useCallback(
+    async (assetId: string) => {
+      if (!account || !serverAuth?.lastApiKey) return false
+
+      try {
+        await apiDeleteAsset(serverAuth.lastApiKey, assetId, resolveApiBaseUrl())
+        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        return true
+      } catch (error) {
+        console.error('Failed to persist OpenClaw asset deletion:', error)
+        return false
+      }
+    },
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+  )
+
   const clearOpenClawPatchTimer = useCallback((cardId: string) => {
     const timer = openClawPatchTimerRef.current[cardId]
     if (timer !== undefined) {
@@ -3369,6 +3413,7 @@ function App() {
     void removeAsset(fileId).catch((error) => {
       console.error('Failed to remove asset:', error)
     })
+    void persistOpenClawAssetDelete(fileId)
   }
 
   const onCardDragStart = (event: ReactPointerEvent<HTMLElement>, card: CardData) => {
@@ -3819,6 +3864,7 @@ function App() {
 
     const nextUrls: Record<string, string> = {}
     const newCards: CardData[] = []
+    const remoteMediaCards: CardData[] = []
 
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index]
@@ -3840,7 +3886,12 @@ function App() {
 
       nextUrls[assetId] = URL.createObjectURL(file)
 
-      newCards.push({
+      const uploadedAssetUrl =
+        account && serverAuth?.lastApiKey
+          ? await persistOpenClawAssetUpload(assetId, file.name, file.type || 'application/octet-stream', file)
+          : null
+
+      const nextCard: CardData = {
         id: cardId,
         kind,
         title: preset.title,
@@ -3851,7 +3902,13 @@ function App() {
         height: preset.height,
         fileId: assetId,
         fileName: file.name,
-      })
+        ...(uploadedAssetUrl ? { externalUrl: uploadedAssetUrl } : {}),
+      }
+
+      newCards.push(nextCard)
+      if (uploadedAssetUrl) {
+        remoteMediaCards.push(nextCard)
+      }
     }
 
     if (!newCards.length) return
@@ -3860,6 +3917,9 @@ function App() {
     setGrids((current) =>
       current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, ...newCards] } : grid)),
     )
+    if (remoteMediaCards.length > 0) {
+      void Promise.all(remoteMediaCards.map((card) => persistOpenClawCardCreate(activeGridId, card, false)))
+    }
     pushParticleImpulse(world.x, world.y, 0.24)
   }
 
@@ -3939,7 +3999,7 @@ function App() {
   const openClawSkillMarkdown = useMemo(
     () => `---
 name: open-canvas
-description: Create and manage Open Canvas grids and cards through REST API. Note cards are free-form, while todo and calendar cards are singleton per grid.
+description: Create and manage Open Canvas grids, cards, and media assets through REST API. Note cards are free-form, while todo and calendar cards are singleton per grid.
 homepage: ${webOrigin}
 user-invocable: true
 metadata:
@@ -3964,6 +4024,11 @@ You can control Open Canvas via REST API.
 
 - \`GET /api/v1/state?full=1\` Read full workspace state
 - \`POST /api/v1/grids\` Create grid
+- \`PATCH /api/v1/grids/:gridId\` Rename or activate grid
+- \`DELETE /api/v1/grids/:gridId\` Delete grid
+- \`POST /api/v1/assets\` Upload media asset
+- \`GET /api/v1/assets/:assetId\` Fetch media asset
+- \`DELETE /api/v1/assets/:assetId\` Delete media asset
 - \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar, optional id; todo/calendar are singleton per grid)
 - \`PATCH /api/v1/cards/:cardId\` Update card fields
 - \`DELETE /api/v1/cards/:cardId\` Delete card
@@ -4041,6 +4106,13 @@ Example PATCH body:
 }
 \`\`\`
 
+### Media assets
+
+- Images, videos, and PDFs should be uploaded to \`POST /api/v1/assets\` first.
+- Reuse the returned \`assetUrl\` as \`externalUrl\` on the media card.
+- Keep the local file card as a convenience cache, but rely on \`externalUrl\` for refresh-safe rendering.
+- Delete the asset with \`DELETE /api/v1/assets/:assetId\` when the last referencing card is removed.
+
 ## Best Practices
 
 1. Read \`/api/v1/state?full=1\` before write operations.
@@ -4050,6 +4122,7 @@ Example PATCH body:
 5. Todo and calendar cards are singleton per grid. Reuse the existing card and PATCH it instead of creating duplicates.
 6. For todo work, update \`todoItems\` on the fixed card. For calendar work, update \`calendar.events\` on the fixed card.
 7. Create new cards freely only for notes or other non-singleton kinds.
+8. For media cards, upload the file first and keep the returned \`assetUrl\` on the card.
 `,
     [apiBaseLabel, webOrigin],
   )

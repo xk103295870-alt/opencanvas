@@ -103,6 +103,16 @@ export type ServerCardDeleteResponse = {
   gridId: string
 }
 
+export type ServerAssetRecord = {
+  id: string
+  name: string
+  type: string
+  size: number
+  assetUrl: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type ServerGridCreatePayload = {
   id?: string
   name?: string
@@ -129,6 +139,23 @@ export type ServerGridUpdateResponse = {
 export type ServerGridDeleteResponse = {
   gridId: string
   activeGridId: string
+}
+
+export type ServerAssetUploadPayload = {
+  id?: string
+  name: string
+  type: string
+  dataUrl: string
+}
+
+export type ServerAssetUploadResponse = {
+  assetId: string
+  assetUrl: string
+  asset: ServerAssetRecord
+}
+
+export type ServerAssetDeleteResponse = {
+  assetId: string
 }
 
 export type ServerCardCreatePayload = {
@@ -324,6 +351,21 @@ export async function apiUpdateGrid(
 
 export async function apiDeleteGrid(apiKey: string, gridId: string, baseUrl?: string) {
   return requestJson<ServerGridDeleteResponse>(`/api/v1/grids/${encodeURIComponent(gridId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }, baseUrl)
+}
+
+export async function apiCreateAsset(apiKey: string, payload: ServerAssetUploadPayload, baseUrl?: string) {
+  return requestJson<ServerAssetUploadResponse>('/api/v1/assets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+  }, baseUrl)
+}
+
+export async function apiDeleteAsset(apiKey: string, assetId: string, baseUrl?: string) {
+  return requestJson<ServerAssetDeleteResponse>(`/api/v1/assets/${encodeURIComponent(assetId)}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${apiKey}` },
   }, baseUrl)
