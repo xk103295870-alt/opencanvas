@@ -2926,8 +2926,6 @@ function App() {
         return { cardId: existingSingletonCard.id, gridId: targetGridId, reused: true }
       }
 
-      const baseX = clamp(toFiniteNumber(payload?.x, 140), -200, SCENE_WIDTH - 60)
-      const baseY = clamp(toFiniteNumber(payload?.y, 140), -200, SCENE_HEIGHT - 60)
       const defaultTitle =
         kind === 'todo'
           ? todoText.title
@@ -2950,7 +2948,7 @@ function App() {
                 ? { width: 360, height: 280 }
                 : kind === 'video'
                   ? { width: 420, height: 300 }
-                  : kind === 'pdf'
+                : kind === 'pdf'
                     ? { width: 460, height: 360 }
                     : { width: 340, height: 280 }
 
@@ -2960,14 +2958,22 @@ function App() {
       const content = String(payload?.content ?? '').trim()
       const cardId = String(payload?.id || '').trim() || uid(kind)
       const externalTodoItems = toTodoItems(payload?.todoItems)
+      const canvasBounds = canvasRef.current?.getBoundingClientRect()
+      const currentViewport = viewportRef.current
+      const centeredWorldPoint = canvasBounds
+        ? {
+            x: (canvasBounds.width / 2 - currentViewport.x) / currentViewport.zoom,
+            y: (canvasBounds.height / 2 - currentViewport.y) / currentViewport.zoom,
+          }
+        : { x: 140, y: 140 }
 
       const cardBase: CardData = {
         id: cardId,
         kind,
         title,
         content: kind === 'note' ? content || text.notePlaceholder : content,
-        x: baseX,
-        y: baseY,
+        x: clamp(toFiniteNumber(payload?.x, centeredWorldPoint.x - width / 2), -200, SCENE_WIDTH - 60),
+        y: clamp(toFiniteNumber(payload?.y, centeredWorldPoint.y - height / 2), -200, SCENE_HEIGHT - 60),
         width,
         height,
         fileName: payload?.fileName,
@@ -3020,7 +3026,7 @@ function App() {
       if (payload?.activateGrid) {
         setActiveGridId(targetGridId)
       }
-      pushParticleImpulse(baseX, baseY, 0.22)
+      pushParticleImpulse(cardBase.x + cardBase.width / 2, cardBase.y + cardBase.height / 2, 0.22)
       void persistOpenClawCardCreate(targetGridId, cardWithTypeData, Boolean(payload?.activateGrid))
 
       return { cardId, gridId: targetGridId, reused: false }
@@ -3069,8 +3075,6 @@ function App() {
   const addNoteCard = () => {
     createCardInternal({
       kind: 'note',
-      x: 92,
-      y: 92,
       width: 340,
       height: 280,
     })
@@ -3079,8 +3083,6 @@ function App() {
   const addTodoCard = () => {
     createCardInternal({
       kind: 'todo',
-      x: 132,
-      y: 132,
       width: 360,
       height: 320,
     })
@@ -3089,8 +3091,6 @@ function App() {
   const addCalendarCard = () => {
     createCardInternal({
       kind: 'calendar',
-      x: 180,
-      y: 180,
       width: 440,
       height: 460,
     })
