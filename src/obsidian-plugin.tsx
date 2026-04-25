@@ -20,7 +20,7 @@ class OpenCanvasView extends ItemView {
   }
 
   getDisplayText() {
-    return 'Open Canvas'
+    return '开放工作台'
   }
 
   getIcon() {
@@ -48,13 +48,13 @@ export default class OpenCanvasPlugin extends Plugin {
     addIcon(OPEN_CANVAS_ICON, OPEN_CANVAS_ICON_SVG)
     this.registerView(VIEW_TYPE_OPEN_CANVAS, (leaf) => new OpenCanvasView(leaf))
 
-    this.addRibbonIcon(OPEN_CANVAS_ICON, 'Open Canvas', () => {
+    this.addRibbonIcon(OPEN_CANVAS_ICON, '开放工作台', () => {
       void this.activateView()
     })
 
     this.addCommand({
       id: 'open-canvas',
-      name: 'Open Canvas',
+      name: '开放工作台',
       callback: () => {
         void this.activateView()
       },
