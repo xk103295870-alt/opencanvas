@@ -1,9 +1,9 @@
 {
   "id": "open-canvas",
-  "name": "开放工作台",
+  "name": "Open Workbench",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "内置代办、日程管理、便利贴等功能。",
+  "description": "Built-in todos, schedule management, sticky notes, and related features.",
   "author": "ke xiao",
   "authorUrl": "",
   "isDesktopOnly": false
