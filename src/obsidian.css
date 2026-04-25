@@ -1,0 +1,13 @@
+.open-canvas-obsidian-view {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.open-canvas-obsidian-root {
+  width: 100%;
+  height: 100%;
+}
+
+.open-canvas-obsidian-root .app-shell {
+  height: 100%;
+}

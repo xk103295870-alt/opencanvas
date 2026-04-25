@@ -1,12 +1,11 @@
 # Open Canvas
 
-Open Canvas is a browser-based canvas workspace with a local API, CLI launcher, and OpenClaw integration.
+Open Canvas is a browser-based canvas workspace with a local API, CLI launcher, and Obsidian plugin build.
 
 ## Documentation
 
 - Chinese README: [README.zh-CN.md](./README.zh-CN.md)
 - API reference: [API_REFERENCE.md](./API_REFERENCE.md)
-- OpenClaw setup: [OPENCLAW_INTEGRATION.md](./OPENCLAW_INTEGRATION.md)
 
 ## Quick Start
 
@@ -35,11 +34,11 @@ npm run dev
 - Multi-card canvas for notes, todos, calendar items, and media
 - Todo and calendar cards are singleton per grid
 - Local persistence with workspace sync
-- API key-based OpenClaw integration
+- Obsidian native plugin build
 - In-place update flow for git installs
 
 ## Development
 
 - `npm run build`
 - `npm run lint`
-- `npm run smoke:api`
+- `npm run build:obsidian`

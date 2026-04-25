@@ -1,31 +1,23 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLayoutEffect } from 'react'
-import type { DragEvent as ReactDragEvent, FormEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import './App.css'
 import {
-  apiCheckHealth,
-  apiCreateKey,
   apiCreateAsset,
   apiCreateCard,
   apiCreateGrid,
-  apiDemoLogin,
   apiDeleteAsset,
   apiDeleteCard,
   apiDeleteGrid,
-  apiGetSessionMe,
-  apiGetSkillTemplate,
   apiGetWorkspaceState,
   apiUpdateCard,
   apiUpdateGrid,
-  apiTriggerUpdate,
-  buildOpenClawSkillConfig,
   getApiBaseUrl,
 } from './apiClient'
 
 type LanguageCode = 'zh' | 'en'
 type ThemeMode = 'system' | 'light' | 'dark' | 'glass'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
-type ApiHealthState = 'idle' | 'checking' | 'online' | 'offline'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
 type CalendarViewMode = 'month' | 'week'
 type TodoLane = 'todo' | 'doing' | 'done'
@@ -150,17 +142,20 @@ type AccountUser = {
   avatarUrl?: string
 }
 
-type OpenClawConfig = {
+const LOCAL_ACCOUNT: AccountUser = {
+  id: 'local-open-canvas',
+  name: 'Local Workspace',
+  email: 'local@open-canvas.local',
+  provider: 'demo',
+}
+
+type CliBridgeConfig = {
   googleClientId: string
 }
 
-type ServerAuthState = {
-  accessToken: string
-  expiresAt: string
-  apiBaseUrl: string
-  accountId: string
+type DisabledRemoteAuth = {
+  apiBaseUrl?: string
   lastApiKey?: string
-  lastApiKeyId?: string
 }
 
 type SyncMeta = {
@@ -176,11 +171,11 @@ type PersistedAppStateSnapshot = {
   savedAt: number
 }
 
-type OpenClawCardPatch = Partial<
+type CliBridgeCardPatch = Partial<
   Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'>
 >
 
-type OpenClawLayoutSyncMeta = {
+type CliBridgeLayoutSyncMeta = {
   lastLayoutMutationAt: number
   lastLayoutSyncAt: number
 }
@@ -241,22 +236,8 @@ type I18nText = {
   hintItems: string[]
   dropFilesLabel: string
   accountTitle: string
-  loginDisplayNamePlaceholder: string
-  loginEmailPlaceholder: string
-  signIn: string
-  cancel: string
-  demoLoginLabel: string
-  fakeLogin: string
-  fakeLoginSuccess: string
-  googleQuickSignIn: string
-  googleSigningIn: string
-  googleLoginSuccess: string
-  googleLoginFailedPrefix: string
   googleClientIdLabel: string
   googleClientIdHint: string
-  googleClientIdRequired: string
-  signedOut: string
-  logout: string
   loginHintInSettings: string
   providerPrefix: string
   providerDemo: string
@@ -279,8 +260,8 @@ type I18nText = {
   autoSyncLabel: string
   syncOnStartupLabel: string
   syncDebounceLabel: string
-  openclawTitle: string
-  openclawHint: string
+  cliBridgeTitle: string
+  cliBridgeHint: string
   updateTitle: string
   updateHint: string
   currentVersionLabel: string
@@ -378,7 +359,7 @@ type OpenCanvasCreateCardPayload = {
   calendar?: ExternalCalendarInput
 }
 
-type OpenCanvasSetConfigPayload = Partial<OpenClawConfig>
+type OpenCanvasSetConfigPayload = Partial<CliBridgeConfig>
 
 type OpenCanvasCommand =
   | {
@@ -473,33 +454,9 @@ type OpenCanvasGlobalApi = {
   setConfig: (payload?: OpenCanvasSetConfigPayload & { requestId?: string }) => Promise<OpenCanvasCommandResult>
 }
 
-type GoogleTokenResponse = {
-  access_token?: string
-  expires_in?: number
-  error?: string
-  error_description?: string
-}
-
-type GoogleTokenClient = {
-  requestAccessToken: (overrideConfig?: { prompt?: string }) => void
-}
-
-type GoogleIdentity = {
-  accounts: {
-    oauth2: {
-      initTokenClient: (config: {
-        client_id: string
-        scope: string
-        callback: (response: GoogleTokenResponse) => void
-      }) => GoogleTokenClient
-    }
-  }
-}
-
 declare global {
   interface Window {
     openCanvas?: OpenCanvasGlobalApi
-    google?: GoogleIdentity
   }
 }
 
@@ -511,12 +468,10 @@ const APP_STATE_KEY = 'main'
 const PERSISTED_APP_STATE_SHADOW_KEY = 'open-canvas-app-state-shadow'
 const AUTH_STORAGE_KEY = 'open-canvas-fake-auth'
 const SETTINGS_STORAGE_KEY = 'open-canvas-settings'
-const OPENCLAW_SETTINGS_KEY = 'open-canvas-openclaw-settings'
+const CLI_BRIDGE_SETTINGS_KEY = 'open-canvas-cliBridge-settings'
 const SYNC_META_KEY = 'open-canvas-sync-meta'
-const OPENCLAW_LAYOUT_SYNC_KEY = 'open-canvas-openclaw-layout-sync'
-const SERVER_AUTH_STORAGE_KEY = 'open-canvas-server-auth'
+const CLI_BRIDGE_LAYOUT_SYNC_KEY = 'open-canvas-cliBridge-layout-sync'
 const CLOUD_KEY_PREFIX = 'open-canvas-cloud-'
-const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
 
 const SCENE_WIDTH = 6000
 const SCENE_HEIGHT = 4000
@@ -535,7 +490,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   syncDebounceMs: 2400,
 }
 
-const DEFAULT_OPENCLAW_CONFIG: OpenClawConfig = {
+const DEFAULT_CLI_BRIDGE_CONFIG: CliBridgeConfig = {
   googleClientId: '',
 }
 
@@ -544,7 +499,7 @@ const DEFAULT_SYNC_META: SyncMeta = {
   lastSyncAt: null,
 }
 
-const DEFAULT_OPENCLAW_LAYOUT_SYNC_META: OpenClawLayoutSyncMeta = {
+const DEFAULT_CLI_BRIDGE_LAYOUT_SYNC_META: CliBridgeLayoutSyncMeta = {
   lastLayoutMutationAt: 0,
   lastLayoutSyncAt: 0,
 }
@@ -557,8 +512,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncing: '同步中...',
     synced: '已同步',
     syncError: '同步失败',
-    syncNeedLogin: '登录后可启用云同步。',
-    syncPleaseSignIn: '请先在设置中登录。',
+    syncNeedLogin: '本地模式已启用，后续可接入登录同步。',
+    syncPleaseSignIn: '当前使用本地模式，无需登录。',
     syncingWorkspace: '正在同步当前画布...',
     syncCloudCreated: '已创建云端副本。',
     syncPulledPrefix: '已拉取云端版本（',
@@ -568,7 +523,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     lastSyncPrefix: '上次同步：',
     lastSyncNever: '上次同步：从未',
     accountPrefix: '账号',
-    accountSignedOutHint: '账号：未登录（请在设置中登录）',
+    accountSignedOutHint: '账号：本地模式',
     newNoteCard: '+ 新建便利贴',
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
@@ -585,25 +540,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     hintItems: ['Markdown', '链接', '图片', '视频', 'PDF', '代码', '任务', '表格'],
     dropFilesLabel: '拖放文件以创建卡片',
     accountTitle: '账号',
-    loginDisplayNamePlaceholder: '显示名称',
-    loginEmailPlaceholder: '邮箱（可选）',
-    signIn: '登录',
-    cancel: '取消',
-    demoLoginLabel: '演示登录',
-    fakeLogin: '模拟登录',
-    fakeLoginSuccess: '模拟登录成功。',
-    googleQuickSignIn: 'Google 快捷登录',
-    googleSigningIn: 'Google 登录中...',
-    googleLoginSuccess: 'Google 登录成功。',
-    googleLoginFailedPrefix: 'Google 登录失败：',
     googleClientIdLabel: 'Google Client ID',
     googleClientIdHint: '用于 Google 快捷登录（OAuth）。',
-    googleClientIdRequired: '请先在设置中填写 Google Client ID。',
-    signedOut: '已退出登录。',
-    logout: '退出登录',
-    loginHintInSettings: '登录入口在设置中，后续会替换为真实登录。',
-    providerPrefix: '登录方式',
-    providerDemo: '演示账号',
+    loginHintInSettings: '当前默认使用本地模式，登录接口保留用于后续扩展。',
+    providerPrefix: '模式',
+    providerDemo: '本地模式',
     providerGoogle: 'Google',
     languageTitle: '语言',
     languageHint: '当前支持中英文切换',
@@ -623,8 +564,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     autoSyncLabel: '自动同步（本地改动后自动执行）',
     syncOnStartupLabel: '启动后自动检查云端版本',
     syncDebounceLabel: '自动同步延迟（毫秒）',
-    openclawTitle: 'OpenClaw 集成',
-    openclawHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
+    cliBridgeTitle: 'CLI Bridge 集成',
+    cliBridgeHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
     updateTitle: '在线更新',
     updateHint: '点击后会先拉取最新代码、安装依赖，再重启本地服务。仅适用于 git 仓库安装，若有本地改动请先提交或暂存。',
     currentVersionLabel: '当前版本',
@@ -643,7 +584,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     updateLoginRequired: '请先登录后再执行在线更新。',
     updateUnavailable: '当前安装不是 git 仓库，无法在线更新。',
     futureTitle: '未来扩展',
-    futureLine1: '登录、同步、安装器会逐步替换为真实服务。',
+    futureLine1: '当前默认免登录使用，本地 API 和鉴权接口保留给后续扩展。',
     futureLine2: '当前结构已支持 Web + 桌面 + 多平台扩展。',
   },
   en: {
@@ -653,8 +594,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncing: 'Syncing...',
     synced: 'Synced',
     syncError: 'Sync failed',
-    syncNeedLogin: 'Sign in to enable cloud sync.',
-    syncPleaseSignIn: 'Please sign in from Settings first.',
+    syncNeedLogin: 'Local mode is enabled. Auth sync can be connected later.',
+    syncPleaseSignIn: 'Local mode is active. Sign-in is not required.',
     syncingWorkspace: 'Syncing workspace...',
     syncCloudCreated: 'Cloud snapshot created.',
     syncPulledPrefix: 'Pulled cloud snapshot (',
@@ -664,7 +605,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     lastSyncPrefix: 'Last sync: ',
     lastSyncNever: 'Last sync: never',
     accountPrefix: 'Account',
-    accountSignedOutHint: 'Account: not signed in (use Settings)',
+    accountSignedOutHint: 'Account: local mode',
     newNoteCard: '+ New note card',
     newTodoCard: '+ New todo card',
     newCalendarCard: '+ New calendar card',
@@ -681,25 +622,11 @@ const I18N: Record<LanguageCode, I18nText> = {
     hintItems: ['Markdown', 'Links', 'Images', 'Videos', 'PDFs', 'Code', 'Tasks', 'Tables'],
     dropFilesLabel: 'Drop files to create cards',
     accountTitle: 'Account',
-    loginDisplayNamePlaceholder: 'Display name',
-    loginEmailPlaceholder: 'Email (optional)',
-    signIn: 'Sign in',
-    cancel: 'Cancel',
-    demoLoginLabel: 'Demo login',
-    fakeLogin: 'Fake login',
-    fakeLoginSuccess: 'Fake login successful.',
-    googleQuickSignIn: 'Google quick sign-in',
-    googleSigningIn: 'Signing in with Google...',
-    googleLoginSuccess: 'Signed in with Google.',
-    googleLoginFailedPrefix: 'Google sign-in failed: ',
     googleClientIdLabel: 'Google Client ID',
     googleClientIdHint: 'Used for Google OAuth quick sign-in.',
-    googleClientIdRequired: 'Please configure Google Client ID in Settings first.',
-    signedOut: 'Signed out.',
-    logout: 'Log out',
-    loginHintInSettings: 'Login entry is in Settings. Real auth will replace this later.',
-    providerPrefix: 'Provider',
-    providerDemo: 'Demo account',
+    loginHintInSettings: 'Local mode is enabled by default. Auth interfaces are reserved for later extension.',
+    providerPrefix: 'Mode',
+    providerDemo: 'Local mode',
     providerGoogle: 'Google',
     languageTitle: 'Language',
     languageHint: 'Currently supports Chinese and English',
@@ -719,8 +646,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     autoSyncLabel: 'Auto sync (after local changes)',
     syncOnStartupLabel: 'Check cloud snapshot on startup',
     syncDebounceLabel: 'Auto sync debounce (ms)',
-    openclawTitle: 'OpenClaw Integration',
-    openclawHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
+    cliBridgeTitle: 'CLI Bridge Integration',
+    cliBridgeHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
     updateTitle: 'Online Update',
     updateHint: 'Pull the latest code, install dependencies, and restart local services. Git checkout installs only. Commit or stash local changes first.',
     currentVersionLabel: 'Current version',
@@ -739,7 +666,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     updateLoginRequired: 'Please sign in before triggering an online update.',
     updateUnavailable: 'This install is not a git checkout, so online updates are unavailable.',
     futureTitle: 'Future Extension',
-    futureLine1: 'Auth, sync and installers will be replaced with real services.',
+    futureLine1: 'No-login local mode is the default; API and auth interfaces remain available for future extension.',
     futureLine2: 'Current architecture already supports Web + Desktop + multi-platform.',
   },
 }
@@ -1095,8 +1022,6 @@ const writeJson = <T,>(key: string, value: T) => {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
-const maskSecret = (value: string, visible = 18) => (value.length > visible ? `${value.slice(0, visible)}...` : value)
-
 const trimConfigValue = (value: unknown, maxLength = 260) =>
   typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
 
@@ -1129,7 +1054,7 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
   }
 }
 
-const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefined): OpenClawConfig => {
+const normalizeCliBridgeConfig = (input: Partial<CliBridgeConfig> | null | undefined): CliBridgeConfig => {
   const googleClientId = trimConfigValue(input?.googleClientId, 240)
 
   return {
@@ -1137,9 +1062,9 @@ const normalizeOpenClawConfig = (input: Partial<OpenClawConfig> | null | undefin
   }
 }
 
-const normalizeOpenClawLayoutSyncMeta = (
-  input: Partial<OpenClawLayoutSyncMeta> | null | undefined,
-): OpenClawLayoutSyncMeta => ({
+const normalizeCliBridgeLayoutSyncMeta = (
+  input: Partial<CliBridgeLayoutSyncMeta> | null | undefined,
+): CliBridgeLayoutSyncMeta => ({
   lastLayoutMutationAt: Math.max(0, Number.isFinite(Number(input?.lastLayoutMutationAt)) ? Number(input?.lastLayoutMutationAt) : 0),
   lastLayoutSyncAt: Math.max(0, Number.isFinite(Number(input?.lastLayoutSyncAt)) ? Number(input?.lastLayoutSyncAt) : 0),
 })
@@ -1159,107 +1084,6 @@ const normalizeAccount = (raw: unknown): AccountUser | null => {
     provider: value.provider === 'google' ? 'google' : 'demo',
     avatarUrl: trimConfigValue(value.avatarUrl, 500) || undefined,
   }
-}
-
-const normalizeServerAuth = (raw: unknown): ServerAuthState | null => {
-  if (!raw || typeof raw !== 'object') return null
-  const value = raw as Partial<ServerAuthState>
-  const accessToken = trimConfigValue(value.accessToken, 1024)
-  const expiresAt = trimConfigValue(value.expiresAt, 120)
-  const apiBaseUrl = trimConfigValue(value.apiBaseUrl, 320) || getApiBaseUrl()
-  const accountId = trimConfigValue(value.accountId, 140)
-  if (!accessToken || !expiresAt || !accountId) return null
-
-  return {
-    accessToken,
-    expiresAt,
-    apiBaseUrl,
-    accountId,
-    lastApiKey: trimConfigValue(value.lastApiKey, 1024) || undefined,
-    lastApiKeyId: trimConfigValue(value.lastApiKeyId, 120) || undefined,
-  }
-}
-
-let googleIdentityPromise: Promise<GoogleIdentity> | null = null
-
-const loadGoogleIdentityApi = (): Promise<GoogleIdentity> => {
-  const existingGoogle = window.google
-  if (existingGoogle?.accounts?.oauth2) return Promise.resolve(existingGoogle)
-  if (googleIdentityPromise) return googleIdentityPromise
-
-  const pending = new Promise<GoogleIdentity>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GOOGLE_IDENTITY_SCRIPT_SRC}"]`)
-    if (existing) {
-      existing.addEventListener('load', () => {
-        if (window.google?.accounts?.oauth2) resolve(window.google)
-        else reject(new Error('Google Identity API is unavailable'))
-      })
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity API')))
-      return
-    }
-
-    const script = document.createElement('script')
-    script.src = GOOGLE_IDENTITY_SCRIPT_SRC
-    script.async = true
-    script.defer = true
-    script.onload = () => {
-      if (window.google?.accounts?.oauth2) {
-        resolve(window.google)
-        return
-      }
-      reject(new Error('Google Identity API is unavailable'))
-    }
-    script.onerror = () => reject(new Error('Failed to load Google Identity API'))
-    document.head.appendChild(script)
-  }).catch((error) => {
-    googleIdentityPromise = null
-    throw error
-  })
-
-  googleIdentityPromise = pending
-  return pending
-}
-
-const requestGoogleToken = (google: GoogleIdentity, clientId: string) =>
-  new Promise<GoogleTokenResponse>((resolve, reject) => {
-    try {
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'openid email profile',
-        callback: (response) => {
-          if (response.error) {
-            reject(new Error(response.error_description || response.error))
-            return
-          }
-          resolve(response)
-        },
-      })
-
-      tokenClient.requestAccessToken({ prompt: 'select_account' })
-    } catch (error) {
-      reject(error)
-    }
-  })
-
-type GoogleProfile = {
-  sub?: string
-  name?: string
-  email?: string
-  picture?: string
-}
-
-const fetchGoogleProfile = async (accessToken: string) => {
-  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(`Google profile request failed (${response.status})`)
-  }
-
-  return (await response.json()) as GoogleProfile
 }
 
 const blobToDataUrl = (blob: Blob) =>
@@ -1491,7 +1315,14 @@ const clearAssets = async () => {
   })
 }
 
-function App() {
+type AppRuntime = 'web' | 'obsidian'
+
+type AppProps = {
+  runtime?: AppRuntime
+}
+
+function App({ runtime = 'web' }: AppProps) {
+  const isObsidianRuntime = runtime === 'obsidian'
   const [grids, setGrids] = useState<GridData[]>(initialGrids)
   const [activeGridId, setActiveGridId] = useState(initialGrids[0].id)
   const [viewport, setViewport] = useState<ViewportState>(initialViewport)
@@ -1503,22 +1334,10 @@ function App() {
   const [hydrated, setHydrated] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [showLoginForm, setShowLoginForm] = useState(false)
-  const [loginName, setLoginName] = useState('')
-  const [loginEmail, setLoginEmail] = useState('')
-  const [googleLoginPending, setGoogleLoginPending] = useState(false)
-  const [openClawNotice, setOpenClawNotice] = useState('')
-  const [apiHealthState, setApiHealthState] = useState<ApiHealthState>('idle')
-  const [apiHealthInfo, setApiHealthInfo] = useState<Awaited<ReturnType<typeof apiCheckHealth>> | null>(null)
-  const [serverAuth, setServerAuth] = useState<ServerAuthState | null>(null)
-  const [apiKeyMasked, setApiKeyMasked] = useState('')
-  const [apiActionPending, setApiActionPending] = useState(false)
-  const [updatePending, setUpdatePending] = useState(false)
-  const [updateNotice, setUpdateNotice] = useState('')
 
-  const [account, setAccount] = useState<AccountUser | null>(null)
+  const [account, setAccount] = useState<AccountUser>(LOCAL_ACCOUNT)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
-  const [openClawConfig, setOpenClawConfig] = useState<OpenClawConfig>(DEFAULT_OPENCLAW_CONFIG)
+  const [cliBridgeConfig, setCliBridgeConfig] = useState<CliBridgeConfig>(DEFAULT_CLI_BRIDGE_CONFIG)
 
   const [, setSyncStatus] = useState<SyncStatus>('idle')
   const [, setSyncMessage] = useState('')
@@ -1538,9 +1357,9 @@ function App() {
   const viewportRef = useRef(viewport)
   const assetUrlsRef = useRef(assetUrls)
   const syncMetaRef = useRef(syncMeta)
-  const openClawLayoutSyncRef = useRef<OpenClawLayoutSyncMeta>(DEFAULT_OPENCLAW_LAYOUT_SYNC_META)
-  const openClawPatchTimerRef = useRef<Record<string, number>>({})
-  const openClawPendingPatchRef = useRef<Record<string, OpenClawCardPatch>>({})
+  const cliBridgeLayoutSyncRef = useRef<CliBridgeLayoutSyncMeta>(DEFAULT_CLI_BRIDGE_LAYOUT_SYNC_META)
+  const cliBridgePatchTimerRef = useRef<Record<string, number>>({})
+  const cliBridgePendingPatchRef = useRef<Record<string, CliBridgeCardPatch>>({})
 
   const dragStateRef = useRef<DragState>(null)
   const panStateRef = useRef<PanState>(null)
@@ -1551,7 +1370,8 @@ function App() {
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
   const startupSyncUserRef = useRef<string | null>(null)
-  const lastOpenClawWorkspaceUpdatedAtRef = useRef<string | null>(null)
+  const serverAuth = useRef<DisabledRemoteAuth | null>(null).current
+  const lastCliBridgeWorkspaceUpdatedAtRef = useRef<string | null>(null)
   const particleRuntimeRef = useRef<ParticleRuntime>({
     energy: 0,
     originX: 50,
@@ -1623,25 +1443,21 @@ function App() {
   useEffect(() => {
     const auth = readJson<unknown>(AUTH_STORAGE_KEY)
     const setting = readJson<AppSettings>(SETTINGS_STORAGE_KEY)
-    const openClaw = readJson<Partial<OpenClawConfig>>(OPENCLAW_SETTINGS_KEY)
+    const openClaw = readJson<Partial<CliBridgeConfig>>(CLI_BRIDGE_SETTINGS_KEY)
     const meta = readJson<SyncMeta>(SYNC_META_KEY)
-    const layoutMeta = readJson<Partial<OpenClawLayoutSyncMeta>>(OPENCLAW_LAYOUT_SYNC_KEY)
-    const serverSession = readJson<unknown>(SERVER_AUTH_STORAGE_KEY)
+    const layoutMeta = readJson<Partial<CliBridgeLayoutSyncMeta>>(CLI_BRIDGE_LAYOUT_SYNC_KEY)
     const normalizedAccount = normalizeAccount(auth)
-    const normalizedServerAuth = normalizeServerAuth(serverSession)
 
     if (normalizedAccount) {
       setAccount(normalizedAccount)
       writeJson(AUTH_STORAGE_KEY, normalizedAccount)
-    }
-    if (normalizedServerAuth) {
-      setServerAuth(normalizedServerAuth)
-      setApiKeyMasked(normalizedServerAuth.lastApiKey ? maskSecret(normalizedServerAuth.lastApiKey) : '')
+    } else {
+      setAccount(LOCAL_ACCOUNT)
     }
     if (setting) setSettings(normalizeSettings(setting))
-    if (openClaw) setOpenClawConfig(normalizeOpenClawConfig({ ...DEFAULT_OPENCLAW_CONFIG, ...openClaw }))
+    if (openClaw) setCliBridgeConfig(normalizeCliBridgeConfig({ ...DEFAULT_CLI_BRIDGE_CONFIG, ...openClaw }))
     if (meta) setSyncMeta(meta)
-    if (layoutMeta) openClawLayoutSyncRef.current = normalizeOpenClawLayoutSyncMeta(layoutMeta)
+    if (layoutMeta) cliBridgeLayoutSyncRef.current = normalizeCliBridgeLayoutSyncMeta(layoutMeta)
   }, [])
 
   useEffect(() => {
@@ -1731,15 +1547,15 @@ function App() {
     })
   }, [])
 
-  const saveOpenClawConfig = useCallback((nextConfig: OpenClawConfig) => {
-    setOpenClawConfig(nextConfig)
-    writeJson(OPENCLAW_SETTINGS_KEY, nextConfig)
+  const saveCliBridgeConfig = useCallback((nextConfig: CliBridgeConfig) => {
+    setCliBridgeConfig(nextConfig)
+    writeJson(CLI_BRIDGE_SETTINGS_KEY, nextConfig)
   }, [])
 
-  const updateOpenClawConfig = useCallback((partial: Partial<OpenClawConfig>) => {
-    setOpenClawConfig((current) => {
-      const next = normalizeOpenClawConfig({ ...current, ...partial })
-      writeJson(OPENCLAW_SETTINGS_KEY, next)
+  const updateCliBridgeConfig = useCallback((partial: Partial<CliBridgeConfig>) => {
+    setCliBridgeConfig((current) => {
+      const next = normalizeCliBridgeConfig({ ...current, ...partial })
+      writeJson(CLI_BRIDGE_SETTINGS_KEY, next)
       return next
     })
   }, [])
@@ -1780,14 +1596,14 @@ function App() {
 
   const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
 
-  const updateOpenClawLayoutSyncMeta = useCallback((partial: Partial<OpenClawLayoutSyncMeta>) => {
-    const next = normalizeOpenClawLayoutSyncMeta({ ...openClawLayoutSyncRef.current, ...partial })
-    openClawLayoutSyncRef.current = next
-    writeJson(OPENCLAW_LAYOUT_SYNC_KEY, next)
+  const updateCliBridgeLayoutSyncMeta = useCallback((partial: Partial<CliBridgeLayoutSyncMeta>) => {
+    const next = normalizeCliBridgeLayoutSyncMeta({ ...cliBridgeLayoutSyncRef.current, ...partial })
+    cliBridgeLayoutSyncRef.current = next
+    writeJson(CLI_BRIDGE_LAYOUT_SYNC_KEY, next)
     return next
   }, [])
 
-  const persistOpenClawGridCreate = useCallback(
+  const persistCliBridgeGridCreate = useCallback(
     async (grid: GridData, activateGrid = false) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
@@ -1801,49 +1617,49 @@ function App() {
           },
           resolveApiBaseUrl(),
         )
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw grid creation:', error)
+        console.error('Failed to persist CLI Bridge grid creation:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const persistOpenClawGridUpdate = useCallback(
+  const persistCliBridgeGridUpdate = useCallback(
     async (gridId: string, updates: { name?: string; activate?: boolean }) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
       try {
         await apiUpdateGrid(serverAuth.lastApiKey, gridId, updates, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw grid update:', error)
+        console.error('Failed to persist CLI Bridge grid update:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const persistOpenClawGridDelete = useCallback(
+  const persistCliBridgeGridDelete = useCallback(
     async (gridId: string) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
       try {
         await apiDeleteGrid(serverAuth.lastApiKey, gridId, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw grid deletion:', error)
+        console.error('Failed to persist CLI Bridge grid deletion:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const persistOpenClawAssetUpload = useCallback(
+  const persistCliBridgeAssetUpload = useCallback(
     async (assetId: string, name: string, type: string, blob: Blob) => {
       if (!account || !serverAuth?.lastApiKey) return null
 
@@ -1859,79 +1675,79 @@ function App() {
           },
           resolveApiBaseUrl(),
         )
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return uploaded.assetUrl
       } catch (error) {
-        console.error('Failed to persist OpenClaw asset upload:', error)
+        console.error('Failed to persist CLI Bridge asset upload:', error)
         return null
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const persistOpenClawAssetDelete = useCallback(
+  const persistCliBridgeAssetDelete = useCallback(
     async (assetId: string) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
       try {
         await apiDeleteAsset(serverAuth.lastApiKey, assetId, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw asset deletion:', error)
+        console.error('Failed to persist CLI Bridge asset deletion:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const clearOpenClawPatchTimer = useCallback((cardId: string) => {
-    const timer = openClawPatchTimerRef.current[cardId]
+  const clearCliBridgePatchTimer = useCallback((cardId: string) => {
+    const timer = cliBridgePatchTimerRef.current[cardId]
     if (timer !== undefined) {
       window.clearTimeout(timer)
-      delete openClawPatchTimerRef.current[cardId]
+      delete cliBridgePatchTimerRef.current[cardId]
     }
-    delete openClawPendingPatchRef.current[cardId]
+    delete cliBridgePendingPatchRef.current[cardId]
   }, [])
 
-  const persistOpenClawCardPatch = useCallback(
-    async (cardId: string, updates: OpenClawCardPatch) => {
+  const persistCliBridgeCardPatch = useCallback(
+    async (cardId: string, updates: CliBridgeCardPatch) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
       try {
         await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw card patch:', error)
+        console.error('Failed to persist CLI Bridge card patch:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const scheduleOpenClawCardPatch = useCallback(
-    (cardId: string, updates: OpenClawCardPatch, delayMs = 500) => {
-      const next = { ...(openClawPendingPatchRef.current[cardId] ?? {}), ...updates }
-      openClawPendingPatchRef.current[cardId] = next
+  const scheduleCliBridgeCardPatch = useCallback(
+    (cardId: string, updates: CliBridgeCardPatch, delayMs = 500) => {
+      const next = { ...(cliBridgePendingPatchRef.current[cardId] ?? {}), ...updates }
+      cliBridgePendingPatchRef.current[cardId] = next
 
-      const existingTimer = openClawPatchTimerRef.current[cardId]
+      const existingTimer = cliBridgePatchTimerRef.current[cardId]
       if (existingTimer !== undefined) {
         window.clearTimeout(existingTimer)
       }
 
-      openClawPatchTimerRef.current[cardId] = window.setTimeout(() => {
-        const patch = openClawPendingPatchRef.current[cardId]
-        delete openClawPendingPatchRef.current[cardId]
-        delete openClawPatchTimerRef.current[cardId]
+      cliBridgePatchTimerRef.current[cardId] = window.setTimeout(() => {
+        const patch = cliBridgePendingPatchRef.current[cardId]
+        delete cliBridgePendingPatchRef.current[cardId]
+        delete cliBridgePatchTimerRef.current[cardId]
         if (!patch) return
-        void persistOpenClawCardPatch(cardId, patch)
+        void persistCliBridgeCardPatch(cardId, patch)
       }, delayMs)
     },
-    [persistOpenClawCardPatch],
+    [persistCliBridgeCardPatch],
   )
 
-  const persistOpenClawCardCreate = useCallback(
+  const persistCliBridgeCardCreate = useCallback(
     async (gridId: string, card: CardData, activateGrid = false) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
@@ -1956,272 +1772,67 @@ function App() {
           },
           resolveApiBaseUrl(),
         )
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw card creation:', error)
+        console.error('Failed to persist CLI Bridge card creation:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
-  const persistOpenClawCardDelete = useCallback(
+  const persistCliBridgeCardDelete = useCallback(
     async (cardId: string) => {
       if (!account || !serverAuth?.lastApiKey) return false
 
       try {
         await apiDeleteCard(serverAuth.lastApiKey, cardId, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw card deletion:', error)
+        console.error('Failed to persist CLI Bridge card deletion:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('open-canvas:config', {
         detail: {
-          openclaw: openClawConfig,
+          cliBridge: cliBridgeConfig,
         },
       }),
     )
-  }, [openClawConfig])
-
-  useEffect(() => {
-    if (!openClawNotice) return
-    const timer = window.setTimeout(() => setOpenClawNotice(''), 2600)
-    return () => window.clearTimeout(timer)
-  }, [openClawNotice])
-
-  useEffect(() => {
-    setApiKeyMasked(serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '')
-  }, [serverAuth?.lastApiKey])
+  }, [cliBridgeConfig])
 
   useEffect(
     () => () => {
-      Object.values(openClawPatchTimerRef.current).forEach((timer) => window.clearTimeout(timer))
-      openClawPatchTimerRef.current = {}
-      openClawPendingPatchRef.current = {}
+      Object.values(cliBridgePatchTimerRef.current).forEach((timer) => window.clearTimeout(timer))
+      cliBridgePatchTimerRef.current = {}
+      cliBridgePendingPatchRef.current = {}
     },
     [],
   )
 
-  const persistServerAuth = useCallback((next: ServerAuthState | null) => {
-    setServerAuth(next)
-    if (next) {
-      writeJson(SERVER_AUTH_STORAGE_KEY, next)
-      return
-    }
-    window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
-  }, [])
-
-  const checkApiService = useCallback(async () => {
-    const baseUrl = resolveApiBaseUrl()
-    setApiHealthState('checking')
-    try {
-      const health = await apiCheckHealth(baseUrl)
-      setApiHealthInfo(health)
-      setApiHealthState('online')
-      return { ok: true, baseUrl }
-    } catch {
-      setApiHealthInfo(null)
-      setApiHealthState('offline')
-      return { ok: false, baseUrl }
-    }
-  }, [resolveApiBaseUrl])
-
-  const assertApiService = useCallback(async () => {
-    const result = await checkApiService()
-    if (result.ok) return result.baseUrl
-
-    throw new Error(
-      settings.language === 'zh'
-        ? `本地 API 服务不可用，请先启动：npm run api:dev（地址：${result.baseUrl}）`
-        : `Local API is unavailable. Start it first with: npm run api:dev (base URL: ${result.baseUrl})`,
-    )
-  }, [checkApiService, settings.language])
-
-  useEffect(() => {
-    if (!settingsOpen) return
-
-    let cancelled = false
-    const run = async () => {
-      const status = await checkApiService()
-      if (cancelled) return
-      setApiHealthState(status.ok ? 'online' : 'offline')
-    }
-
-    void run()
-    const timer = window.setInterval(() => {
-      void run()
-    }, 12000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [checkApiService, settingsOpen])
-
-  const bindAccountToApi = useCallback(
-    async (user: AccountUser) => {
-      setApiActionPending(true)
-      try {
-        const apiBaseUrl = await assertApiService()
-        const response = await apiDemoLogin({
-          name: user.name,
-          email: user.email,
-          provider: user.provider,
-          avatarUrl: user.avatarUrl,
-        }, apiBaseUrl)
-
-        const nextAuth: ServerAuthState = {
-          accountId: response.account.id,
-          accessToken: response.accessToken,
-          expiresAt: response.expiresAt,
-          apiBaseUrl: response.apiBaseUrl || getApiBaseUrl(),
-          lastApiKey: serverAuth?.accountId === response.account.id ? serverAuth.lastApiKey : undefined,
-          lastApiKeyId: serverAuth?.accountId === response.account.id ? serverAuth.lastApiKeyId : undefined,
-        }
-
-        persistServerAuth(nextAuth)
-        setOpenClawNotice(settings.language === 'zh' ? 'API 会话已连接。' : 'API session connected.')
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setOpenClawNotice(settings.language === 'zh' ? `API 登录失败：${message}` : `API login failed: ${message}`)
-      } finally {
-        setApiActionPending(false)
-      }
-    },
-    [assertApiService, persistServerAuth, serverAuth?.accountId, serverAuth?.lastApiKey, serverAuth?.lastApiKeyId, settings.language],
-  )
-
-  const ensureApiSession = useCallback(async () => {
-    if (!account) {
-      setShowLoginForm(true)
-      throw new Error(
-        settings.language === 'zh'
-          ? '请先在账号区域登录（演示登录或 Google 登录），再生成 API Key。'
-          : 'Please sign in from the Account section first, then generate API key.',
-      )
-    }
-    const apiBaseUrl = await assertApiService()
-
-    if (serverAuth && serverAuth.accountId === account.id && new Date(serverAuth.expiresAt).getTime() > Date.now() + 5_000) {
-      try {
-        await apiGetSessionMe(serverAuth.accessToken, serverAuth.apiBaseUrl || apiBaseUrl)
-        return serverAuth
-      } catch {
-        // Session may be stale on server side; fallback to re-login below.
-      }
-    }
-
-    const response = await apiDemoLogin({
-      name: account.name,
-      email: account.email,
-      provider: account.provider,
-      avatarUrl: account.avatarUrl,
-    }, apiBaseUrl)
-
-    const nextAuth: ServerAuthState = {
-      accountId: response.account.id,
-      accessToken: response.accessToken,
-      expiresAt: response.expiresAt,
-      apiBaseUrl: response.apiBaseUrl || getApiBaseUrl(),
-      lastApiKey: serverAuth?.lastApiKey,
-      lastApiKeyId: serverAuth?.lastApiKeyId,
-    }
-    persistServerAuth(nextAuth)
-    return nextAuth
-  }, [account, assertApiService, persistServerAuth, serverAuth, settings.language])
-
-  const generateApiKeyForSkill = useCallback(async () => {
-    setApiActionPending(true)
-    try {
-      const session = await ensureApiSession()
-      const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key', session.apiBaseUrl)
-      const nextAuth: ServerAuthState = {
-        ...session,
-        lastApiKey: created.apiKey,
-        lastApiKeyId: created.key.id,
-      }
-      persistServerAuth(nextAuth)
-      setApiKeyMasked(maskSecret(created.apiKey))
-      setOpenClawNotice(settings.language === 'zh' ? '已生成 API Key（仅本地保存）。' : 'API key generated and saved locally.')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setOpenClawNotice(settings.language === 'zh' ? `生成 API Key 失败：${message}` : `Failed to generate API key: ${message}`)
-    } finally {
-      setApiActionPending(false)
-    }
-  }, [ensureApiSession, persistServerAuth, settings.language])
-
-  const copyApiKeyToClipboard = useCallback(async () => {
-    setApiActionPending(true)
-    try {
-      const session = await ensureApiSession()
-      const apiKey = session.lastApiKey
-      if (!apiKey) {
-        setOpenClawNotice(settings.language === 'zh' ? '还没有可复制的 API Key，请先生成。' : 'No API key is available yet. Generate one first.')
-        return
-      }
-
-      await navigator.clipboard.writeText(apiKey)
-      setOpenClawNotice(settings.language === 'zh' ? '已复制 API Key。' : 'API key copied.')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setOpenClawNotice(settings.language === 'zh' ? `复制 API Key 失败：${message}` : `Failed to copy API key: ${message}`)
-    } finally {
-      setApiActionPending(false)
-    }
-  }, [ensureApiSession, settings.language])
-
-  const copyOpenClawSkillJson = useCallback(async () => {
-    setApiActionPending(true)
-    try {
-      const session = await ensureApiSession()
-      let apiKey = session.lastApiKey
-      let nextSession = session
-      if (!apiKey) {
-        const created = await apiCreateKey(session.accessToken, 'OpenClaw Skill Key', session.apiBaseUrl)
-        apiKey = created.apiKey
-        nextSession = { ...session, lastApiKey: created.apiKey, lastApiKeyId: created.key.id }
-        persistServerAuth(nextSession)
-        setApiKeyMasked(maskSecret(created.apiKey))
-      }
-
-      const skillTemplate = await apiGetSkillTemplate(nextSession.accessToken, nextSession.apiBaseUrl)
-      const config = buildOpenClawSkillConfig(skillTemplate, apiKey)
-      await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
-      setOpenClawNotice(settings.language === 'zh' ? '已复制 OpenClaw Skill JSON。' : 'OpenClaw skill JSON copied.')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setOpenClawNotice(settings.language === 'zh' ? `复制 Skill 失败：${message}` : `Failed to copy skill config: ${message}`)
-    } finally {
-      setApiActionPending(false)
-    }
-  }, [ensureApiSession, persistServerAuth, settings.language])
-
-  const pullOpenClawWorkspace = useCallback(async () => {
+  const pullCliBridgeWorkspace = useCallback(async () => {
     if (!account || !serverAuth?.lastApiKey) return false
 
     try {
-      const { lastLayoutMutationAt, lastLayoutSyncAt } = openClawLayoutSyncRef.current
+      const { lastLayoutMutationAt, lastLayoutSyncAt } = cliBridgeLayoutSyncRef.current
       if (lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
         return false
       }
 
-      if (Object.keys(openClawPendingPatchRef.current).length > 0) {
+      if (Object.keys(cliBridgePendingPatchRef.current).length > 0) {
         return false
       }
 
       const remote = await apiGetWorkspaceState(serverAuth.lastApiKey, resolveApiBaseUrl())
       const remoteUpdatedAt = remote.workspace.updatedAt || null
-      if (remoteUpdatedAt && remoteUpdatedAt === lastOpenClawWorkspaceUpdatedAtRef.current) {
+      if (remoteUpdatedAt && remoteUpdatedAt === lastCliBridgeWorkspaceUpdatedAtRef.current) {
         return false
       }
 
@@ -2234,8 +1845,8 @@ function App() {
         : []
 
       const hasRemoteCards = remoteGrids.some((grid) => grid.cards.length > 0)
-      if (!hasRemoteCards && lastOpenClawWorkspaceUpdatedAtRef.current === null) {
-        lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+      if (!hasRemoteCards && lastCliBridgeWorkspaceUpdatedAtRef.current === null) {
+        lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
         return false
       }
 
@@ -2244,7 +1855,7 @@ function App() {
         gridsRef.current,
       )
       if (!nextGrids.length) {
-        lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+        lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
         return false
       }
 
@@ -2259,8 +1870,8 @@ function App() {
         lastLocalUpdateAt: Date.now(),
         lastSyncAt: Date.now(),
       })
-      updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
-      lastOpenClawWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+      updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+      lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
       return true
     } catch {
       return false
@@ -2269,9 +1880,9 @@ function App() {
         skipLocalSyncMetaUpdateRef.current = false
       }, 0)
     }
-  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateOpenClawLayoutSyncMeta, updateSyncMeta])
+  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateCliBridgeLayoutSyncMeta, updateSyncMeta])
 
-  const persistOpenClawCardLayout = useCallback(
+  const persistCliBridgeCardLayout = useCallback(
     async (
       cardId: string,
       updates: { x?: number; y?: number; width?: number; height?: number },
@@ -2280,40 +1891,15 @@ function App() {
 
       try {
         await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
-        updateOpenClawLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
-        console.error('Failed to persist OpenClaw card layout:', error)
+        console.error('Failed to persist CLI Bridge card layout:', error)
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateOpenClawLayoutSyncMeta],
+    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
   )
-
-  const triggerOnlineUpdate = useCallback(async () => {
-    if (!account || !serverAuth?.accessToken) {
-      setUpdateNotice(text.updateLoginRequired)
-      return
-    }
-
-    if (apiHealthInfo?.updateAvailable === false) {
-      setUpdateNotice(text.updateUnavailable)
-      return
-    }
-
-    setUpdatePending(true)
-    setUpdateNotice('')
-    try {
-      const baseUrl = resolveApiBaseUrl()
-      await apiTriggerUpdate(serverAuth.accessToken, baseUrl)
-      setUpdateNotice(text.updateSuccess)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setUpdateNotice(`${text.updateFailedPrefix}${message}`)
-    } finally {
-      setUpdatePending(false)
-    }
-  }, [account, apiHealthInfo?.updateAvailable, resolveApiBaseUrl, serverAuth?.accessToken, text.updateFailedPrefix, text.updateLoginRequired, text.updateSuccess, text.updateUnavailable])
 
   const serializeAssetsForCloud = useCallback(async () => {
     const assets = await getAllAssets()
@@ -2465,13 +2051,15 @@ function App() {
   )
 
   useEffect(() => {
+    if (isObsidianRuntime) return
     if (!hydrated || !account || !settings.syncOnStartup) return
     if (startupSyncUserRef.current === account.id) return
     startupSyncUserRef.current = account.id
     void performSync(true)
-  }, [account, hydrated, performSync, settings.syncOnStartup])
+  }, [account, hydrated, isObsidianRuntime, performSync, settings.syncOnStartup])
 
   useEffect(() => {
+    if (isObsidianRuntime) return
     if (!hydrated || !account || !settings.autoSync) return
 
     const timer = window.setTimeout(() => {
@@ -2483,15 +2071,16 @@ function App() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [activeGridId, account, grids, hydrated, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
+  }, [activeGridId, account, grids, hydrated, isObsidianRuntime, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
 
   useEffect(() => {
+    if (isObsidianRuntime) return
     if (!hydrated || !account || !serverAuth?.lastApiKey) return
 
     let cancelled = false
     const run = async () => {
       if (cancelled) return
-      await pullOpenClawWorkspace()
+      await pullCliBridgeWorkspace()
     }
 
     void run()
@@ -2503,7 +2092,7 @@ function App() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [account, hydrated, pullOpenClawWorkspace, serverAuth?.lastApiKey])
+  }, [account, hydrated, isObsidianRuntime, pullCliBridgeWorkspace, serverAuth?.lastApiKey])
 
   const toWorldPoint = useCallback((clientX: number, clientY: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -2643,7 +2232,7 @@ function App() {
         const deltaY = world.y - resizeState.startPointerWorldY
         const nextWidth = clamp(resizeState.startWidth + deltaX, CARD_MIN_WIDTH, CARD_MAX_WIDTH)
         const nextHeight = clamp(resizeState.startHeight + deltaY, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
-        void persistOpenClawCardLayout(resizeState.cardId, {
+        void persistCliBridgeCardLayout(resizeState.cardId, {
           width: nextWidth,
           height: nextHeight,
         })
@@ -2654,7 +2243,7 @@ function App() {
         const world = toWorldPoint(event.clientX, event.clientY)
         const nextX = clamp(world.x - dragState.pointerOffsetX, -200, SCENE_WIDTH - 60)
         const nextY = clamp(world.y - dragState.pointerOffsetY, -200, SCENE_HEIGHT - 60)
-        void persistOpenClawCardLayout(dragState.cardId, {
+        void persistCliBridgeCardLayout(dragState.cardId, {
           x: nextX,
           y: nextY,
         })
@@ -2675,144 +2264,11 @@ function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [persistOpenClawCardLayout, pushParticleImpulse, toWorldPoint])
+  }, [persistCliBridgeCardLayout, pushParticleImpulse, toWorldPoint])
 
   const closeSettings = () => {
     setSettingsOpen(false)
-    setShowLoginForm(false)
-    setOpenClawNotice('')
-    setUpdateNotice('')
   }
-
-  const beginDemoLogin = () => {
-    setShowLoginForm(true)
-    setLoginName(account?.name ?? '')
-    setLoginEmail(account?.email ?? '')
-  }
-
-  const submitDemoLogin = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const name = loginName.trim() || text.demoUser
-    const email = (loginEmail.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@open-canvas.local`).toLowerCase()
-
-    const user: AccountUser = {
-      id: `fake-${email}`,
-      name,
-      email,
-      provider: 'demo',
-    }
-
-    writeJson(AUTH_STORAGE_KEY, user)
-    setAccount(user)
-    setShowLoginForm(false)
-    setSyncStatus('idle')
-    setSyncMessage(text.fakeLoginSuccess)
-    void bindAccountToApi(user)
-  }
-
-  const signInWithGoogle = useCallback(async () => {
-    const clientId = openClawConfig.googleClientId.trim()
-    if (!clientId) {
-      setSyncStatus('error')
-      setSyncMessage(text.googleClientIdRequired)
-      return
-    }
-
-    setGoogleLoginPending(true)
-
-    try {
-      const google = await loadGoogleIdentityApi()
-      const token = await requestGoogleToken(google, clientId)
-      const accessToken = token.access_token
-      if (!accessToken) throw new Error('No access token returned')
-
-      const profile = await fetchGoogleProfile(accessToken)
-      const email = trimConfigValue(profile.email, 180).toLowerCase()
-      const name = trimConfigValue(profile.name, 120) || text.demoUser
-      const idSuffix = trimConfigValue(profile.sub, 120) || email
-      if (!idSuffix || !email) throw new Error('Google profile missing required fields')
-
-      const user: AccountUser = {
-        id: `google-${idSuffix}`,
-        name,
-        email,
-        provider: 'google',
-        avatarUrl: trimConfigValue(profile.picture, 600) || undefined,
-      }
-
-      writeJson(AUTH_STORAGE_KEY, user)
-      setAccount(user)
-      setShowLoginForm(false)
-      setSyncStatus('idle')
-      setSyncMessage(text.googleLoginSuccess)
-      void bindAccountToApi(user)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setSyncStatus('error')
-      setSyncMessage(`${text.googleLoginFailedPrefix}${message}`)
-    } finally {
-      setGoogleLoginPending(false)
-    }
-  }, [
-    bindAccountToApi,
-    openClawConfig.googleClientId,
-    text.demoUser,
-    text.googleClientIdRequired,
-    text.googleLoginFailedPrefix,
-    text.googleLoginSuccess,
-  ])
-
-  const logout = () => {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY)
-    window.localStorage.removeItem(SERVER_AUTH_STORAGE_KEY)
-    setAccount(null)
-    setServerAuth(null)
-    setApiKeyMasked('')
-    startupSyncUserRef.current = null
-    setShowLoginForm(false)
-    setSyncStatus('idle')
-    setSyncMessage(text.signedOut)
-    setUpdateNotice('')
-  }
-
-  const copyTextWithNotice = useCallback(
-    async (value: string, successZh: string, successEn: string, errorZhPrefix: string, errorEnPrefix: string) => {
-      try {
-        await navigator.clipboard.writeText(value)
-        setOpenClawNotice(settings.language === 'zh' ? successZh : successEn)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setOpenClawNotice(
-          settings.language === 'zh' ? `${errorZhPrefix}${message}` : `${errorEnPrefix}${message}`,
-        )
-      }
-    },
-    [settings.language],
-  )
-
-  const downloadSkillMarkdown = useCallback(
-    (content: string) => {
-      try {
-        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const anchor = document.createElement('a')
-        anchor.href = url
-        anchor.download = 'SKILL.md'
-        document.body.appendChild(anchor)
-        anchor.click()
-        document.body.removeChild(anchor)
-        URL.revokeObjectURL(url)
-        setOpenClawNotice(settings.language === 'zh' ? '已下载 SKILL.md。' : 'SKILL.md downloaded.')
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setOpenClawNotice(
-          settings.language === 'zh' ? `下载 SKILL.md 失败：${message}` : `Failed to download SKILL.md: ${message}`,
-        )
-      }
-    },
-    [settings.language],
-  )
 
   const beginEditGrid = (grid: GridData) => {
     setEditingGridId(grid.id)
@@ -2829,11 +2285,11 @@ function App() {
     }
 
     const nextName = gridNameDraft.trim() || text.unnamedGrid
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => (grid.id === editingGridId ? { ...grid, name: nextName } : grid)),
     )
-    void persistOpenClawGridUpdate(editingGridId, { name: nextName })
+    void persistCliBridgeGridUpdate(editingGridId, { name: nextName })
     setEditingGridId(null)
     setGridNameDraft('')
   }
@@ -2850,11 +2306,11 @@ function App() {
       const targetGrid = grids.find((grid) => grid.id === gridId)
       if (!targetGrid) return
 
-      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+      updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
       setActiveGridId(gridId)
-      void persistOpenClawGridUpdate(gridId, { activate: true })
+      void persistCliBridgeGridUpdate(gridId, { activate: true })
     },
-    [activeGridId, grids, persistOpenClawGridUpdate, updateOpenClawLayoutSyncMeta],
+    [activeGridId, grids, persistCliBridgeGridUpdate, updateCliBridgeLayoutSyncMeta],
   )
 
   const beginEditCardTitle = (card: CardData) => {
@@ -2866,7 +2322,7 @@ function App() {
     if (!editingCardId) return
 
     const nextTitle = cardTitleDraft.trim() || text.unnamedCard
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -2876,7 +2332,7 @@ function App() {
         }
       }),
     )
-    void persistOpenClawCardPatch(editingCardId, { title: nextTitle })
+    void persistCliBridgeCardPatch(editingCardId, { title: nextTitle })
     setEditingCardId(null)
     setCardTitleDraft('')
   }
@@ -2896,16 +2352,16 @@ function App() {
       }
 
       const shouldActivateGrid = payload?.activate !== false
-      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+      updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
       setGrids((current) => [...current, newGrid])
       if (shouldActivateGrid) {
         setActiveGridId(newGrid.id)
       }
-      void persistOpenClawGridCreate(newGrid, shouldActivateGrid)
+      void persistCliBridgeGridCreate(newGrid, shouldActivateGrid)
 
       return newGrid
     },
-    [grids.length, persistOpenClawGridCreate, text.gridPrefix, updateOpenClawLayoutSyncMeta],
+    [grids.length, persistCliBridgeGridCreate, text.gridPrefix, updateCliBridgeLayoutSyncMeta],
   )
 
   const createCardInternal = useCallback(
@@ -3022,12 +2478,12 @@ function App() {
       setGrids((current) =>
         current.map((grid) => (grid.id === targetGridId ? { ...grid, cards: [...grid.cards, cardWithTypeData] } : grid)),
       )
-      updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+      updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
       if (payload?.activateGrid) {
         setActiveGridId(targetGridId)
       }
       pushParticleImpulse(cardBase.x + cardBase.width / 2, cardBase.y + cardBase.height / 2, 0.22)
-      void persistOpenClawCardCreate(targetGridId, cardWithTypeData, Boolean(payload?.activateGrid))
+      void persistCliBridgeCardCreate(targetGridId, cardWithTypeData, Boolean(payload?.activateGrid))
 
       return { cardId, gridId: targetGridId, reused: false }
     },
@@ -3036,8 +2492,8 @@ function App() {
       calendarText.title,
       grids,
       pushParticleImpulse,
-      persistOpenClawCardCreate,
-      updateOpenClawLayoutSyncMeta,
+      persistCliBridgeCardCreate,
+      updateCliBridgeLayoutSyncMeta,
       text.newNoteCard,
       text.notePlaceholder,
       text.unnamedCard,
@@ -3064,12 +2520,12 @@ function App() {
       setGridNameDraft('')
     }
 
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids(next)
     if (fallbackGrid) {
       setActiveGridId(fallbackGrid.id)
     }
-    void persistOpenClawGridDelete(gridId)
+    void persistCliBridgeGridDelete(gridId)
   }
 
   const addNoteCard = () => {
@@ -3107,7 +2563,7 @@ function App() {
       return { ok: false, message: `Card not found: ${cardId}` } satisfies OpenCanvasCommandResult
     }
 
-    const patch: OpenClawCardPatch = {}
+    const patch: CliBridgeCardPatch = {}
     if (typeof payload.title === 'string') patch.title = payload.title.trim() || undefined
     if (typeof payload.content === 'string') patch.content = payload.content
     if (typeof payload.x === 'number') patch.x = clamp(payload.x, -200, SCENE_WIDTH - 60)
@@ -3119,7 +2575,7 @@ function App() {
     if (payload.todoItems !== undefined) patch.todoItems = payload.todoItems
     if (payload.calendar !== undefined) patch.calendar = payload.calendar
 
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => ({
         ...grid,
@@ -3143,10 +2599,10 @@ function App() {
       })),
     )
 
-    void persistOpenClawCardPatch(cardId, patch)
+    void persistCliBridgeCardPatch(cardId, patch)
 
     return { ok: true, message: 'Card updated', data: { cardId } } satisfies OpenCanvasCommandResult
-  }, [grids, persistOpenClawCardPatch, updateOpenClawLayoutSyncMeta])
+  }, [grids, persistCliBridgeCardPatch, updateCliBridgeLayoutSyncMeta])
 
   const handleOpenCanvasCommand = useCallback(
     (command: OpenCanvasCommand): OpenCanvasCommandResult => {
@@ -3215,7 +2671,7 @@ function App() {
             ),
           })),
         )
-        void persistOpenClawCardPatch(cardId, { content: nextContent })
+        void persistCliBridgeCardPatch(cardId, { content: nextContent })
         return { ok: true, requestId, message: 'Content appended', data: { cardId } }
       }
 
@@ -3238,7 +2694,7 @@ function App() {
                   provider: account.provider,
                 }
               : null,
-            openclaw: openClawConfig,
+            cliBridge: cliBridgeConfig,
           },
         }
       }
@@ -3248,7 +2704,7 @@ function App() {
           ok: true,
           requestId,
           data: {
-            openclaw: openClawConfig,
+            cliBridge: cliBridgeConfig,
             account: account
               ? {
                   id: account.id,
@@ -3263,15 +2719,15 @@ function App() {
 
       if (command.type === 'set-config') {
         const partial = command.payload ?? {}
-        const next = normalizeOpenClawConfig({ ...openClawConfig, ...partial })
-        saveOpenClawConfig(next)
+        const next = normalizeCliBridgeConfig({ ...cliBridgeConfig, ...partial })
+        saveCliBridgeConfig(next)
 
         return {
           ok: true,
           requestId,
           message: 'Config updated',
           data: {
-            openclaw: next,
+            cliBridge: next,
           },
         }
       }
@@ -3284,9 +2740,9 @@ function App() {
       createCardInternal,
       createGridInternal,
       grids,
-      openClawConfig,
-      persistOpenClawCardPatch,
-      saveOpenClawConfig,
+      cliBridgeConfig,
+      persistCliBridgeCardPatch,
+      saveCliBridgeConfig,
       updateCardInternal,
     ],
   )
@@ -3345,7 +2801,7 @@ function App() {
 
       if (
         data.source &&
-        !['openclaw', 'openclaw-assistant', 'open-canvas-bridge'].includes(String(data.source).toLowerCase())
+        !['cli', 'cli-bridge', 'open-canvas-bridge'].includes(String(data.source).toLowerCase())
       ) {
         return
       }
@@ -3379,8 +2835,8 @@ function App() {
       setCardTitleDraft('')
     }
 
-    clearOpenClawPatchTimer(cardId)
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    clearCliBridgePatchTimer(cardId)
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -3389,7 +2845,7 @@ function App() {
     )
 
     if (targetCard) {
-      void persistOpenClawCardDelete(cardId)
+      void persistCliBridgeCardDelete(cardId)
     }
 
     if (!targetCard?.fileId) return
@@ -3413,7 +2869,7 @@ function App() {
     void removeAsset(fileId).catch((error) => {
       console.error('Failed to remove asset:', error)
     })
-    void persistOpenClawAssetDelete(fileId)
+    void persistCliBridgeAssetDelete(fileId)
   }
 
   const onCardDragStart = (event: ReactPointerEvent<HTMLElement>, card: CardData) => {
@@ -3422,7 +2878,7 @@ function App() {
 
     resizeStateRef.current = null
     setResizingCardId(null)
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
 
     event.currentTarget.setPointerCapture(event.pointerId)
 
@@ -3444,7 +2900,7 @@ function App() {
 
     dragStateRef.current = null
     setDraggingCardId(null)
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
 
     event.currentTarget.setPointerCapture(event.pointerId)
 
@@ -3480,7 +2936,7 @@ function App() {
   }
 
   const updateCardContent = (cardId: string, content: string) => {
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) => {
         if (grid.id !== activeGridId) return grid
@@ -3490,7 +2946,7 @@ function App() {
         }
       }),
     )
-    scheduleOpenClawCardPatch(cardId, { content })
+    scheduleCliBridgeCardPatch(cardId, { content })
   }
 
   const addTodoItem = (cardId: string, lane: TodoLane = 'todo') => {
@@ -3501,8 +2957,8 @@ function App() {
     if (!textValue) return
 
     const nextTodoItems = [...(targetCard.todoItems ?? []), createTodoItem(textValue, lane)]
-    clearOpenClawPatchTimer(cardId)
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    clearCliBridgePatchTimer(cardId)
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3515,7 +2971,7 @@ function App() {
             },
       ),
     )
-    void persistOpenClawCardPatch(cardId, { content: '', todoItems: nextTodoItems })
+    void persistCliBridgeCardPatch(cardId, { content: '', todoItems: nextTodoItems })
   }
 
   const moveTodoItem = (cardId: string, itemId: string, nextLane: TodoLane, targetItemId: string | null = null) => {
@@ -3549,7 +3005,7 @@ function App() {
     }
 
     const nextTodoItems = [...lanes.todo, ...lanes.doing, ...lanes.done]
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3560,7 +3016,7 @@ function App() {
             },
       ),
     )
-    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
+    void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const onTodoDragStart = (
@@ -3625,7 +3081,7 @@ function App() {
     if (!targetCard || targetCard.kind !== 'todo') return
 
     const nextTodoItems = (targetCard.todoItems ?? []).filter((item) => item.id !== todoId)
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3636,7 +3092,7 @@ function App() {
             },
       ),
     )
-    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
+    void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const updateTodoText = (cardId: string, todoId: string, value: string) => {
@@ -3644,7 +3100,7 @@ function App() {
     if (!targetCard || targetCard.kind !== 'todo') return
 
     const nextTodoItems = (targetCard.todoItems ?? []).map((item) => (item.id === todoId ? { ...item, text: value } : item))
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3655,7 +3111,7 @@ function App() {
             },
       ),
     )
-    void persistOpenClawCardPatch(cardId, { todoItems: nextTodoItems })
+    void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
   const updateCalendarCard = (cardId: string, updater: (state: CalendarState) => CalendarState) => {
@@ -3663,7 +3119,7 @@ function App() {
     if (!targetCard || targetCard.kind !== 'calendar') return
 
     const nextCalendar = withCalendarDefaults(updater(withCalendarDefaults(targetCard.calendar)))
-    updateOpenClawLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3674,7 +3130,7 @@ function App() {
             },
       ),
     )
-    void persistOpenClawCardPatch(cardId, { calendar: nextCalendar })
+    void persistCliBridgeCardPatch(cardId, { calendar: nextCalendar })
   }
 
   const setCalendarViewMode = (cardId: string, mode: CalendarViewMode) => {
@@ -3888,7 +3344,7 @@ function App() {
 
       const uploadedAssetUrl =
         account && serverAuth?.lastApiKey
-          ? await persistOpenClawAssetUpload(assetId, file.name, file.type || 'application/octet-stream', file)
+          ? await persistCliBridgeAssetUpload(assetId, file.name, file.type || 'application/octet-stream', file)
           : null
 
       const nextCard: CardData = {
@@ -3918,214 +3374,13 @@ function App() {
       current.map((grid) => (grid.id === activeGridId ? { ...grid, cards: [...grid.cards, ...newCards] } : grid)),
     )
     if (remoteMediaCards.length > 0) {
-      void Promise.all(remoteMediaCards.map((card) => persistOpenClawCardCreate(activeGridId, card, false)))
+      void Promise.all(remoteMediaCards.map((card) => persistCliBridgeCardCreate(activeGridId, card, false)))
     }
     pushParticleImpulse(world.x, world.y, 0.24)
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
-  const apiSessionConnected =
-    Boolean(account && serverAuth && serverAuth.accountId === account.id) &&
-    new Date(serverAuth?.expiresAt || 0).getTime() > Date.now()
-  const apiSessionLabel =
-    settings.language === 'zh'
-      ? apiSessionConnected
-        ? 'API 已连接'
-        : 'API 未连接'
-      : apiSessionConnected
-        ? 'API connected'
-        : 'API not connected'
-  const apiBaseLabel = resolveApiBaseUrl()
-  const apiHealthLabel =
-    apiHealthState === 'online'
-      ? settings.language === 'zh'
-        ? '在线'
-        : 'Online'
-      : apiHealthState === 'checking'
-        ? settings.language === 'zh'
-          ? '检测中...'
-          : 'Checking...'
-        : apiHealthState === 'offline'
-          ? settings.language === 'zh'
-            ? '离线'
-            : 'Offline'
-          : settings.language === 'zh'
-            ? '未检测'
-            : 'Unchecked'
-  const formatRevision = (revision?: string | null) => {
-    if (!revision) return text.currentVersionUnknown
-    return revision.length > 7 ? `${revision.slice(0, 7)}…` : revision
-  }
-  const currentVersionValue = apiHealthInfo?.version || text.currentVersionUnknown
-  const currentRevisionValue = formatRevision(apiHealthInfo?.currentRevision)
-  const remoteRevisionValue = formatRevision(apiHealthInfo?.remoteRevision)
-  const trackingBranchLabel =
-    apiHealthInfo?.remoteName && apiHealthInfo?.branchName
-      ? `${apiHealthInfo.remoteName}/${apiHealthInfo.branchName}`
-      : text.currentVersionUnknown
-  const updateStatusLabel =
-    !apiHealthInfo
-      ? text.currentVersionUnknown
-      : apiHealthInfo.currentRevision && apiHealthInfo.remoteRevision
-        ? apiHealthInfo.currentRevision === apiHealthInfo.remoteRevision
-          ? text.updateUpToDate
-          : text.updateHasUpdate
-        : apiHealthInfo.updateAvailable === false
-          ? text.updateUnavailable
-          : text.updateRemoteRevisionUnavailable
-  const webOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:5173'
-  const apiKeyPreview = serverAuth?.lastApiKey ? maskSecret(serverAuth.lastApiKey) : '<your-api-key>'
-  const openClawInstallCmd = 'mkdir -p ~/.openclaw/skills/open-canvas && cp SKILL.md ~/.openclaw/skills/open-canvas/SKILL.md'
-  const openClawBotConfigSnippet = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          skills: {
-            'open-canvas': {
-              enabled: true,
-              env: {
-                OPEN_CANVAS_API_URL: apiBaseLabel,
-                OPEN_CANVAS_API_KEY: apiKeyPreview,
-              },
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    [apiBaseLabel, apiKeyPreview],
-  )
-  const openClawSkillMarkdown = useMemo(
-    () => `---
-name: open-canvas
-description: Create and manage Open Canvas grids, cards, and media assets through REST API. Note cards are free-form, while todo and calendar cards are singleton per grid.
-homepage: ${webOrigin}
-user-invocable: true
-metadata:
-  clawdbot:
-    requires:
-      env:
-        - OPEN_CANVAS_API_URL
-        - OPEN_CANVAS_API_KEY
----
-
-# Open Canvas Skill
-
-You can control Open Canvas via REST API.
-
-## Configuration
-
-- Base URL: \`$OPEN_CANVAS_API_URL\` (example: \`${apiBaseLabel}\`)
-- Auth: Bearer token via \`$OPEN_CANVAS_API_KEY\`
-- Header: \`Authorization: Bearer $OPEN_CANVAS_API_KEY\`
-
-## Endpoints
-
-- \`GET /api/v1/state?full=1\` Read full workspace state
-- \`POST /api/v1/grids\` Create grid
-- \`PATCH /api/v1/grids/:gridId\` Rename or activate grid
-- \`DELETE /api/v1/grids/:gridId\` Delete grid
-- \`POST /api/v1/assets\` Upload media asset
-- \`GET /api/v1/assets/:assetId\` Fetch media asset
-- \`DELETE /api/v1/assets/:assetId\` Delete media asset
-- \`POST /api/v1/cards\` Create card (note | hint | image | video | pdf | todo | calendar, optional id; todo/calendar are singleton per grid)
-- \`PATCH /api/v1/cards/:cardId\` Update card fields
-- \`DELETE /api/v1/cards/:cardId\` Delete card
-- \`POST /api/v1/cards/:cardId/append-note\` Append note content
-
-## Card Writing Templates
-
-### Note cards
-
-- Use notes for free-form writing.
-- Keep \`title\` short.
-- Put the full write-up in \`content\`.
-- Create notes freely.
-
-Example:
-
-\`\`\`json
-{
-  "kind": "note",
-  "title": "Project update",
-  "content": "Ship checklist and next steps."
-}
-\`\`\`
-
-### Todo cards
-
-- Todo cards are singleton per grid.
-- Reuse the existing todo card and PATCH it instead of creating a duplicate.
-- Put tasks in \`todoItems\`.
-- Keep the card title as the project label.
-- Do not store the task list in \`content\`.
-
-Example PATCH body:
-
-\`\`\`json
-{
-  "todoItems": [
-    { "text": "Review requirements", "status": "todo" },
-    { "text": "Draft implementation", "status": "doing" },
-    { "text": "Send summary", "status": "done" }
-  ]
-}
-\`\`\`
-
-### Calendar cards
-
-- Calendar cards are singleton per grid.
-- Reuse the existing calendar card and PATCH it instead of creating a duplicate.
-- Put events in \`calendar.events\`.
-- Keep the card title as the calendar label.
-- Do not store the event list in \`content\`.
-
-Example PATCH body:
-
-\`\`\`json
-{
-  "calendar": {
-    "selectedDate": "2026-03-25",
-    "monthCursor": "2026-03",
-    "viewMode": "month",
-    "draftTitle": "",
-    "draftAllDay": true,
-    "draftStartTime": "09:00",
-    "draftEndTime": "10:00",
-    "events": [
-      {
-        "date": "2026-03-25",
-        "title": "Team sync",
-        "allDay": false,
-        "startTime": "09:00",
-        "endTime": "09:30"
-      }
-    ]
-  }
-}
-\`\`\`
-
-### Media assets
-
-- Images, videos, and PDFs should be uploaded to \`POST /api/v1/assets\` first.
-- Reuse the returned \`assetUrl\` as \`externalUrl\` on the media card.
-- Keep the local file card as a convenience cache, but rely on \`externalUrl\` for refresh-safe rendering.
-- Delete the asset with \`DELETE /api/v1/assets/:assetId\` when the last referencing card is removed.
-
-## Best Practices
-
-1. Read \`/api/v1/state?full=1\` before write operations.
-2. Confirm destructive or batch changes with the user first.
-3. Keep \`kind\` explicit when creating cards.
-4. Prefer \`append-note\` for incremental writing.
-5. Todo and calendar cards are singleton per grid. Reuse the existing card and PATCH it instead of creating duplicates.
-6. For todo work, update \`todoItems\` on the fixed card. For calendar work, update \`calendar.events\` on the fixed card.
-7. Create new cards freely only for notes or other non-singleton kinds.
-8. For media cards, upload the file first and keep the returned \`assetUrl\` on the card.
-`,
-    [apiBaseLabel, webOrigin],
-  )
 
   return (
     <main className="app-shell">
@@ -4831,384 +4086,32 @@ Example PATCH body:
 
             <div className="settings-group">
               <h3>{text.accountTitle}</h3>
-              {account ? (
-                <div className="account-user-card">
-                  <div className="account-user-head">
-                    {account.avatarUrl ? (
-                      <img className="account-avatar" src={account.avatarUrl} alt={account.name} />
-                    ) : (
-                      <span className="account-avatar-fallback">{account.name.slice(0, 1).toUpperCase()}</span>
-                    )}
-                    <div className="account-user-meta">
-                      <strong>{account.name}</strong>
-                      <span>{account.email}</span>
-                    </div>
-                  </div>
-                  <span>{`${text.providerPrefix}: ${accountProviderLabel}`}</span>
-                  <span>{apiSessionLabel}</span>
-                  <div className="panel-actions">
-                    <button
-                      className="mini-btn"
-                      disabled={apiActionPending}
-                      onClick={() => {
-                        if (account) void bindAccountToApi(account)
-                      }}
-                    >
-                      {settings.language === 'zh'
-                        ? apiActionPending
-                          ? '连接中...'
-                          : '连接 API'
-                        : apiActionPending
-                          ? 'Connecting...'
-                          : 'Connect API'}
-                    </button>
-                    <button className="mini-btn danger" onClick={logout}>
-                      {text.logout}
-                    </button>
+              <div className="account-user-card">
+                <div className="account-user-head">
+                  {account.avatarUrl ? (
+                    <img className="account-avatar" src={account.avatarUrl} alt={account.name} />
+                  ) : (
+                    <span className="account-avatar-fallback">{account.name.slice(0, 1).toUpperCase()}</span>
+                  )}
+                  <div className="account-user-meta">
+                    <strong>{account.name}</strong>
+                    <span>{account.email}</span>
                   </div>
                 </div>
-              ) : showLoginForm ? (
-                <form className="login-form" onSubmit={submitDemoLogin}>
-                  <input
-                    type="text"
-                    placeholder={text.loginDisplayNamePlaceholder}
-                    value={loginName}
-                    onChange={(event) => setLoginName(event.target.value)}
-                  />
-                  <input
-                    type="email"
-                    placeholder={text.loginEmailPlaceholder}
-                    value={loginEmail}
-                    onChange={(event) => setLoginEmail(event.target.value)}
-                  />
-                  <div className="panel-actions">
-                    <button className="mini-btn" type="submit">
-                      {text.signIn}
-                    </button>
-                    <button className="mini-btn" type="button" onClick={() => setShowLoginForm(false)}>
-                      {text.cancel}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="account-empty">
-                  <p>{text.loginHintInSettings}</p>
-                  <div className="panel-actions">
-                    <button
-                      className="action-btn compact"
-                      disabled={googleLoginPending}
-                      onClick={() => {
-                        void signInWithGoogle()
-                      }}
-                    >
-                      {googleLoginPending ? text.googleSigningIn : text.googleQuickSignIn}
-                    </button>
-                    <button className="mini-btn" onClick={beginDemoLogin}>
-                      {text.demoLoginLabel}
-                    </button>
-                  </div>
-                </div>
-              )}
+                <span>{`${text.providerPrefix}: ${accountProviderLabel}`}</span>
+                <p>{text.loginHintInSettings}</p>
+              </div>
 
               <label className="input-row">
                 <span>{text.googleClientIdLabel}</span>
                 <input
                   type="text"
                   className="settings-text-input"
-                  value={openClawConfig.googleClientId}
-                  onChange={(event) => updateOpenClawConfig({ googleClientId: event.target.value })}
+                  value={cliBridgeConfig.googleClientId}
+                  onChange={(event) => updateCliBridgeConfig({ googleClientId: event.target.value })}
                 />
               </label>
               <p>{text.googleClientIdHint}</p>
-            </div>
-
-            <div className="settings-group">
-              <h3>{text.openclawTitle}</h3>
-              <p>{text.openclawHint}</p>
-              <div className="openclaw-step-head">
-                <strong>{settings.language === 'zh' ? '步骤 1：API / Key' : 'Step 1: API / Key'}</strong>
-              </div>
-
-              <label className="input-row">
-                <span>{settings.language === 'zh' ? 'API Base URL' : 'API Base URL'}</span>
-                <input type="text" className="settings-text-input" value={apiBaseLabel} readOnly />
-              </label>
-
-              <label className="input-row">
-                <span>{settings.language === 'zh' ? 'API 服务状态' : 'API Service Status'}</span>
-                <div className={`settings-api-status ${apiHealthState}`}>
-                  <strong>{apiHealthLabel}</strong>
-                  <button
-                    type="button"
-                    className="mini-btn"
-                    disabled={apiHealthState === 'checking'}
-                    onClick={() => {
-                      void checkApiService()
-                    }}
-                  >
-                    {settings.language === 'zh'
-                      ? apiHealthState === 'checking'
-                        ? '检测中...'
-                        : '重新检测'
-                      : apiHealthState === 'checking'
-                        ? 'Checking...'
-                        : 'Check again'}
-                  </button>
-                </div>
-              </label>
-
-              <label className="input-row">
-                <span>{settings.language === 'zh' ? '最新 API Key' : 'Latest API Key'}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={apiKeyMasked || (settings.language === 'zh' ? '尚未生成' : 'Not generated')}
-                  readOnly
-                />
-              </label>
-
-              <div className="panel-actions">
-                <button
-                  className="mini-btn"
-                  disabled={apiActionPending}
-                  onClick={() => {
-                    void generateApiKeyForSkill()
-                  }}
-                >
-                  {settings.language === 'zh'
-                    ? apiActionPending
-                      ? '处理中...'
-                      : '生成 API Key'
-                    : apiActionPending
-                      ? 'Working...'
-                      : 'Generate API key'}
-                </button>
-                <button
-                  className="mini-btn"
-                  disabled={apiActionPending}
-                  onClick={() => {
-                    void copyApiKeyToClipboard()
-                  }}
-                >
-                  {settings.language === 'zh'
-                    ? apiActionPending
-                      ? '处理中...'
-                      : '复制 API key'
-                    : apiActionPending
-                      ? 'Working...'
-                      : 'Copy API key'}
-                </button>
-              </div>
-
-              {openClawNotice ? <p className="openclaw-inline-notice">{openClawNotice}</p> : null}
-
-              <div className="openclaw-steps">
-                <section className="openclaw-step">
-                  <div className="openclaw-step-head">
-                    <strong>{settings.language === 'zh' ? '步骤 2：SKILL.md' : 'Step 2: SKILL.md'}</strong>
-                    <div className="panel-actions">
-                      <button
-                        className="mini-btn"
-                        onClick={() => {
-                          void copyTextWithNotice(
-                            openClawSkillMarkdown,
-                            '已复制 SKILL.md。',
-                            'SKILL.md copied.',
-                            '复制 SKILL.md 失败：',
-                            'Failed to copy SKILL.md: ',
-                          )
-                        }}
-                      >
-                        {settings.language === 'zh' ? '复制' : 'Copy'}
-                      </button>
-                      <button
-                        className="mini-btn"
-                        onClick={() => {
-                          downloadSkillMarkdown(openClawSkillMarkdown)
-                        }}
-                      >
-                        {settings.language === 'zh' ? '下载' : 'Download'}
-                      </button>
-                    </div>
-                  </div>
-                  <pre className="openclaw-code"><code>{openClawSkillMarkdown}</code></pre>
-                </section>
-
-                <details className="openclaw-advanced">
-                  <summary>
-                    <span>
-                      {settings.language === 'zh'
-                        ? '高级：openclaw.json 配置'
-                        : 'Advanced: openclaw.json config'}
-                    </span>
-                  </summary>
-                  <section className="openclaw-step openclaw-step-compact">
-                    <div className="openclaw-step-head">
-                      <strong>{settings.language === 'zh' ? '步骤 3：openclaw.json' : 'Step 3: openclaw.json'}</strong>
-                      <div className="panel-actions">
-                        <button
-                          className="mini-btn"
-                          disabled={apiActionPending}
-                          onClick={() => {
-                            void copyTextWithNotice(
-                              openClawBotConfigSnippet,
-                              '已复制 openclaw.json 配置。',
-                              'openclaw.json snippet copied.',
-                              '复制 openclaw.json 失败：',
-                              'Failed to copy openclaw.json snippet: ',
-                            )
-                          }}
-                        >
-                          {settings.language === 'zh' ? '复制 openclaw.json' : 'Copy openclaw.json'}
-                        </button>
-                        <button
-                          className="mini-btn"
-                          disabled={apiActionPending}
-                          onClick={() => {
-                            void copyOpenClawSkillJson()
-                          }}
-                        >
-                          {settings.language === 'zh' ? '复制 Skill JSON' : 'Copy Skill JSON'}
-                        </button>
-                      </div>
-                    </div>
-                    <p>
-                      {settings.language === 'zh'
-                        ? '如果你要手动把 Skill 片段写进 openclaw.json / moltbot.json，就展开这里。'
-                        : 'Expand this section if you want to paste the Skill snippet into openclaw.json or moltbot.json manually.'}
-                    </p>
-                    <pre className="openclaw-code"><code>{openClawBotConfigSnippet}</code></pre>
-                  </section>
-                </details>
-
-                <section className="openclaw-step">
-                  <div className="openclaw-step-head">
-                    <strong>{settings.language === 'zh' ? '步骤 4：安装命令' : 'Step 4: Install command'}</strong>
-                    <button
-                      className="mini-btn"
-                      onClick={() => {
-                        void copyTextWithNotice(
-                          openClawInstallCmd,
-                          '已复制安装命令。',
-                          'Install command copied.',
-                          '复制安装命令失败：',
-                          'Failed to copy install command: ',
-                        )
-                      }}
-                    >
-                      {settings.language === 'zh' ? '复制' : 'Copy'}
-                    </button>
-                  </div>
-                  <pre className="openclaw-code"><code>{openClawInstallCmd}</code></pre>
-                  <ol className="openclaw-quickstart">
-                    <li>{settings.language === 'zh' ? '下载并安装 SKILL.md 到 ~/.openclaw/skills/open-canvas/SKILL.md。' : 'Download and install SKILL.md to ~/.openclaw/skills/open-canvas/SKILL.md.'}</li>
-                    <li>{settings.language === 'zh' ? '把上面的配置片段加入 openclaw.json。' : 'Add the snippet above into openclaw.json.'}</li>
-                    <li>{settings.language === 'zh' ? '替换为真实 API key，重启 OpenClaw。' : 'Replace with real API key and restart OpenClaw.'}</li>
-                  </ol>
-                </section>
-              </div>
-
-            </div>
-
-            <div className="settings-group">
-              <h3>{text.updateTitle}</h3>
-              <p>{text.updateHint}</p>
-
-              <label className="input-row">
-                <span>{text.currentVersionLabel}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={currentVersionValue}
-                  title={apiHealthInfo?.version || text.currentVersionUnknown}
-                  readOnly
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.currentRevisionLabel}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={currentRevisionValue}
-                  title={apiHealthInfo?.currentRevision || text.currentVersionUnknown}
-                  readOnly
-                />
-              </label>
-
-              <label className="input-row">
-                <span>{text.remoteRevisionLabel}</span>
-                <input
-                  type="text"
-                  className="settings-text-input"
-                  value={remoteRevisionValue}
-                  title={apiHealthInfo?.remoteRevision || text.currentVersionUnknown}
-                  readOnly
-                />
-              </label>
-
-              {apiHealthInfo ? (
-                <p className="openclaw-inline-notice">
-                  {text.updateStatusLabel}: {updateStatusLabel} · {text.updateTrackingLabel}: {trackingBranchLabel}
-                </p>
-              ) : null}
-
-              <div className="panel-actions">
-                <button
-                  className="mini-btn"
-                  disabled={
-                    updatePending ||
-                    apiActionPending ||
-                    apiHealthState !== 'online' ||
-                    !account ||
-                    !serverAuth?.accessToken ||
-                    apiHealthInfo?.updateAvailable === false
-                  }
-                  onClick={() => {
-                    void triggerOnlineUpdate()
-                  }}
-                >
-                  {updatePending ? text.updateWorking : text.updateButton}
-                </button>
-              </div>
-
-              {updateNotice ? <p className="openclaw-inline-notice">{updateNotice}</p> : null}
-            </div>
-
-            <div className="settings-group">
-              <h3>{text.syncSettingsTitle}</h3>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={settings.autoSync}
-                  onChange={(event) => updateSettings({ autoSync: event.target.checked })}
-                />
-                <span>{text.autoSyncLabel}</span>
-              </label>
-
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={settings.syncOnStartup}
-                  onChange={(event) => updateSettings({ syncOnStartup: event.target.checked })}
-                />
-                <span>{text.syncOnStartupLabel}</span>
-              </label>
-
-              <label className="input-row">
-                <span>{text.syncDebounceLabel}</span>
-                <input
-                  type="number"
-                  min={500}
-                  max={20000}
-                  value={settings.syncDebounceMs}
-                  onChange={(event) =>
-                    updateSettings({
-                      syncDebounceMs: clamp(Number(event.target.value) || 500, 500, 20000),
-                    })
-                  }
-                />
-              </label>
             </div>
 
             <div className="settings-group">

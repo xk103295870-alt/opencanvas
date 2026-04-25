@@ -1,0 +1,10 @@
+{
+  "id": "open-canvas",
+  "name": "Open Canvas",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "A native Open Canvas workspace inside Obsidian.",
+  "author": "Open Canvas",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

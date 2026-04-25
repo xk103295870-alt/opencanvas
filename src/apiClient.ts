@@ -33,28 +33,6 @@ export type ServerSessionResponse = {
   }
 }
 
-export type ServerSkillResponse = {
-  account: ServerAccount
-  skill: {
-    name: string
-    description: string
-    auth: { type: string; header: string; format: string }
-    baseUrl: string
-    defaultHeaders: Record<string, string>
-    cardPolicies: {
-      singletonKinds: Array<'todo' | 'calendar'>
-    }
-    endpoints: Record<string, { method: string; path: string }>
-    exampleCreateGrid: { method: string; path: string; body: Record<string, unknown> }
-    exampleCreateCard: { method: string; path: string; body: Record<string, unknown> }
-    exampleUpdateGrid: { method: string; path: string; body: Record<string, unknown> }
-    exampleUpdateTodoCard: { method: string; path: string; body: Record<string, unknown> }
-    exampleUpdateCalendarCard: { method: string; path: string; body: Record<string, unknown> }
-    exampleDeleteGrid: { method: string; path: string; body: Record<string, unknown> }
-    exampleAppendNote: { method: string; path: string; body: Record<string, unknown> }
-  }
-}
-
 export type ServerWorkspaceCard = {
   id: string
   kind: 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
@@ -298,7 +276,7 @@ export async function apiDemoLogin(
   }, baseUrl)
 }
 
-export async function apiCreateKey(accessToken: string, name = 'OpenClaw Skill Key', baseUrl?: string) {
+export async function apiCreateKey(accessToken: string, name = 'Open Canvas API Key', baseUrl?: string) {
   return requestJson<ServerApiKeyResponse>('/api/v1/auth/api-keys', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -308,13 +286,6 @@ export async function apiCreateKey(accessToken: string, name = 'OpenClaw Skill K
 
 export async function apiGetSessionMe(accessToken: string, baseUrl?: string) {
   return requestJson<ServerSessionResponse>('/api/v1/auth/me', {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  }, baseUrl)
-}
-
-export async function apiGetSkillTemplate(accessToken: string, baseUrl?: string) {
-  return requestJson<ServerSkillResponse>('/api/v1/openclaw/skill', {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` },
   }, baseUrl)
@@ -427,32 +398,6 @@ export async function apiTriggerUpdate(accessToken: string, baseUrl?: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   }, baseUrl)
-}
-
-export function buildOpenClawSkillConfig(skillPayload: ServerSkillResponse, apiKey: string) {
-  return {
-    name: skillPayload.skill.name,
-    description: skillPayload.skill.description,
-    baseUrl: skillPayload.skill.baseUrl,
-    auth: {
-      type: 'bearer',
-      token: apiKey,
-      header: 'Authorization',
-      format: 'Bearer {{token}}',
-    },
-    headers: skillPayload.skill.defaultHeaders,
-    cardPolicies: skillPayload.skill.cardPolicies,
-    endpoints: skillPayload.skill.endpoints,
-    examples: {
-      createGrid: skillPayload.skill.exampleCreateGrid,
-      createCard: skillPayload.skill.exampleCreateCard,
-      updateGrid: skillPayload.skill.exampleUpdateGrid,
-      updateTodoCard: skillPayload.skill.exampleUpdateTodoCard,
-      updateCalendarCard: skillPayload.skill.exampleUpdateCalendarCard,
-      deleteGrid: skillPayload.skill.exampleDeleteGrid,
-      appendNote: skillPayload.skill.exampleAppendNote,
-    },
-  }
 }
 
 export function getApiBaseUrl() {

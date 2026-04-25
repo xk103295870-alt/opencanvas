@@ -181,6 +181,9 @@ const ASSET_ROOT = path.join(process.cwd(), '.runtime', 'assets')
 const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
+const LOCAL_ACCOUNT_ID = 'acct-local-open-canvas'
+const LOCAL_ACCOUNT_EMAIL = 'local@open-canvas.local'
+const LOCAL_ACCOUNT_NAME = 'Local Workspace'
 const STANDARD_PREFIX = '/api/v1'
 
 const app = express()
@@ -656,6 +659,47 @@ function ensureWorkspace(accountId: string) {
   return workspace
 }
 
+function ensureLocalAccount() {
+  const now = nowIso()
+  let account = db.accounts.find((item) => item.id === LOCAL_ACCOUNT_ID || item.email === LOCAL_ACCOUNT_EMAIL)
+  if (!account) {
+    account = {
+      id: LOCAL_ACCOUNT_ID,
+      name: LOCAL_ACCOUNT_NAME,
+      email: LOCAL_ACCOUNT_EMAIL,
+      provider: 'demo',
+      createdAt: now,
+      updatedAt: now,
+    }
+    db.accounts.push(account)
+    saveDb()
+  } else {
+    let changed = false
+    if (account.id !== LOCAL_ACCOUNT_ID) {
+      account.id = LOCAL_ACCOUNT_ID
+      changed = true
+    }
+    if (account.name !== LOCAL_ACCOUNT_NAME) {
+      account.name = LOCAL_ACCOUNT_NAME
+      changed = true
+    }
+    if (account.email !== LOCAL_ACCOUNT_EMAIL) {
+      account.email = LOCAL_ACCOUNT_EMAIL
+      changed = true
+    }
+    if (account.provider !== 'demo') {
+      account.provider = 'demo'
+      changed = true
+    }
+    if (changed) {
+      account.updatedAt = now
+      saveDb()
+    }
+  }
+  ensureWorkspace(account.id)
+  return account
+}
+
 function cleanupExpiredSessions() {
   const now = Date.now()
   const before = db.sessions.length
@@ -697,7 +741,15 @@ function requireApiKey(scope: (typeof VALID_SCOPES)[number]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const token = parseBearer(req)
     if (!token) {
-      res.status(401).json({ ok: false, message: 'Missing API key' })
+      const account = ensureLocalAccount()
+      const workspace = ensureWorkspace(account.id)
+      workspace.updatedAt = nowIso()
+      saveDb()
+
+      const ctx = ensureCtx(req)
+      ctx.account = account
+      ctx.workspace = workspace
+      next()
       return
     }
 
@@ -751,8 +803,7 @@ app.get('/openapi.json', (_req, res) => {
     info: {
       title: 'Open Canvas API',
       version: APP_VERSION,
-      description:
-        'Open Canvas REST API for OpenClaw integrations. Standard routes are under /api/v1 and use envelope responses.',
+      description: 'Open Canvas REST API. Standard routes are under /api/v1 and use envelope responses.',
     },
     servers: [{ url: API_BASE_URL }],
     components: {
@@ -777,12 +828,6 @@ app.get('/openapi.json', (_req, res) => {
         },
         get: {
           summary: 'List API keys',
-          security: [{ bearerAuth: [] }],
-        },
-      },
-      '/api/v1/openclaw/skill': {
-        get: {
-          summary: 'Get OpenClaw skill template',
           security: [{ bearerAuth: [] }],
         },
       },
@@ -880,7 +925,6 @@ app.get('/llms-api.txt', (_req, res) => {
 - POST /api/v1/auth/demo-login
 - POST /api/v1/auth/api-keys
 - GET  /api/v1/auth/api-keys
-- GET  /api/v1/openclaw/skill
 - GET  /api/v1/state?full=1
 - POST /api/v1/system/update
 - POST /api/v1/grids
@@ -983,7 +1027,7 @@ app.post('/api/v1/auth/api-keys', requireSession, (req, res) => {
   }
 
   const body = req.body as { name?: string; scopes?: string[] }
-  const name = String(body?.name || 'OpenClaw Skill Key').trim() || 'OpenClaw Skill Key'
+  const name = String(body?.name || 'Open Canvas API Key').trim() || 'Open Canvas API Key'
   const scopesInput = Array.isArray(body?.scopes) ? body.scopes : [...VALID_SCOPES]
   const scopes = Array.from(new Set(scopesInput.filter((scope) => VALID_SCOPES.includes(scope as never))))
   if (scopes.length === 0) {
@@ -1062,117 +1106,9 @@ app.post('/api/v1/auth/api-keys/:keyId/revoke', requireSession, (req, res) => {
   res.json({ ok: true, keyId: target.id, revokedAt: target.revokedAt })
 })
 
-app.get('/api/v1/openclaw/skill', requireSession, (req, res) => {
-  const ctx = ensureCtx(req)
-  if (!ctx.account) {
-    res.status(500).json({ ok: false, message: 'Account context missing' })
-    return
-  }
-
-  const skill = {
-    name: 'open-canvas-api',
-    description:
-      'Open Canvas API skill for account bound automation. Note cards are free-form, while todo and calendar cards are singleton per grid; reuse the fixed card and PATCH it instead of creating duplicates. Grid changes (create, rename, activate, delete) and media asset uploads are also persisted through the API.',
-    auth: { type: 'bearer', header: 'Authorization', format: 'Bearer <API_KEY>' },
-    baseUrl: API_BASE_URL,
-    defaultHeaders: {
-      'Content-Type': 'application/json',
-      'X-Open-Canvas-Source': 'openclaw',
-    },
-    cardPolicies: {
-      singletonKinds: ['todo', 'calendar'],
-    },
-    endpoints: {
-      createGrid: { method: 'POST', path: '/api/v1/grids' },
-      updateGrid: { method: 'PATCH', path: '/api/v1/grids/:gridId' },
-      deleteGrid: { method: 'DELETE', path: '/api/v1/grids/:gridId' },
-      createAsset: { method: 'POST', path: '/api/v1/assets' },
-      fetchAsset: { method: 'GET', path: '/api/v1/assets/:assetId' },
-      deleteAsset: { method: 'DELETE', path: '/api/v1/assets/:assetId' },
-      createCard: { method: 'POST', path: '/api/v1/cards' },
-      updateCard: { method: 'PATCH', path: '/api/v1/cards/:cardId' },
-      deleteCard: { method: 'DELETE', path: '/api/v1/cards/:cardId' },
-      appendNote: { method: 'POST', path: '/api/v1/cards/:cardId/append-note' },
-      getState: { method: 'GET', path: '/api/v1/state?full=1' },
-    },
-    exampleCreateGrid: {
-      method: 'POST',
-      path: '/api/v1/grids',
-      body: { id: 'grid-work', name: 'Work', activate: true },
-    },
-    exampleCreateCard: {
-      method: 'POST',
-      path: '/api/v1/cards',
-      body: { id: 'note-example', kind: 'note', title: 'From OpenClaw', content: 'Auto created by API skill' },
-    },
-    exampleUpdateGrid: {
-      method: 'PATCH',
-      path: '/api/v1/grids/grid-work',
-      body: { name: 'Workboard', activate: true },
-    },
-    exampleUpdateTodoCard: {
-      method: 'PATCH',
-      path: '/api/v1/cards/todo-example',
-      body: {
-        todoItems: [
-          { text: 'Review requirements', status: 'todo' },
-          { text: 'Draft implementation', status: 'doing' },
-          { text: 'Send summary', status: 'done' },
-        ],
-      },
-    },
-    exampleUpdateCalendarCard: {
-      method: 'PATCH',
-      path: '/api/v1/cards/calendar-example',
-      body: {
-        calendar: {
-          selectedDate: '2026-03-25',
-          monthCursor: '2026-03',
-          viewMode: 'month',
-          draftTitle: '',
-          draftAllDay: true,
-          draftStartTime: '09:00',
-          draftEndTime: '10:00',
-          events: [
-            {
-              date: '2026-03-25',
-              title: 'Team sync',
-              allDay: false,
-              startTime: '09:00',
-              endTime: '09:30',
-            },
-          ],
-        },
-      },
-    },
-    exampleDeleteGrid: {
-      method: 'DELETE',
-      path: '/api/v1/grids/grid-work',
-      body: {},
-    },
-    exampleAppendNote: {
-      method: 'POST',
-      path: '/api/v1/cards/note-example/append-note',
-      body: { text: 'Add a short follow-up line' },
-    },
-  }
-
-  res.json({
-    ok: true,
-    account: toPublicAccount(ctx.account),
-    skill,
-    setup: {
-      step1: 'Generate API key from /api/v1/auth/api-keys.',
-      step2: 'Put API key into OpenClaw skill auth bearer token.',
-      step3:
-        'Call /api/v1/cards or /api/v1/grids directly from skill. Use note cards for free-form content, update todoItems on the fixed todo card, and update calendar.events on the fixed calendar card. Todo and calendar cards are singleton per grid, so reuse the existing card and PATCH it instead of creating duplicates. Grid create, rename, activate, and delete, plus media asset upload/delete, are also persisted through the API.',
-    },
-  })
-})
-
 app.get('/api/v1/state', requireApiKey('canvas:read'), (req, res) => {
   const ctx = ensureCtx(req)
-  if (!ctx.workspace || !ctx.account || !ctx.apiKey) {
+  if (!ctx.workspace || !ctx.account) {
     res.status(500).json({ ok: false, message: 'Workspace context missing' })
     return
   }
@@ -1192,11 +1128,13 @@ app.get('/api/v1/state', requireApiKey('canvas:read'), (req, res) => {
         ...(full ? { cards: grid.cards } : {}),
       })),
     },
-    key: {
-      id: ctx.apiKey.id,
-      scopes: ctx.apiKey.scopes,
-      lastUsedAt: ctx.apiKey.lastUsedAt,
-    },
+    key: ctx.apiKey
+      ? {
+          id: ctx.apiKey.id,
+          scopes: ctx.apiKey.scopes,
+          lastUsedAt: ctx.apiKey.lastUsedAt,
+        }
+      : null,
   })
 })
 

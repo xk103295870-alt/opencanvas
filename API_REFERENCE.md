@@ -35,7 +35,13 @@ Error code mapping by HTTP status:
 
 ## 3. Auth Model
 
-Two token types are used:
+Default local mode is no-login for early-stage use:
+
+- Workspace read/write endpoints under `/api/v1/*` accept no `Authorization` header and use the built-in local workspace.
+- If an API key is provided, the server still validates it and enforces scopes.
+- Session and API-key management endpoints remain available for future authenticated expansion.
+
+Two token types are still supported:
 
 1. Access token (session token)
 - Used for account/session endpoints.
@@ -44,7 +50,8 @@ Two token types are used:
 - Session TTL: 30 days.
 
 2. API key
-- Used for workspace read/write endpoints.
+- Optional in default local mode for workspace endpoints.
+- Used for authenticated workspace read/write endpoints when provided.
 - Header: `Authorization: Bearer <API_KEY>`
 - Issued by `POST /api/v1/auth/api-keys`
 - Scopes: `canvas:read`, `canvas:write`
@@ -113,7 +120,7 @@ Request body:
 
 ```json
 {
-  "name": "OpenClaw Skill Key",
+  "name": "Open Canvas API Key",
   "scopes": ["canvas:read", "canvas:write"]
 }
 ```
@@ -125,7 +132,7 @@ Response `data`:
   "apiKey": "oc_live_key-..._...",
   "key": {
     "id": "key-...",
-    "name": "OpenClaw Skill Key",
+    "name": "Open Canvas API Key",
     "prefix": "oc_live_key-...",
     "scopes": ["canvas:read", "canvas:write"],
     "createdAt": "2026-03-01T00:00:00.000Z"
@@ -141,27 +148,18 @@ Lists current account API keys (with revoke status).
 
 Revokes a key by id.
 
-### `GET /api/v1/openclaw/skill`
-
-Returns skill template payload for OpenClaw integration:
-
-- `skill.baseUrl`
-- default headers (`Content-Type`, `X-Open-Canvas-Source`)
-- endpoint mapping
-- setup steps
-
-## 6. Workspace Endpoints (API Key)
+## 6. Workspace Endpoints (No Auth in Local Mode, API Key Optional)
 
 ### `GET /api/v1/state?full=1`
 
-Scope required: `canvas:read`
+Scope required when using API key: `canvas:read`
 
 - `full=1`: returns full cards in each grid
 - without `full=1`: returns `cardCount` only
 
 ### `GET /api/v1/config`
 
-Scope required: `canvas:read`
+Scope required when using API key: `canvas:read`
 
 Returns:
 
@@ -174,7 +172,7 @@ Returns:
 
 ### `POST /api/v1/grids`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Request body:
 
@@ -199,7 +197,7 @@ Notes:
 
 ### `PATCH /api/v1/grids/:gridId`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Request body:
 
@@ -217,7 +215,7 @@ Notes:
 
 ### `DELETE /api/v1/grids/:gridId`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Notes:
 
@@ -227,7 +225,7 @@ Notes:
 
 ### `POST /api/v1/assets`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Request body:
 
@@ -249,7 +247,7 @@ Response `data`:
 Notes:
 
 - The server stores the binary asset on disk and returns a public URL with a signed token.
-- Use this for images, videos, and PDFs that need to survive refresh and OpenClaw sync.
+- Use this for images, videos, and PDFs that need to survive refresh and CLI/API sync.
 
 ### `GET /api/v1/assets/:assetId`
 
@@ -262,7 +260,7 @@ Notes:
 
 ### `DELETE /api/v1/assets/:assetId`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Notes:
 
@@ -271,7 +269,7 @@ Notes:
 
 ### `POST /api/v1/cards`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Request body (common):
 
@@ -329,7 +327,7 @@ Server normalization:
 
 ### `PATCH /api/v1/cards/:cardId`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Updatable fields:
 
@@ -342,7 +340,7 @@ Updatable fields:
 
 ### `POST /api/v1/cards/:cardId/append-note`
 
-Scope required: `canvas:write`
+Scope required when using API key: `canvas:write`
 
 Request body:
 
@@ -370,7 +368,7 @@ curl -X POST http://127.0.0.1:8787/api/v1/auth/demo-login \
 curl -X POST http://127.0.0.1:8787/api/v1/auth/api-keys \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"OpenClaw Skill Key","scopes":["canvas:read","canvas:write"]}'
+  -d '{"name":"Open Canvas API Key","scopes":["canvas:read","canvas:write"]}'
 ```
 
 3. Create card:

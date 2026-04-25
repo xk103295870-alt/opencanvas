@@ -1294,12 +1294,12 @@
   line-height: 1.5;
 }
 
-.openclaw-steps {
+.cli-bridge-removed {
   display: grid;
   gap: 10px;
 }
 
-.openclaw-step {
+.cli-bridge-removed {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
@@ -1308,14 +1308,14 @@
   gap: 8px;
 }
 
-.openclaw-advanced {
+.cli-bridge-removed {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--app-bg) 82%, transparent);
   overflow: clip;
 }
 
-.openclaw-advanced summary {
+.cli-bridge-removed summary {
   list-style: none;
   cursor: pointer;
   padding: 10px 12px;
@@ -1329,39 +1329,39 @@
   gap: 8px;
 }
 
-.openclaw-advanced summary::-webkit-details-marker {
+.cli-bridge-removed summary::-webkit-details-marker {
   display: none;
 }
 
-.openclaw-advanced summary::after {
+.cli-bridge-removed summary::after {
   content: '+';
   color: var(--text-dim);
   font-size: 14px;
   line-height: 1;
 }
 
-.openclaw-advanced[open] summary::after {
+.cli-bridge-removed[open] summary::after {
   content: '−';
 }
 
-.openclaw-step-compact {
+.cli-bridge-removed-compact {
   margin: 0 10px 10px;
 }
 
-.openclaw-step-head {
+.cli-bridge-removed-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.openclaw-step-head strong {
+.cli-bridge-removed-head strong {
   color: var(--text-main);
   font-size: 12px;
   letter-spacing: 0.02em;
 }
 
-.openclaw-code {
+.cli-bridge-removed {
   margin: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1373,13 +1373,13 @@
   line-height: 1.5;
 }
 
-.openclaw-code code {
+.cli-bridge-removed code {
   font-family: var(--font-mono);
   color: var(--text-soft);
   white-space: pre;
 }
 
-.openclaw-quickstart {
+.cli-bridge-removed {
   margin: 0;
   padding-left: 18px;
   color: var(--text-dim);
@@ -1450,7 +1450,7 @@
   color: #f2c36f;
 }
 
-.openclaw-inline-notice {
+.cli-bridge-removed {
   margin: 8px 0 0;
   padding: 8px 10px;
   border-radius: 8px;
@@ -1502,10 +1502,10 @@
 :root[data-theme='glass'] .calendar-event-item,
 :root[data-theme='glass'] .settings-group,
 :root[data-theme='glass'] .settings-api-status,
-:root[data-theme='glass'] .openclaw-advanced,
-:root[data-theme='glass'] .openclaw-step,
-:root[data-theme='glass'] .openclaw-code,
-:root[data-theme='glass'] .openclaw-inline-notice,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
 :root[data-theme='glass'] .language-switch,
 :root[data-theme='glass'] .calendar-view-switch,
 :root[data-theme='glass'] .todo-add-btn,
@@ -1537,10 +1537,10 @@
 :root[data-theme='glass'] .calendar-event-item,
 :root[data-theme='glass'] .settings-group,
 :root[data-theme='glass'] .settings-api-status,
-:root[data-theme='glass'] .openclaw-advanced,
-:root[data-theme='glass'] .openclaw-step,
-:root[data-theme='glass'] .openclaw-code,
-:root[data-theme='glass'] .openclaw-inline-notice,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
+:root[data-theme='glass'] .cli-bridge-removed,
 :root[data-theme='glass'] .todo-add-btn,
 :root[data-theme='glass'] .calendar-add-btn,
 :root[data-theme='glass'] .calendar-nav-btn,
