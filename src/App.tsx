@@ -472,6 +472,9 @@ const CLI_BRIDGE_SETTINGS_KEY = 'open-canvas-cliBridge-settings'
 const SYNC_META_KEY = 'open-canvas-sync-meta'
 const CLI_BRIDGE_LAYOUT_SYNC_KEY = 'open-canvas-cliBridge-layout-sync'
 const CLOUD_KEY_PREFIX = 'open-canvas-cloud-'
+const BRAND_LOGO_DATA_URL = `data:image/svg+xml,${encodeURIComponent(
+  '<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="13" y="13" width="230" height="230" rx="43" fill="#22F15A"/><path d="M62 77H86.5L100.5 163H102.5L116.5 103H140L154 163H156L170 77H194.5L171.5 179H139.5L128.5 128.5H127.5L116.5 179H84.5L62 77Z" fill="#050505"/></svg>',
+)}`
 
 const SCENE_WIDTH = 6000
 const SCENE_HEIGHT = 4000
@@ -843,6 +846,14 @@ const formatCalendarEventTime = (eventItem: CalendarEvent, language: LanguageCod
   if (eventItem.allDay) return language === 'zh' ? '全天' : 'All day'
   if (eventItem.startTime && eventItem.endTime) return `${eventItem.startTime}-${eventItem.endTime}`
   return language === 'zh' ? '未设时间' : 'No time'
+}
+
+const getMsUntilNextLocalDay = () => {
+  const now = new Date()
+  const nextDay = new Date(now)
+  nextDay.setDate(now.getDate() + 1)
+  nextDay.setHours(0, 0, 0, 0)
+  return Math.max(1000, nextDay.getTime() - now.getTime())
 }
 
 const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
@@ -1334,6 +1345,7 @@ function App({ runtime = 'web' }: AppProps) {
   const [hydrated, setHydrated] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()))
 
   const [account, setAccount] = useState<AccountUser>(LOCAL_ACCOUNT)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
@@ -1410,6 +1422,21 @@ function App({ runtime = 'web' }: AppProps) {
   useEffect(() => {
     assetUrlsRef.current = assetUrls
   }, [assetUrls])
+
+  useEffect(() => {
+    let timer: number | null = null
+
+    const scheduleNextLocalDay = () => {
+      setTodayKey(toDateKey(new Date()))
+      timer = window.setTimeout(scheduleNextLocalDay, getMsUntilNextLocalDay() + 1000)
+    }
+
+    timer = window.setTimeout(scheduleNextLocalDay, getMsUntilNextLocalDay() + 1000)
+
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [])
 
   useEffect(() => {
     if (!activeGrid) return
@@ -3388,7 +3415,7 @@ function App({ runtime = 'web' }: AppProps) {
           <div className="brand-block">
             <div className="brand-meta">
               <div className="brand-logo" aria-hidden>
-                <img className="brand-logo-image" src="/ai-sticky-notes-logo.svg" alt="" />
+                <img className="brand-logo-image" src={BRAND_LOGO_DATA_URL} alt="" />
               </div>
               <div className="brand-copy">
                 <span className="brand-name">AI Sticky Notes</span>
@@ -3753,8 +3780,6 @@ function App({ runtime = 'web' }: AppProps) {
                         calendar.viewMode === 'month'
                           ? formatMonthLabel(calendar.monthCursor, settings.language)
                           : formatWeekLabel(calendar.selectedDate, settings.language)
-
-                      const todayKey = toDateKey(new Date())
 
                       return (
                         <div className="calendar-card-body">
