@@ -486,7 +486,7 @@ const CARD_MAX_WIDTH = 1400
 const CARD_MAX_HEIGHT = 1200
 
 const DEFAULT_SETTINGS: AppSettings = {
-  language: 'zh',
+  language: 'en',
   themeMode: 'system',
   autoSync: true,
   syncOnStartup: true,
@@ -1047,7 +1047,7 @@ const normalizeThemeMode = (value: unknown): ThemeMode => {
 }
 
 const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppSettings => {
-  const language = input?.language === 'en' ? 'en' : 'zh'
+  const language = input?.language === 'zh' ? 'zh' : DEFAULT_SETTINGS.language
   const themeMode = normalizeThemeMode(input?.themeMode)
   const autoSync = typeof input?.autoSync === 'boolean' ? input.autoSync : DEFAULT_SETTINGS.autoSync
   const syncOnStartup = typeof input?.syncOnStartup === 'boolean' ? input.syncOnStartup : DEFAULT_SETTINGS.syncOnStartup
@@ -1345,6 +1345,11 @@ function App({ runtime = 'web' }: AppProps) {
   const [hydrated, setHydrated] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [todoDraftTarget, setTodoDraftTarget] = useState<{ cardId: string; lane: TodoLane } | null>(null)
+  const [todoDraftText, setTodoDraftText] = useState('')
+  const [minimizedCardIds, setMinimizedCardIds] = useState<string[]>([])
+  const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [todayKey, setTodayKey] = useState(() => toDateKey(new Date()))
 
   const [account, setAccount] = useState<AccountUser>(LOCAL_ACCOUNT)
@@ -2862,6 +2867,8 @@ function App({ runtime = 'web' }: AppProps) {
       setCardTitleDraft('')
     }
 
+    setMinimizedCardIds((current) => current.filter((id) => id !== cardId))
+    setPendingDeleteCardId((current) => (current === cardId ? null : current))
     clearCliBridgePatchTimer(cardId)
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
@@ -2897,6 +2904,31 @@ function App({ runtime = 'web' }: AppProps) {
       console.error('Failed to remove asset:', error)
     })
     void persistCliBridgeAssetDelete(fileId)
+  }
+
+  const requestRemoveCard = (cardId: string) => {
+    setPendingDeleteCardId(cardId)
+  }
+
+  const minimizeCard = (cardId: string) => {
+    if (editingCardId === cardId) {
+      setEditingCardId(null)
+      setCardTitleDraft('')
+    }
+    setMinimizedCardIds((current) => (current.includes(cardId) ? current : [...current, cardId]))
+  }
+
+  const restoreCard = (cardId: string) => {
+    setMinimizedCardIds((current) => current.filter((id) => id !== cardId))
+  }
+
+  const confirmDeleteCard = () => {
+    if (!pendingDeleteCardId) return
+    removeCardById(pendingDeleteCardId)
+  }
+
+  const cancelDeleteCard = () => {
+    setPendingDeleteCardId(null)
   }
 
   const onCardDragStart = (event: ReactPointerEvent<HTMLElement>, card: CardData) => {
@@ -2976,11 +3008,11 @@ function App({ runtime = 'web' }: AppProps) {
     scheduleCliBridgeCardPatch(cardId, { content })
   }
 
-  const addTodoItem = (cardId: string, lane: TodoLane = 'todo') => {
+  const addTodoItem = (cardId: string, lane: TodoLane = 'todo', explicitText?: string) => {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
     if (!targetCard || targetCard.kind !== 'todo') return
 
-    const textValue = targetCard.content.trim()
+    const textValue = (explicitText ?? targetCard.content).trim()
     if (!textValue) return
 
     const nextTodoItems = [...(targetCard.todoItems ?? []), createTodoItem(textValue, lane)]
@@ -2999,6 +3031,23 @@ function App({ runtime = 'web' }: AppProps) {
       ),
     )
     void persistCliBridgeCardPatch(cardId, { content: '', todoItems: nextTodoItems })
+  }
+
+  const openTodoDraft = (cardId: string, lane: TodoLane) => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    setTodoDraftTarget({ cardId, lane })
+    setTodoDraftText(targetCard?.content ?? '')
+  }
+
+  const closeTodoDraft = () => {
+    setTodoDraftTarget(null)
+    setTodoDraftText('')
+  }
+
+  const submitTodoDraft = () => {
+    if (!todoDraftTarget || !todoDraftText.trim()) return
+    addTodoItem(todoDraftTarget.cardId, todoDraftTarget.lane, todoDraftText)
+    closeTodoDraft()
   }
 
   const moveTodoItem = (cardId: string, itemId: string, nextLane: TodoLane, targetItemId: string | null = null) => {
@@ -3408,37 +3457,57 @@ function App({ runtime = 'web' }: AppProps) {
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
+  const activeCardCount = activeGrid.cards.length
+  const canvasStatusLabel =
+    settings.language === 'zh'
+      ? `${activeGrid.name} · ${activeCardCount} 张卡片`
+      : `${activeGrid.name} · ${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`
+  const productSubtitle = settings.language === 'zh' ? '本地优先画布工作区' : 'Local-first canvas workspace'
 
   return (
-    <main className="app-shell">
-        <aside className="sidebar">
-          <div className="brand-block">
-            <div className="brand-meta">
-              <div className="brand-logo" aria-hidden>
-                <img className="brand-logo-image" src={BRAND_LOGO_DATA_URL} alt="" />
-              </div>
-              <div className="brand-copy">
-                <span className="brand-name">AI Sticky Notes</span>
-                <span className="brand-subtitle">(open-canvas)</span>
-              </div>
+    <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <aside className="sidebar" aria-hidden={sidebarCollapsed}>
+        <button
+          type="button"
+          className="sidebar-toggle sidebar-toggle-inside"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-label={settings.language === 'zh' ? '隐藏侧边栏' : 'Hide sidebar'}
+          title={settings.language === 'zh' ? '隐藏侧边栏' : 'Hide sidebar'}
+        >
+          ‹
+        </button>
+        <div className="brand-block">
+          <div className="brand-meta">
+            <div className="brand-logo" aria-hidden>
+              <img className="brand-logo-image" src={BRAND_LOGO_DATA_URL} alt="" />
+            </div>
+            <div className="brand-copy">
+              <span className="brand-name">Open Canvas</span>
+              <span className="brand-subtitle">{productSubtitle}</span>
             </div>
           </div>
+        </div>
 
-        <button className="action-btn" onClick={addNoteCard}>
-          {text.newNoteCard}
-        </button>
-        <button className="action-btn" onClick={addTodoCard}>
-          {todoText.newCardButton}
-        </button>
-        <button className="action-btn" onClick={addCalendarCard}>
-          {calendarText.newCardButton}
-        </button>
+        <div className="create-actions" aria-label={settings.language === 'zh' ? '创建卡片' : 'Create cards'}>
+          <button className="action-btn action-primary" onClick={addNoteCard}>
+            <span className="action-icon">＋</span>
+            <span>{text.newNoteCard.replace(/^\+\s*/, '')}</span>
+          </button>
+          <button className="action-btn" onClick={addTodoCard}>
+            <span className="action-icon">✓</span>
+            <span>{todoText.newCardButton.replace(/^\+\s*/, '')}</span>
+          </button>
+          <button className="action-btn" onClick={addCalendarCard}>
+            <span className="action-icon">◷</span>
+            <span>{calendarText.newCardButton.replace(/^\+\s*/, '')}</span>
+          </button>
+        </div>
 
         <section className="grid-panel">
           <header className="grid-panel-header">
             <span>{text.grids}</span>
             <button className="icon-btn" aria-label={text.newGridAria} onClick={addGrid}>
-              +
+              ＋
             </button>
           </header>
 
@@ -3496,7 +3565,7 @@ function App({ runtime = 'web' }: AppProps) {
                         removeGrid(grid.id)
                       }}
                     >
-                      x
+                      ×
                     </button>
                   ) : null}
                 </span>
@@ -3505,6 +3574,18 @@ function App({ runtime = 'web' }: AppProps) {
           </div>
         </section>
       </aside>
+
+      {sidebarCollapsed ? (
+        <button
+          type="button"
+          className="sidebar-toggle sidebar-toggle-floating"
+          onClick={() => setSidebarCollapsed(false)}
+          aria-label={settings.language === 'zh' ? '显示侧边栏' : 'Show sidebar'}
+          title={settings.language === 'zh' ? '显示侧边栏' : 'Show sidebar'}
+        >
+          ›
+        </button>
+      ) : null}
 
       <section
         ref={canvasRef}
@@ -3530,17 +3611,23 @@ function App({ runtime = 'web' }: AppProps) {
         }}
       >
         <div className="canvas-toolbar">
-          <button className="zoom-btn" onClick={() => setCenteredZoom(viewport.zoom - 0.1)}>
-            -
-          </button>
-          <span className="zoom-label">{zoomPercent}</span>
-          <button className="zoom-btn" onClick={() => setCenteredZoom(viewport.zoom + 0.1)}>
-            +
-          </button>
+          <div className="canvas-status" title={canvasStatusLabel}>
+            <strong>{activeGrid.name}</strong>
+            <span>{settings.language === 'zh' ? `${activeCardCount} 张卡片` : `${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`}</span>
+          </div>
+          <div className="canvas-command-group" aria-label={settings.language === 'zh' ? '缩放控制' : 'Zoom controls'}>
+            <button className="zoom-btn" onClick={() => setCenteredZoom(viewport.zoom - 0.1)} aria-label="Zoom out">
+              −
+            </button>
+            <span className="zoom-label">{zoomPercent}</span>
+            <button className="zoom-btn" onClick={() => setCenteredZoom(viewport.zoom + 0.1)} aria-label="Zoom in">
+              ＋
+            </button>
+          </div>
           <button className="zoom-btn reset" onClick={() => setViewport(initialViewport)}>
             {text.reset}
           </button>
-          <button className="zoom-btn reset" onClick={() => setSettingsOpen(true)}>
+          <button className="zoom-btn reset settings-trigger" onClick={() => setSettingsOpen(true)}>
             {text.settings}
           </button>
         </div>
@@ -3557,15 +3644,21 @@ function App({ runtime = 'web' }: AppProps) {
 
           {activeGrid.cards.map((card) => {
             const fileUrl = card.fileId ? assetUrls[card.fileId] : card.externalUrl
+            const isMinimizableCard = card.kind === 'todo' || card.kind === 'calendar'
+            const isMinimizedCard = isMinimizableCard && minimizedCardIds.includes(card.id)
+            const cardTypeLabel = card.kind === 'todo' ? todoText.title : card.kind === 'calendar' ? calendarText.title : card.kind
 
             return (
               <article
                 key={card.id}
-                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} card-${card.kind}`}
+                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} ${isMinimizedCard ? 'minimized' : ''} card-${card.kind}`}
+                onDoubleClick={() => {
+                  if (isMinimizedCard) restoreCard(card.id)
+                }}
                 style={{
                   transform: `translate(${card.x}px, ${card.y}px)`,
-                  width: `${card.width}px`,
-                  height: `${card.height}px`,
+                  width: isMinimizedCard ? '220px' : `${card.width}px`,
+                  height: isMinimizedCard ? '54px' : `${card.height}px`,
                   zIndex: draggingCardId === card.id || resizingCardId === card.id ? 10 : 1,
                 }}
               >
@@ -3576,60 +3669,80 @@ function App({ runtime = 'web' }: AppProps) {
                     if (
                       target.closest('.card-title-input') ||
                       target.closest('.card-title-text') ||
-                      target.closest('.card-close')
+                      target.closest('.card-action')
                     ) {
                       return
                     }
                     onCardDragStart(event, card)
                   }}
                 >
-                  {editingCardId === card.id ? (
-                    <input
-                      className="card-title-input"
-                      value={cardTitleDraft}
-                      autoFocus
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={(event) => setCardTitleDraft(event.target.value)}
-                      onBlur={commitCardTitle}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          commitCardTitle()
-                        }
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          cancelCardTitle()
-                        }
-                      }}
-                    />
-                  ) : (
+                  <div className={`card-title-wrap ${isMinimizedCard ? 'only-kind' : ''}`}>
+                    <span className="card-kind-pill">{cardTypeLabel}</span>
+                    {!isMinimizedCard ? (
+                      editingCardId === card.id ? (
+                      <input
+                        className="card-title-input"
+                        value={cardTitleDraft}
+                        autoFocus
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => setCardTitleDraft(event.target.value)}
+                        onBlur={commitCardTitle}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            commitCardTitle()
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            cancelCardTitle()
+                          }
+                        }}
+                      />
+                      ) : (
+                        <button
+                          className="card-title-text"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            beginEditCardTitle(card)
+                          }}
+                        >
+                          {card.title}
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+
+                  {isMinimizableCard ? (
                     <button
-                      className="card-title-text"
+                      className="card-action card-minimize"
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation()
-                        beginEditCardTitle(card)
+                        minimizeCard(card.id)
                       }}
+                      aria-label={settings.language === 'zh' ? '最小化卡片' : 'Minimize card'}
+                      title={settings.language === 'zh' ? '最小化卡片' : 'Minimize card'}
                     >
-                      {card.title}
+                      −
                     </button>
-                  )}
+                  ) : null}
 
                   <button
-                    className="card-close"
+                    className="card-action card-close"
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation()
-                      removeCardById(card.id)
+                      requestRemoveCard(card.id)
                     }}
                     aria-label={text.removeCardAria}
                   >
-                    x
+                    ×
                   </button>
                 </header>
 
-                {card.kind === 'note' ? (
+                {!isMinimizedCard && card.kind === 'note' ? (
                   <textarea
                     className="note-editor"
                     value={card.content}
@@ -3638,31 +3751,8 @@ function App({ runtime = 'web' }: AppProps) {
                   />
                 ) : null}
 
-                {card.kind === 'todo' ? (
+                {!isMinimizedCard && card.kind === 'todo' ? (
                   <div className="todo-card-body">
-                    <form
-                      className="todo-entry"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        addTodoItem(card.id, 'todo')
-                      }}
-                    >
-                      <input
-                        className="todo-entry-input"
-                        value={card.content}
-                        onChange={(event) => updateCardContent(card.id, event.target.value)}
-                        placeholder={todoText.placeholder}
-                      />
-                      <button
-                        type="submit"
-                        className="todo-add-btn"
-                        disabled={!card.content.trim()}
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        {todoText.addButton}
-                      </button>
-                    </form>
-
                     <div className="todo-board">
                       {TODO_LANES.map((lane) => {
                         const laneItems = (card.todoItems ?? []).filter((item) => normalizeTodoLane(item.status) === lane)
@@ -3700,7 +3790,7 @@ function App({ runtime = 'web' }: AppProps) {
                                       onDragOver={(event) => onTodoItemDragOver(event, card.id, lane, item.id)}
                                       onDrop={(event) => onTodoDrop(event, card.id, lane, item.id)}
                                     >
-                                      <span className="todo-board-grip">::</span>
+                                      <span className="todo-board-grip">⋮⋮</span>
                                       <input
                                         className="todo-item-input"
                                         value={item.text}
@@ -3719,7 +3809,7 @@ function App({ runtime = 'web' }: AppProps) {
                                         }}
                                         aria-label={todoText.removeItemAria}
                                       >
-                                        x
+                                        ×
                                       </button>
                                     </div>
                                   )
@@ -3732,9 +3822,8 @@ function App({ runtime = 'web' }: AppProps) {
                             <button
                               type="button"
                               className="todo-lane-add-btn"
-                              disabled={!card.content.trim()}
                               onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => addTodoItem(card.id, lane)}
+                              onClick={() => openTodoDraft(card.id, lane)}
                             >
                               + {todoText.laneAddCard}
                             </button>
@@ -3745,7 +3834,7 @@ function App({ runtime = 'web' }: AppProps) {
                   </div>
                 ) : null}
 
-                {card.kind === 'calendar'
+                {!isMinimizedCard && card.kind === 'calendar'
                   ? (() => {
                       const calendar = withCalendarDefaults(card.calendar)
                       const days =
@@ -3763,15 +3852,6 @@ function App({ runtime = 'web' }: AppProps) {
                         if (a.allDay !== b.allDay) return a.allDay ? -1 : 1
                         return (a.startTime ?? '').localeCompare(b.startTime ?? '')
                       })
-
-                      const selectedLabel = parseDateKey(calendar.selectedDate).toLocaleDateString(
-                        settings.language === 'zh' ? 'zh-CN' : 'en-US',
-                        {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                        },
-                      )
 
                       const canSubmitEvent =
                         calendar.draftAllDay || normalizeTimeRange(calendar.draftStartTime, calendar.draftEndTime) !== null
@@ -3791,7 +3871,7 @@ function App({ runtime = 'web' }: AppProps) {
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={() => navigateCalendar(card.id, -1)}
                             >
-                              {'<'}
+                              ‹
                             </button>
 
                             <div className="calendar-month-label">{periodLabel}</div>
@@ -3803,7 +3883,7 @@ function App({ runtime = 'web' }: AppProps) {
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={() => navigateCalendar(card.id, 1)}
                             >
-                              {'>'}
+                              ›
                             </button>
                           </div>
 
@@ -3884,8 +3964,6 @@ function App({ runtime = 'web' }: AppProps) {
                               addCalendarEvent(card.id)
                             }}
                           >
-                            <p className="calendar-selected-date">{`${calendarText.selectedPrefix}${selectedLabel}`}</p>
-
                             <div className="calendar-entry-row">
                               <input
                                 className="calendar-entry-input"
@@ -3958,7 +4036,7 @@ function App({ runtime = 'web' }: AppProps) {
                                     onDragStart={(event) => onCalendarEventDragStart(event, card.id, eventItem.id)}
                                     onDragEnd={onCalendarEventDragEnd}
                                   >
-                                    ::
+                                    ⋮⋮
                                   </span>
 
                                   <div className="calendar-event-main">
@@ -3982,7 +4060,7 @@ function App({ runtime = 'web' }: AppProps) {
                                     onClick={() => removeCalendarEvent(card.id, eventItem.id)}
                                     aria-label={text.removeCardAria}
                                   >
-                                    x
+                                    ×
                                   </button>
                                 </div>
                               ))
@@ -3995,7 +4073,7 @@ function App({ runtime = 'web' }: AppProps) {
                     })()
                   : null}
 
-                {card.kind === 'hint' ? (
+                {!isMinimizedCard && card.kind === 'hint' ? (
                   <div className="hint-list">
                     {text.hintItems.map((item) => (
                       <p key={item}>{item}</p>
@@ -4003,7 +4081,7 @@ function App({ runtime = 'web' }: AppProps) {
                   </div>
                 ) : null}
 
-                {card.kind === 'image' ? (
+                {!isMinimizedCard && card.kind === 'image' ? (
                   <div className="media-block">
                     {fileUrl ? (
                       <img src={fileUrl} alt={card.fileName ?? card.title} className="media-image" />
@@ -4014,7 +4092,7 @@ function App({ runtime = 'web' }: AppProps) {
                   </div>
                 ) : null}
 
-                {card.kind === 'video' ? (
+                {!isMinimizedCard && card.kind === 'video' ? (
                   <div className="media-block">
                     {fileUrl ? (
                       <video src={fileUrl} controls className="media-video" />
@@ -4025,7 +4103,7 @@ function App({ runtime = 'web' }: AppProps) {
                   </div>
                 ) : null}
 
-                {card.kind === 'pdf' ? (
+                {!isMinimizedCard && card.kind === 'pdf' ? (
                   <div className="media-block">
                     {fileUrl ? (
                       <iframe src={fileUrl} title={card.fileName ?? card.title} className="pdf-viewer" />
@@ -4036,26 +4114,101 @@ function App({ runtime = 'web' }: AppProps) {
                   </div>
                 ) : null}
 
-                <button
-                  type="button"
-                  className="card-resize-handle"
-                  onPointerDown={(event) => onCardResizeStart(event, card)}
-                  aria-label={text.resizeCardAria}
-                  title={text.resizeCardAria}
-                />
+                {!isMinimizedCard ? (
+                  <button
+                    type="button"
+                    className="card-resize-handle"
+                    onPointerDown={(event) => onCardResizeStart(event, card)}
+                    aria-label={text.resizeCardAria}
+                    title={text.resizeCardAria}
+                  />
+                ) : null}
               </article>
             )
           })}
         </div>
       </section>
 
+      {pendingDeleteCardId ? (
+        <div className="confirm-overlay" onClick={cancelDeleteCard}>
+          <section className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
+            <h3>{settings.language === 'zh' ? '删除卡片？' : 'Delete card?'}</h3>
+            <p>
+              {settings.language === 'zh'
+                ? '删除后数据会丢失，无法从当前画布恢复。'
+                : 'Data will be lost after deletion and cannot be restored from this canvas.'}
+            </p>
+            <div className="confirm-actions">
+              <button type="button" className="confirm-secondary" onClick={cancelDeleteCard}>
+                {settings.language === 'zh' ? '取消' : 'Cancel'}
+              </button>
+              <button type="button" className="confirm-danger" onClick={confirmDeleteCard}>
+                {settings.language === 'zh' ? '确认删除' : 'Delete'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {todoDraftTarget ? (
+        <div className="todo-draft-overlay" onClick={closeTodoDraft}>
+          <form
+            className="todo-draft-dialog"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitTodoDraft()
+            }}
+          >
+            <header className="todo-draft-header">
+              <div>
+                <span>{todoLaneLabels[todoDraftTarget.lane]}</span>
+                <h3>{settings.language === 'zh' ? '新增待办' : 'Add todo'}</h3>
+              </div>
+              <button type="button" className="settings-close" onClick={closeTodoDraft}>
+                ×
+              </button>
+            </header>
+            <textarea
+              className="todo-draft-input"
+              value={todoDraftText}
+              autoFocus
+              placeholder={todoText.placeholder}
+              onChange={(event) => setTodoDraftText(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  submitTodoDraft()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  closeTodoDraft()
+                }
+              }}
+            />
+            <div className="todo-draft-actions">
+              <button type="button" className="todo-draft-secondary" onClick={closeTodoDraft}>
+                {settings.language === 'zh' ? '取消' : 'Cancel'}
+              </button>
+              <button type="submit" className="todo-draft-primary" disabled={!todoDraftText.trim()}>
+                {todoText.addButton}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {settingsOpen ? (
         <div className="settings-overlay" onClick={closeSettings}>
           <section className="settings-dialog" onClick={(event) => event.stopPropagation()}>
             <header className="settings-header">
-              <h2>{text.settings}</h2>
-              <button className="settings-close" onClick={closeSettings}>
-                x
+              <div>
+                <span className="settings-kicker">Open Canvas</span>
+                <h2>{text.settings}</h2>
+                <p>{settings.language === 'zh' ? '本地优先，无需后端服务即可在 Obsidian 使用。' : 'Local-first and self-contained inside Obsidian.'}</p>
+              </div>
+              <button className="settings-close" onClick={closeSettings} aria-label={text.settings}>
+                ×
               </button>
             </header>
 
