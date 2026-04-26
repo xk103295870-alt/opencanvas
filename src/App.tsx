@@ -3485,7 +3485,7 @@ function App({ runtime = 'web' }: AppProps) {
               <img className="brand-logo-image" src={BRAND_LOGO_DATA_URL} alt="" />
             </div>
             <div className="brand-copy">
-              <span className="brand-name">开放工作台</span>
+              <span className="brand-name">Canvas Workbench</span>
               <span className="brand-subtitle">{productSubtitle}</span>
             </div>
           </div>
@@ -4206,7 +4206,7 @@ function App({ runtime = 'web' }: AppProps) {
           <section className="settings-dialog" onClick={(event) => event.stopPropagation()}>
             <header className="settings-header">
               <div>
-                <span className="settings-kicker">开放工作台</span>
+                <span className="settings-kicker">Canvas Workbench</span>
                 <h2>{text.settings}</h2>
                 <p>{settings.language === 'zh' ? '本地优先，无需后端服务即可在 Obsidian 使用。' : 'Local-first and self-contained inside Obsidian.'}</p>
               </div>
