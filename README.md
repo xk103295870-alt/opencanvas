@@ -1,5 +1,7 @@
 # Canvas Workbench
 
+[中文文档 / Chinese README](./README.zh-CN.md)
+
 Canvas Workbench is a local-first canvas workspace for Obsidian. It includes built-in todos, schedule management, sticky notes, calendar cards, and media cards.
 
 It can be used directly as a native Obsidian plugin. The plugin is self-contained: users do **not** need to start a backend service to open it inside Obsidian.
