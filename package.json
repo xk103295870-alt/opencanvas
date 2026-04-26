@@ -4,13 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "bin": {
-    "open-canvas": "./bin/open-canvas.mjs"
+    "canvas-workbench": "./bin/canvas-workbench.mjs"
   },
   "scripts": {
     "dev": "vite",
     "api:dev": "tsx server/index.ts",
     "dev:webapi": "tsx --tsconfig tsconfig.node.json server/index.ts",
-    "cli": "node ./bin/open-canvas.mjs",
+    "cli": "node ./bin/canvas-workbench.mjs",
     "build": "tsc -b && vite build",
     "build:obsidian": "tsc -p tsconfig.obsidian.json && vite build --config vite.obsidian.config.ts",
     "icons:generate": "node scripts/generate-icons.mjs",

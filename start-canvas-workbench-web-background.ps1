@@ -88,7 +88,7 @@ if (-not $webRunning) {
 }
 
 if (-not $apiRunning) {
-  $apiCmd = "/c set OPEN_CANVAS_API_HOST=127.0.0.1&& set OPEN_CANVAS_API_PORT=$ApiPort&& npm run api:dev >> `"$apiLogFile`" 2>&1"
+  $apiCmd = "/c set CANVAS_WORKBENCH_API_HOST=127.0.0.1&& set CANVAS_WORKBENCH_API_PORT=$ApiPort&& npm run api:dev >> `"$apiLogFile`" 2>&1"
   $apiProc = Start-Process -FilePath 'cmd.exe' -WorkingDirectory $appDir -ArgumentList $apiCmd -WindowStyle Hidden -PassThru
   Set-Content -Path $apiPidFile -Value $apiProc.Id -Encoding ascii
 }

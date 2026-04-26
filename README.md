@@ -11,22 +11,22 @@ It can be used directly as a native Obsidian plugin. The plugin is self-containe
 Download the packaged Obsidian plugin from GitHub Releases:
 
 - Latest release: https://github.com/xk103295870-alt/Canvas-Workbench/releases/latest
-- Plugin zip: `open-canvas-obsidian-plugin.zip`
+- Plugin zip: `canvas-workbench-obsidian-plugin.zip`
 
 ## Install in Obsidian
 
-1. Download `open-canvas-obsidian-plugin.zip` from the latest release.
+1. Download `canvas-workbench-obsidian-plugin.zip` from the latest release.
 2. Open your Obsidian vault folder.
 3. Create this folder if it does not exist:
 
 ```text
-<Your Vault>/.obsidian/plugins/open-canvas/
+<Your Vault>/.obsidian/plugins/canvas-workbench/
 ```
 
 4. Extract the zip contents directly into that folder. The final structure should look like:
 
 ```text
-<Your Vault>/.obsidian/plugins/open-canvas/
+<Your Vault>/.obsidian/plugins/canvas-workbench/
   manifest.json
   main.js
   styles.css
@@ -37,7 +37,7 @@ Download the packaged Obsidian plugin from GitHub Releases:
   icon-512.png
 ```
 
-Do not put the whole `dist-obsidian` folder inside the plugin folder. Put the files inside `dist-obsidian` directly into `.obsidian/plugins/open-canvas/`.
+Do not put the whole `dist-obsidian` folder inside the plugin folder. Put the files inside `dist-obsidian` directly into `.obsidian/plugins/canvas-workbench/`.
 
 5. Restart Obsidian, or disable and re-enable community plugins.
 6. Go to **Settings → Community plugins**, find **Canvas Workbench**, and enable it.
@@ -64,7 +64,7 @@ No. When used as an Obsidian plugin, Canvas Workbench runs directly inside Obsid
 ```bash
 npm run dev
 npm run api:dev
-open-canvas start
+canvas-workbench start
 ```
 
 Those commands are only for development, browser usage, or future CLI/API integration.
@@ -75,7 +75,7 @@ For development or browser/API usage:
 
 ```bash
 npm install
-open-canvas start
+canvas-workbench start
 ```
 
 If you want to run the web app and API separately:
@@ -87,11 +87,11 @@ npm run dev
 
 ## CLI
 
-- `open-canvas start`
-- `open-canvas start --no-open`
-- `open-canvas status`
-- `open-canvas update`
-- `open-canvas stop`
+- `canvas-workbench start`
+- `canvas-workbench start --no-open`
+- `canvas-workbench status`
+- `canvas-workbench update`
+- `canvas-workbench stop`
 
 ## Development
 
@@ -119,7 +119,7 @@ npm run build:obsidian
 cp manifest.json dist-obsidian/manifest.json
 mkdir -p release
 cd dist-obsidian
-zip -r ../release/open-canvas-obsidian-plugin.zip .
+zip -r ../release/canvas-workbench-obsidian-plugin.zip .
 ```
 
 ## Documentation

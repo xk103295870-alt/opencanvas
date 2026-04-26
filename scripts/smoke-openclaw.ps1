@@ -31,7 +31,7 @@ try {
 
 $loginResp = Invoke-Json -Method "POST" -Url "$ApiBaseUrl/api/v1/auth/demo-login" -Body @{
   name = "Smoke User"
-  email = "smoke@open-canvas.local"
+  email = "smoke@canvas-workbench.local"
   provider = "demo"
 }
 $login = $loginResp.data

@@ -146,9 +146,9 @@ type AccountUser = {
 }
 
 const LOCAL_ACCOUNT: AccountUser = {
-  id: 'local-open-canvas',
+  id: 'local-canvas-workbench',
   name: 'Local Workspace',
-  email: 'local@open-canvas.local',
+  email: 'local@canvas-workbench.local',
   provider: 'demo',
 }
 
@@ -353,7 +353,7 @@ type ExternalCalendarInput = Partial<Omit<CalendarState, 'events'>> & {
   events?: ExternalCalendarEventInput[]
 }
 
-type OpenCanvasCreateCardPayload = {
+type CanvasWorkbenchCreateCardPayload = {
   id?: string
   kind?: CardKind | string
   gridId?: string
@@ -370,9 +370,9 @@ type OpenCanvasCreateCardPayload = {
   calendar?: ExternalCalendarInput
 }
 
-type OpenCanvasSetConfigPayload = Partial<CliBridgeConfig>
+type CanvasWorkbenchSetConfigPayload = Partial<CliBridgeConfig>
 
-type OpenCanvasCommand =
+type CanvasWorkbenchCommand =
   | {
       type: 'ping'
       requestId?: string
@@ -385,7 +385,7 @@ type OpenCanvasCommand =
   | {
       type: 'create-card'
       requestId?: string
-      payload?: OpenCanvasCreateCardPayload
+      payload?: CanvasWorkbenchCreateCardPayload
     }
   | {
       type: 'update-card'
@@ -420,32 +420,32 @@ type OpenCanvasCommand =
   | {
       type: 'set-config'
       requestId?: string
-      payload?: OpenCanvasSetConfigPayload
+      payload?: CanvasWorkbenchSetConfigPayload
     }
 
-type OpenCanvasCommandResult = {
+type CanvasWorkbenchCommandResult = {
   ok: boolean
   requestId?: string
   message?: string
   data?: unknown
 }
 
-type OpenCanvasPostMessageEnvelope = {
+type CanvasWorkbenchPostMessageEnvelope = {
   source?: string
-  type: 'open-canvas.command'
-  command: OpenCanvasCommand
+  type: 'canvas-workbench.command'
+  command: CanvasWorkbenchCommand
 }
 
-type OpenCanvasPostMessageResult = {
-  source: 'open-canvas'
-  type: 'open-canvas.result'
-  result: OpenCanvasCommandResult
+type CanvasWorkbenchPostMessageResult = {
+  source: 'canvas-workbench'
+  type: 'canvas-workbench.result'
+  result: CanvasWorkbenchCommandResult
 }
 
-type OpenCanvasGlobalApi = {
-  invoke: (command: OpenCanvasCommand) => Promise<OpenCanvasCommandResult>
-  createGrid: (payload?: { name?: string; activate?: boolean; requestId?: string }) => Promise<OpenCanvasCommandResult>
-  createCard: (payload?: OpenCanvasCreateCardPayload & { requestId?: string }) => Promise<OpenCanvasCommandResult>
+type CanvasWorkbenchGlobalApi = {
+  invoke: (command: CanvasWorkbenchCommand) => Promise<CanvasWorkbenchCommandResult>
+  createGrid: (payload?: { name?: string; activate?: boolean; requestId?: string }) => Promise<CanvasWorkbenchCommandResult>
+  createCard: (payload?: CanvasWorkbenchCreateCardPayload & { requestId?: string }) => Promise<CanvasWorkbenchCommandResult>
   updateCard: (payload: {
     cardId: string
     title?: string
@@ -459,30 +459,30 @@ type OpenCanvasGlobalApi = {
     todoItems?: TodoItem[]
     calendar?: CalendarState
     requestId?: string
-  }) => Promise<OpenCanvasCommandResult>
-  getState: (requestId?: string) => Promise<OpenCanvasCommandResult>
-  getConfig: (requestId?: string) => Promise<OpenCanvasCommandResult>
-  setConfig: (payload?: OpenCanvasSetConfigPayload & { requestId?: string }) => Promise<OpenCanvasCommandResult>
+  }) => Promise<CanvasWorkbenchCommandResult>
+  getState: (requestId?: string) => Promise<CanvasWorkbenchCommandResult>
+  getConfig: (requestId?: string) => Promise<CanvasWorkbenchCommandResult>
+  setConfig: (payload?: CanvasWorkbenchSetConfigPayload & { requestId?: string }) => Promise<CanvasWorkbenchCommandResult>
 }
 
 declare global {
   interface Window {
-    openCanvas?: OpenCanvasGlobalApi
+    canvasWorkbench?: CanvasWorkbenchGlobalApi
   }
 }
 
-const DB_NAME = 'open-canvas-db'
+const DB_NAME = 'canvas-workbench-db'
 const DB_VERSION = 1
 const STORE_APP = 'app_state'
 const STORE_ASSETS = 'assets'
 const APP_STATE_KEY = 'main'
-const PERSISTED_APP_STATE_SHADOW_KEY = 'open-canvas-app-state-shadow'
-const AUTH_STORAGE_KEY = 'open-canvas-fake-auth'
-const SETTINGS_STORAGE_KEY = 'open-canvas-settings'
-const CLI_BRIDGE_SETTINGS_KEY = 'open-canvas-cliBridge-settings'
-const SYNC_META_KEY = 'open-canvas-sync-meta'
-const CLI_BRIDGE_LAYOUT_SYNC_KEY = 'open-canvas-cliBridge-layout-sync'
-const CLOUD_KEY_PREFIX = 'open-canvas-cloud-'
+const PERSISTED_APP_STATE_SHADOW_KEY = 'canvas-workbench-app-state-shadow'
+const AUTH_STORAGE_KEY = 'canvas-workbench-fake-auth'
+const SETTINGS_STORAGE_KEY = 'canvas-workbench-settings'
+const CLI_BRIDGE_SETTINGS_KEY = 'canvas-workbench-cliBridge-settings'
+const SYNC_META_KEY = 'canvas-workbench-sync-meta'
+const CLI_BRIDGE_LAYOUT_SYNC_KEY = 'canvas-workbench-cliBridge-layout-sync'
+const CLOUD_KEY_PREFIX = 'canvas-workbench-cloud-'
 const BRAND_LOGO_DATA_URL = `data:image/svg+xml,${encodeURIComponent(
   '<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="13" y="13" width="230" height="230" rx="43" fill="#22F15A"/><path d="M62 77H86.5L100.5 163H102.5L116.5 103H140L154 163H156L170 77H194.5L171.5 179H139.5L128.5 128.5H127.5L116.5 179H84.5L62 77Z" fill="#050505"/></svg>',
 )}`
@@ -1884,7 +1884,7 @@ function App({ runtime = 'web' }: AppProps) {
 
   useEffect(() => {
     window.dispatchEvent(
-      new CustomEvent('open-canvas:config', {
+      new CustomEvent('canvas-workbench:config', {
         detail: {
           cliBridge: cliBridgeConfig,
         },
@@ -2449,7 +2449,7 @@ function App({ runtime = 'web' }: AppProps) {
   )
 
   const createCardInternal = useCallback(
-    (payload?: OpenCanvasCreateCardPayload) => {
+    (payload?: CanvasWorkbenchCreateCardPayload) => {
       const targetGridId =
         payload?.gridId && grids.some((grid) => grid.id === payload.gridId) ? payload.gridId : activeGridId
       const targetGrid = grids.find((grid) => grid.id === targetGridId)
@@ -2636,15 +2636,15 @@ function App({ runtime = 'web' }: AppProps) {
     })
   }
 
-  const updateCardInternal = useCallback((payload: NonNullable<Extract<OpenCanvasCommand, { type: 'update-card' }>['payload']>) => {
+  const updateCardInternal = useCallback((payload: NonNullable<Extract<CanvasWorkbenchCommand, { type: 'update-card' }>['payload']>) => {
     const cardId = String(payload.cardId || '').trim()
     if (!cardId) {
-      return { ok: false, message: 'cardId is required' } satisfies OpenCanvasCommandResult
+      return { ok: false, message: 'cardId is required' } satisfies CanvasWorkbenchCommandResult
     }
 
     const exists = grids.some((grid) => grid.cards.some((card) => card.id === cardId))
     if (!exists) {
-      return { ok: false, message: `Card not found: ${cardId}` } satisfies OpenCanvasCommandResult
+      return { ok: false, message: `Card not found: ${cardId}` } satisfies CanvasWorkbenchCommandResult
     }
 
     const patch: CliBridgeCardPatch = {}
@@ -2685,11 +2685,11 @@ function App({ runtime = 'web' }: AppProps) {
 
     void persistCliBridgeCardPatch(cardId, patch)
 
-    return { ok: true, message: 'Card updated', data: { cardId } } satisfies OpenCanvasCommandResult
+    return { ok: true, message: 'Card updated', data: { cardId } } satisfies CanvasWorkbenchCommandResult
   }, [grids, persistCliBridgeCardPatch, updateCliBridgeLayoutSyncMeta])
 
-  const handleOpenCanvasCommand = useCallback(
-    (command: OpenCanvasCommand): OpenCanvasCommandResult => {
+  const handleCanvasWorkbenchCommand = useCallback(
+    (command: CanvasWorkbenchCommand): CanvasWorkbenchCommandResult => {
       const requestId = command?.requestId
 
       if (!command || typeof command !== 'object' || typeof command.type !== 'string') {
@@ -2832,68 +2832,68 @@ function App({ runtime = 'web' }: AppProps) {
   )
 
   useEffect(() => {
-    const api: OpenCanvasGlobalApi = {
-      invoke: async (command) => handleOpenCanvasCommand(command),
+    const api: CanvasWorkbenchGlobalApi = {
+      invoke: async (command) => handleCanvasWorkbenchCommand(command),
       createGrid: async (payload) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'create-grid',
           requestId: payload?.requestId,
           payload: { name: payload?.name, activate: payload?.activate },
         }),
       createCard: async (payload) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'create-card',
           requestId: payload?.requestId,
           payload,
         }),
       updateCard: async (payload) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'update-card',
           requestId: payload?.requestId,
           payload,
         }),
       getState: async (requestId) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'get-state',
           requestId,
         }),
       getConfig: async (requestId) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'get-config',
           requestId,
         }),
       setConfig: async (payload) =>
-        handleOpenCanvasCommand({
+        handleCanvasWorkbenchCommand({
           type: 'set-config',
           requestId: payload?.requestId,
           payload: payload ? { googleClientId: payload.googleClientId } : undefined,
         }),
     }
 
-    window.openCanvas = api
+    window.canvasWorkbench = api
     return () => {
-      if (window.openCanvas === api) {
-        delete window.openCanvas
+      if (window.canvasWorkbench === api) {
+        delete window.canvasWorkbench
       }
     }
-  }, [handleOpenCanvasCommand])
+  }, [handleCanvasWorkbenchCommand])
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as OpenCanvasPostMessageEnvelope | null
-      if (!data || typeof data !== 'object' || data.type !== 'open-canvas.command') return
+      const data = event.data as CanvasWorkbenchPostMessageEnvelope | null
+      if (!data || typeof data !== 'object' || data.type !== 'canvas-workbench.command') return
 
       if (
         data.source &&
-        !['cli', 'cli-bridge', 'open-canvas-bridge'].includes(String(data.source).toLowerCase())
+        !['cli', 'cli-bridge', 'canvas-workbench-bridge'].includes(String(data.source).toLowerCase())
       ) {
         return
       }
 
-      const result = handleOpenCanvasCommand(data.command)
-      const response: OpenCanvasPostMessageResult = {
-        source: 'open-canvas',
-        type: 'open-canvas.result',
+      const result = handleCanvasWorkbenchCommand(data.command)
+      const response: CanvasWorkbenchPostMessageResult = {
+        source: 'canvas-workbench',
+        type: 'canvas-workbench.result',
         result,
       }
 
@@ -2902,14 +2902,14 @@ function App({ runtime = 'web' }: AppProps) {
         source.postMessage(response, '*')
       }
 
-      window.dispatchEvent(new CustomEvent('open-canvas:result', { detail: response }))
+      window.dispatchEvent(new CustomEvent('canvas-workbench:result', { detail: response }))
     }
 
     window.addEventListener('message', onMessage)
     return () => {
       window.removeEventListener('message', onMessage)
     }
-  }, [handleOpenCanvasCommand])
+  }, [handleCanvasWorkbenchCommand])
 
   const removeCardById = (cardId: string) => {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)

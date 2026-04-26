@@ -196,7 +196,7 @@ export type ServerStateResponse = {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_OPEN_CANVAS_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8787'
+const API_BASE_URL = (import.meta.env.VITE_CANVAS_WORKBENCH_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8787'
 
 export type ServerHealthResponse = {
   ok?: boolean

@@ -9,22 +9,22 @@ Canvas Workbench 是一个本地优先的 Obsidian 画布工作台，内置代�
 客户可以从 GitHub Releases 下载打包好的 Obsidian 插件：
 
 - 最新版本：https://github.com/xk103295870-alt/Canvas-Workbench/releases/latest
-- 插件压缩包：`open-canvas-obsidian-plugin.zip`
+- 插件压缩包：`canvas-workbench-obsidian-plugin.zip`
 
 ## 在 Obsidian 中安装
 
-1. 从最新 Release 下载 `open-canvas-obsidian-plugin.zip`。
+1. 从最新 Release 下载 `canvas-workbench-obsidian-plugin.zip`。
 2. 打开你的 Obsidian vault 文件夹。
 3. 如果没有插件目录，创建：
 
 ```text
-<你的 Vault>/.obsidian/plugins/open-canvas/
+<你的 Vault>/.obsidian/plugins/canvas-workbench/
 ```
 
 4. 把 zip 内容直接解压到这个目录里。最终结构应该是：
 
 ```text
-<你的 Vault>/.obsidian/plugins/open-canvas/
+<你的 Vault>/.obsidian/plugins/canvas-workbench/
   manifest.json
   main.js
   styles.css
@@ -35,7 +35,7 @@ Canvas Workbench 是一个本地优先的 Obsidian 画布工作台，内置代�
   icon-512.png
 ```
 
-注意：不是把 `dist-obsidian` 文件夹整个放进去，而是把里面的文件放到 `open-canvas/` 目录下。
+注意：不是把 `dist-obsidian` 文件夹整个放进去，而是把里面的文件放到 `canvas-workbench/` 目录下。
 
 5. 重启 Obsidian，或者关闭再开启第三方插件。
 6. 进入 **设置 → 第三方插件**，找到 **Canvas Workbench** 并启用。
@@ -64,7 +64,7 @@ Canvas Workbench 是一个本地优先的 Obsidian 画布工作台，内置代�
 ```bash
 npm run dev
 npm run api:dev
-open-canvas start
+canvas-workbench start
 ```
 
 这些命令只用于开发、浏览器版本、或者未来 CLI/API 联动场景。
@@ -75,7 +75,7 @@ open-canvas start
 
 ```bash
 npm install
-open-canvas start
+canvas-workbench start
 ```
 
 如果你想手动分别启动前端和 API：
@@ -87,11 +87,11 @@ npm run dev
 
 ## CLI 命令
 
-- `open-canvas start` 启动 Web + API
-- `open-canvas start --no-open` 启动但不自动打开浏览器
-- `open-canvas status` 查看运行状态
-- `open-canvas update` 在线更新
-- `open-canvas stop` 停止服务
+- `canvas-workbench start` 启动 Web + API
+- `canvas-workbench start --no-open` 启动但不自动打开浏览器
+- `canvas-workbench status` 查看运行状态
+- `canvas-workbench update` 在线更新
+- `canvas-workbench stop` 停止服务
 
 ## 开发命令
 
@@ -119,7 +119,7 @@ npm run build:obsidian
 cp manifest.json dist-obsidian/manifest.json
 mkdir -p release
 cd dist-obsidian
-zip -r ../release/open-canvas-obsidian-plugin.zip .
+zip -r ../release/canvas-workbench-obsidian-plugin.zip .
 ```
 
 ## 文档

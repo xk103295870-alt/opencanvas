@@ -21,18 +21,18 @@ function usage() {
   console.log(`Open Canvas CLI
 
 Usage:
-  open-canvas start [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
-  open-canvas stop [--port <web-port>] [--api-port <api-port>]
-  open-canvas restart [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
-  open-canvas status [--port <web-port>] [--api-port <api-port>]
-  open-canvas update [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench start [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench stop [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench restart [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench status [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench update [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
 
 Examples:
-  open-canvas start
-  open-canvas start --no-open
-  open-canvas stop
-  open-canvas status
-  open-canvas update
+  canvas-workbench start
+  canvas-workbench start --no-open
+  canvas-workbench stop
+  canvas-workbench status
+  canvas-workbench update
 `)
 }
 
@@ -412,10 +412,10 @@ async function startCommand(options) {
         tsxBin,
         ['--tsconfig', path.join(REPO_ROOT, 'tsconfig.node.json'), path.join(REPO_ROOT, 'server', 'index.ts')],
         {
-          OPEN_CANVAS_API_HOST: DEFAULT_API_HOST,
-          OPEN_CANVAS_API_PORT: String(options.apiPort),
-          OPEN_CANVAS_API_BASE_URL: apiUrl,
-          OPEN_CANVAS_WEB_ORIGIN: webUrl,
+          CANVAS_WORKBENCH_API_HOST: DEFAULT_API_HOST,
+          CANVAS_WORKBENCH_API_PORT: String(options.apiPort),
+          CANVAS_WORKBENCH_API_BASE_URL: apiUrl,
+          CANVAS_WORKBENCH_WEB_ORIGIN: webUrl,
         },
         apiLogFile,
       )
@@ -428,7 +428,7 @@ async function startCommand(options) {
         viteBin,
         ['--host', DEFAULT_WEB_HOST, '--port', String(options.port), '--strictPort'],
         {
-          VITE_OPEN_CANVAS_API_BASE_URL: apiUrl,
+          VITE_CANVAS_WORKBENCH_API_BASE_URL: apiUrl,
         },
         webLogFile,
       )

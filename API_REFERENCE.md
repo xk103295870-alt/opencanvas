@@ -11,10 +11,10 @@ This document summarizes the current API contract implemented in `server/index.t
 
 Environment variables:
 
-- `OPEN_CANVAS_API_HOST` (default `127.0.0.1`)
-- `OPEN_CANVAS_API_PORT` (default `8787`)
-- `OPEN_CANVAS_API_BASE_URL` (optional override)
-- `OPEN_CANVAS_WEB_ORIGIN` (default `http://127.0.0.1:5173`)
+- `CANVAS_WORKBENCH_API_HOST` (default `127.0.0.1`)
+- `CANVAS_WORKBENCH_API_PORT` (default `8787`)
+- `CANVAS_WORKBENCH_API_BASE_URL` (optional override)
+- `CANVAS_WORKBENCH_WEB_ORIGIN` (default `http://127.0.0.1:5173`)
 
 ## 2. Response Contract
 

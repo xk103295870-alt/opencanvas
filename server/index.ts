@@ -120,7 +120,7 @@ type ApiDb = {
   assets: AssetRecord[]
 }
 
-type OpenCanvasCreateCardPayload = {
+type CanvasWorkbenchCreateCardPayload = {
   id?: string
   cardId?: string
   kind?: CardKind | string
@@ -153,13 +153,13 @@ type OpenCanvasCreateCardPayload = {
   }
 }
 
-type OpenCanvasGridCreatePayload = {
+type CanvasWorkbenchGridCreatePayload = {
   id?: string
   name?: string
   activate?: boolean
 }
 
-type OpenCanvasGridUpdatePayload = {
+type CanvasWorkbenchGridUpdatePayload = {
   name?: string
   activate?: boolean
 }
@@ -172,17 +172,17 @@ type RequestContext = {
 }
 
 const APP_VERSION = '0.2.0-api'
-const API_HOST = process.env.OPEN_CANVAS_API_HOST || '127.0.0.1'
-const API_PORT = Number(process.env.OPEN_CANVAS_API_PORT || '8787')
-const API_BASE_URL = process.env.OPEN_CANVAS_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
-const WEB_ORIGIN = process.env.OPEN_CANVAS_WEB_ORIGIN || 'http://127.0.0.1:5173'
+const API_HOST = process.env.CANVAS_WORKBENCH_API_HOST || '127.0.0.1'
+const API_PORT = Number(process.env.CANVAS_WORKBENCH_API_PORT || '8787')
+const API_BASE_URL = process.env.CANVAS_WORKBENCH_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
+const WEB_ORIGIN = process.env.CANVAS_WORKBENCH_WEB_ORIGIN || 'http://127.0.0.1:5173'
 const DB_PATH = path.join(process.cwd(), '.runtime', 'api-db.json')
 const ASSET_ROOT = path.join(process.cwd(), '.runtime', 'assets')
 const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
-const LOCAL_ACCOUNT_ID = 'acct-local-open-canvas'
-const LOCAL_ACCOUNT_EMAIL = 'local@open-canvas.local'
+const LOCAL_ACCOUNT_ID = 'acct-local-canvas-workbench'
+const LOCAL_ACCOUNT_EMAIL = 'local@canvas-workbench.local'
 const LOCAL_ACCOUNT_NAME = 'Local Workspace'
 const STANDARD_PREFIX = '/api/v1'
 
@@ -581,7 +581,7 @@ function defaultCalendarState(): CalendarState {
   }
 }
 
-function normalizeTodoItems(input: OpenCanvasCreateCardPayload['todoItems']): TodoItem[] {
+function normalizeTodoItems(input: CanvasWorkbenchCreateCardPayload['todoItems']): TodoItem[] {
   if (!Array.isArray(input)) return []
   const out: TodoItem[] = []
   for (const item of input) {
@@ -603,7 +603,7 @@ function normalizeTodoItems(input: OpenCanvasCreateCardPayload['todoItems']): To
   return out
 }
 
-function normalizeCalendar(input: OpenCanvasCreateCardPayload['calendar']): CalendarState {
+function normalizeCalendar(input: CanvasWorkbenchCreateCardPayload['calendar']): CalendarState {
   const base = defaultCalendarState()
   if (!input || typeof input !== 'object') return base
   const events: CalendarEvent[] = Array.isArray(input.events)
@@ -953,7 +953,7 @@ app.post('/api/v1/auth/demo-login', (req, res) => {
   const body = req.body as { name?: string; email?: string; provider?: AccountProvider; avatarUrl?: string }
 
   const name = normalizeName(String(body?.name || ''))
-  const fallbackEmail = `${name.toLowerCase().replace(/\s+/g, '.')}@open-canvas.local`
+  const fallbackEmail = `${name.toLowerCase().replace(/\s+/g, '.')}@canvas-workbench.local`
   const email = normalizeEmail(String(body?.email || fallbackEmail))
   const provider: AccountProvider = body?.provider === 'google' ? 'google' : 'demo'
 
@@ -1166,7 +1166,7 @@ app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
-  const body = req.body as OpenCanvasGridCreatePayload
+  const body = req.body as CanvasWorkbenchGridCreatePayload
   const requestedGridId = normalizeGridId(body?.id)
   const gridId = requestedGridId || `grid-${uid(10)}`
   const name = String(body?.name || '').trim() || `Grid ${ctx.workspace.grids.length + 1}`
@@ -1206,7 +1206,7 @@ app.patch('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) => 
     return
   }
 
-  const body = req.body as OpenCanvasGridUpdatePayload
+  const body = req.body as CanvasWorkbenchGridUpdatePayload
   const grid = ctx.workspace.grids.find((item) => item.id === gridId)
   if (!grid) {
     res.status(404).json({ ok: false, message: `Grid not found: ${gridId}` })
@@ -1428,7 +1428,7 @@ app.post('/api/v1/system/update', requireSession, (req, res) => {
 
   const webPort = resolvePortFromOrigin(WEB_ORIGIN, 5173)
   const logPath = UPDATE_LOG_PATH
-  const cliBinPath = path.resolve(process.cwd(), 'bin', 'open-canvas.mjs')
+  const cliBinPath = path.resolve(process.cwd(), 'bin', 'canvas-workbench.mjs')
   if (!fs.existsSync(cliBinPath)) {
     res.status(500).json({ ok: false, message: 'CLI entry point not found' })
     return
@@ -1439,10 +1439,10 @@ app.post('/api/v1/system/update', requireSession, (req, res) => {
       process.execPath,
       [cliBinPath, 'update', '--no-open', '--port', String(webPort), '--api-port', String(API_PORT)],
       {
-        OPEN_CANVAS_API_HOST: API_HOST,
-        OPEN_CANVAS_API_PORT: String(API_PORT),
-        OPEN_CANVAS_API_BASE_URL: API_BASE_URL,
-        OPEN_CANVAS_WEB_ORIGIN: WEB_ORIGIN,
+        CANVAS_WORKBENCH_API_HOST: API_HOST,
+        CANVAS_WORKBENCH_API_PORT: String(API_PORT),
+        CANVAS_WORKBENCH_API_BASE_URL: API_BASE_URL,
+        CANVAS_WORKBENCH_WEB_ORIGIN: WEB_ORIGIN,
       },
       logPath,
     )
@@ -1469,7 +1469,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
-  const body = (req.body || {}) as OpenCanvasCreateCardPayload
+  const body = (req.body || {}) as CanvasWorkbenchCreateCardPayload
   const kind = parseCardKind(body.kind)
   const requestedCardId = normalizeCardId(body.id ?? body.cardId)
 
@@ -1668,7 +1668,7 @@ app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
 })
 
 app.listen(API_PORT, API_HOST, () => {
-  console.log(`[open-canvas-api] v${APP_VERSION} listening on ${API_BASE_URL}`)
-  console.log(`[open-canvas-api] web origin: ${WEB_ORIGIN}`)
-  console.log(`[open-canvas-api] db: ${DB_PATH}`)
+  console.log(`[canvas-workbench-api] v${APP_VERSION} listening on ${API_BASE_URL}`)
+  console.log(`[canvas-workbench-api] web origin: ${WEB_ORIGIN}`)
+  console.log(`[canvas-workbench-api] db: ${DB_PATH}`)
 })
