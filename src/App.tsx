@@ -21,11 +21,14 @@ type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
 type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
 type CalendarViewMode = 'month' | 'week'
 type TodoLane = 'todo' | 'doing' | 'done'
+type TodoTag = 'event' | 'feature' | 'important' | 'plan' | 'bug' | 'idea'
+type TodoFilter = 'all' | TodoTag
 
 type TodoItem = {
   id: string
   text: string
   status: TodoLane
+  tag?: TodoTag
 }
 
 type CalendarEvent = {
@@ -290,11 +293,19 @@ type TodoI18n = {
   placeholder: string
   addButton: string
   emptyHint: string
+  filterLabel: string
   removeItemAria: string
   laneTodo: string
   laneDoing: string
   laneDone: string
   laneAddCard: string
+  tagEvent: string
+  tagFeature: string
+  tagImportant: string
+  tagPlan: string
+  tagBug: string
+  tagIdea: string
+  filterAll: string
   defaultItems: string[]
 }
 
@@ -328,7 +339,7 @@ type ParticleRuntime = {
   bloomRadius: number
 }
 
-type ExternalTodoInput = string | { text: string; done?: boolean; status?: TodoLane }
+type ExternalTodoInput = string | { text: string; done?: boolean; status?: TodoLane; tag?: TodoTag | string }
 
 type ExternalCalendarEventInput = {
   title: string
@@ -681,11 +692,19 @@ const TODO_I18N: Record<LanguageCode, TodoI18n> = {
     placeholder: '输入任务后按回车添加',
     addButton: '添加',
     emptyHint: '暂无任务，输入后按回车添加。',
+    filterLabel: '筛选',
     removeItemAria: '删除事项',
     laneTodo: '待办',
     laneDoing: '进行中',
     laneDone: '已完成',
     laneAddCard: '新增卡片',
+    tagEvent: '事件',
+    tagFeature: '功能',
+    tagImportant: '重要',
+    tagPlan: '计划',
+    tagBug: '问题',
+    tagIdea: '想法',
+    filterAll: '全部',
     defaultItems: ['整理想法', '安排下一步'],
   },
   en: {
@@ -694,11 +713,19 @@ const TODO_I18N: Record<LanguageCode, TodoI18n> = {
     placeholder: 'Type a task and press Enter',
     addButton: 'Add',
     emptyHint: 'No tasks yet. Type above and press Enter.',
+    filterLabel: 'Filter',
     removeItemAria: 'Remove item',
     laneTodo: 'To-do',
     laneDoing: 'Doing',
     laneDone: 'Done',
     laneAddCard: 'Add card',
+    tagEvent: 'Event',
+    tagFeature: 'Feature',
+    tagImportant: 'Important',
+    tagPlan: 'Plan',
+    tagBug: 'Bug',
+    tagIdea: 'Idea',
+    filterAll: 'All',
     defaultItems: ['Organize ideas', 'Plan next step'],
   },
 }
@@ -857,6 +884,8 @@ const getMsUntilNextLocalDay = () => {
 }
 
 const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
+const TODO_TAGS: TodoTag[] = ['event', 'feature', 'important', 'plan', 'bug', 'idea']
+const TODO_FILTERS: TodoFilter[] = ['all', ...TODO_TAGS]
 
 const normalizeTodoLane = (value: unknown, doneFallback = false): TodoLane => {
   const lane = typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -864,26 +893,34 @@ const normalizeTodoLane = (value: unknown, doneFallback = false): TodoLane => {
   return doneFallback ? 'done' : 'todo'
 }
 
-const createTodoItem = (text: string, status: TodoLane = 'todo'): TodoItem => ({
+const normalizeTodoTag = (value: unknown): TodoTag => {
+  const tag = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (tag === 'feature' || tag === 'important' || tag === 'plan' || tag === 'bug' || tag === 'idea') return tag
+  return 'event'
+}
+
+const createTodoItem = (text: string, status: TodoLane = 'todo', tag: TodoTag = 'event'): TodoItem => ({
   id: uid('todo-item'),
   text,
   status,
+  tag,
 })
 
 const normalizeTodoItemsForCard = (items: TodoItem[] | undefined): TodoItem[] => {
   if (!Array.isArray(items)) return []
-  return items
-    .map((item) => {
-      const text = String(item?.text ?? '').trim()
-      if (!text) return null
-      const rawDone = item && typeof item === 'object' && 'done' in item ? Boolean((item as { done?: boolean }).done) : false
-      return {
-        id: String(item?.id || uid('todo-item')),
-        text,
-        status: normalizeTodoLane(item?.status, rawDone),
-      } satisfies TodoItem
+  const normalizedItems: TodoItem[] = []
+  for (const item of items) {
+    const text = String(item?.text ?? '').trim()
+    if (!text) continue
+    const rawDone = item && typeof item === 'object' && 'done' in item ? Boolean((item as { done?: boolean }).done) : false
+    normalizedItems.push({
+      id: String(item?.id || uid('todo-item')),
+      text,
+      status: normalizeTodoLane(item?.status, rawDone),
+      tag: normalizeTodoTag(item?.tag),
     })
-    .filter((item): item is TodoItem => Boolean(item))
+  }
+  return normalizedItems
 }
 
 const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
@@ -1149,6 +1186,7 @@ const toTodoItems = (input: ExternalTodoInput[] | undefined) =>
             id: uid('todo-item'),
             text,
             status: normalizeTodoLane(item?.status, doneFallback),
+            tag: normalizeTodoTag(item?.tag),
           } satisfies TodoItem
         })
         .filter((item): item is TodoItem => Boolean(item))
@@ -1347,6 +1385,8 @@ function App({ runtime = 'web' }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [todoDraftTarget, setTodoDraftTarget] = useState<{ cardId: string; lane: TodoLane } | null>(null)
   const [todoDraftText, setTodoDraftText] = useState('')
+  const [todoDraftTag, setTodoDraftTag] = useState<TodoTag>('event')
+  const [todoFilters, setTodoFilters] = useState<Record<string, TodoFilter>>({})
   const [minimizedCardIds, setMinimizedCardIds] = useState<string[]>([])
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -1410,6 +1450,18 @@ function App({ runtime = 'web' }: AppProps) {
     todo: todoText.laneTodo,
     doing: todoText.laneDoing,
     done: todoText.laneDone,
+  }
+  const todoTagLabels: Record<TodoTag, string> = {
+    event: todoText.tagEvent,
+    feature: todoText.tagFeature,
+    important: todoText.tagImportant,
+    plan: todoText.tagPlan,
+    bug: todoText.tagBug,
+    idea: todoText.tagIdea,
+  }
+  const todoFilterLabels: Record<TodoFilter, string> = {
+    all: todoText.filterAll,
+    ...todoTagLabels,
   }
 
   useEffect(() => {
@@ -2427,9 +2479,9 @@ function App({ runtime = 'web' }: AppProps) {
 
       const defaultSize =
         kind === 'todo'
-          ? { width: 760, height: 420 }
+          ? { width: 760, height: 430 }
           : kind === 'calendar'
-            ? { width: 440, height: 460 }
+            ? { width: 480, height: 560 }
             : kind === 'hint'
               ? { width: 300, height: 420 }
               : kind === 'image'
@@ -2571,16 +2623,16 @@ function App({ runtime = 'web' }: AppProps) {
   const addTodoCard = () => {
     createCardInternal({
       kind: 'todo',
-      width: 360,
-      height: 320,
+      width: 760,
+      height: 430,
     })
   }
 
   const addCalendarCard = () => {
     createCardInternal({
       kind: 'calendar',
-      width: 440,
-      height: 460,
+      width: 480,
+      height: 560,
     })
   }
 
@@ -3008,14 +3060,14 @@ function App({ runtime = 'web' }: AppProps) {
     scheduleCliBridgeCardPatch(cardId, { content })
   }
 
-  const addTodoItem = (cardId: string, lane: TodoLane = 'todo', explicitText?: string) => {
+  const addTodoItem = (cardId: string, lane: TodoLane = 'todo', explicitText?: string, tag: TodoTag = 'event') => {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
     if (!targetCard || targetCard.kind !== 'todo') return
 
     const textValue = (explicitText ?? targetCard.content).trim()
     if (!textValue) return
 
-    const nextTodoItems = [...(targetCard.todoItems ?? []), createTodoItem(textValue, lane)]
+    const nextTodoItems = [...(targetCard.todoItems ?? []), createTodoItem(textValue, lane, tag)]
     clearCliBridgePatchTimer(cardId)
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
@@ -3037,16 +3089,18 @@ function App({ runtime = 'web' }: AppProps) {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
     setTodoDraftTarget({ cardId, lane })
     setTodoDraftText(targetCard?.content ?? '')
+    setTodoDraftTag('event')
   }
 
   const closeTodoDraft = () => {
     setTodoDraftTarget(null)
     setTodoDraftText('')
+    setTodoDraftTag('event')
   }
 
   const submitTodoDraft = () => {
     if (!todoDraftTarget || !todoDraftText.trim()) return
-    addTodoItem(todoDraftTarget.cardId, todoDraftTarget.lane, todoDraftText)
+    addTodoItem(todoDraftTarget.cardId, todoDraftTarget.lane, todoDraftText, todoDraftTag)
     closeTodoDraft()
   }
 
@@ -3463,9 +3517,9 @@ function App({ runtime = 'web' }: AppProps) {
       ? `${activeGrid.name} · ${activeCardCount} 张卡片`
       : `${activeGrid.name} · ${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`
   const productSubtitle = settings.language === 'zh' ? '本地优先画布工作区' : 'Local-first canvas workspace'
-  const noteActionLabel = settings.language === 'zh' ? text.newNoteCard.replace(/^\+\s*/, '') : '新建便利贴'
-  const todoActionLabel = settings.language === 'zh' ? todoText.newCardButton.replace(/^\+\s*/, '') : '新建待办卡片'
-  const calendarActionLabel = settings.language === 'zh' ? calendarText.newCardButton.replace(/^\+\s*/, '') : '新建日历卡片'
+  const noteActionLabel = text.newNoteCard.replace(/^\+\s*/, '')
+  const todoActionLabel = todoText.newCardButton.replace(/^\+\s*/, '')
+  const calendarActionLabel = calendarText.newCardButton.replace(/^\+\s*/, '')
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -3756,27 +3810,74 @@ function App({ runtime = 'web' }: AppProps) {
 
                 {!isMinimizedCard && card.kind === 'todo' ? (
                   <div className="todo-card-body">
+                    <div className="todo-board-topbar">
+                      <div>
+                        <span className="todo-board-eyebrow">{settings.language === 'zh' ? '看板' : 'Board'}</span>
+                        <strong>{card.title || todoText.title}</strong>
+                      </div>
+                      <span className="todo-board-total">
+                        {(card.todoItems ?? []).length} {settings.language === 'zh' ? '项任务' : 'cards'}
+                      </span>
+                    </div>
+
+                    <div className="todo-filter-bar" aria-label={todoText.filterLabel}>
+                      <span>{todoText.filterLabel}</span>
+                      {TODO_FILTERS.map((filter) => {
+                        const activeFilter = todoFilters[card.id] ?? 'all'
+                        const isFilterActive = activeFilter === filter
+                        return (
+                          <button
+                            key={filter}
+                            type="button"
+                            className={`todo-filter-chip ${isFilterActive ? 'active' : ''} ${filter !== 'all' ? `todo-tag-${filter}` : ''}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={() => setTodoFilters((current) => ({ ...current, [card.id]: filter }))}
+                          >
+                            {filter !== 'all' ? <span aria-hidden="true" /> : null}
+                            {todoFilterLabels[filter]}
+                          </button>
+                        )
+                      })}
+                    </div>
+
                     <div className="todo-board">
                       {TODO_LANES.map((lane) => {
-                        const laneItems = (card.todoItems ?? []).filter((item) => normalizeTodoLane(item.status) === lane)
+                        const activeFilter = todoFilters[card.id] ?? 'all'
+                        const laneItems = (card.todoItems ?? []).filter((item) => {
+                          const itemTag = normalizeTodoTag(item.tag)
+                          return normalizeTodoLane(item.status) === lane && (activeFilter === 'all' || itemTag === activeFilter)
+                        })
                         const isLaneDropTarget =
                           todoDropTarget?.cardId === card.id && todoDropTarget.lane === lane && todoDropTarget.itemId === null
 
                         return (
                           <section
                             key={lane}
-                            className={`todo-lane ${isLaneDropTarget ? 'drop-target' : ''}`}
+                            className={`todo-lane todo-lane-${lane} ${isLaneDropTarget ? 'drop-target' : ''}`}
                             onDragOver={(event) => onTodoLaneDragOver(event, card.id, lane)}
                             onDrop={(event) => onTodoDrop(event, card.id, lane)}
                           >
                             <header className="todo-lane-header">
-                              <span>{todoLaneLabels[lane]}</span>
-                              <span className="todo-lane-count">{laneItems.length}</span>
+                              <div className="todo-lane-title-wrap">
+                                <span>{todoLaneLabels[lane]}</span>
+                                <span className="todo-lane-count">{laneItems.length}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="todo-lane-icon-btn"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={() => openTodoDraft(card.id, lane)}
+                                aria-label={todoText.laneAddCard}
+                                title={todoText.laneAddCard}
+                              >
+                                +
+                              </button>
                             </header>
 
                             <div className="todo-lane-list">
                               {laneItems.length ? (
                                 laneItems.map((item) => {
+                                  const itemTag = normalizeTodoTag(item.tag)
                                   const isItemDropTarget =
                                     todoDropTarget?.cardId === card.id &&
                                     todoDropTarget.lane === lane &&
@@ -3793,14 +3894,25 @@ function App({ runtime = 'web' }: AppProps) {
                                       onDragOver={(event) => onTodoItemDragOver(event, card.id, lane, item.id)}
                                       onDrop={(event) => onTodoDrop(event, card.id, lane, item.id)}
                                     >
-                                      <span className="todo-board-grip">⋮⋮</span>
-                                      <input
-                                        className="todo-item-input"
-                                        value={item.text}
-                                        onPointerDown={(event) => event.stopPropagation()}
-                                        onChange={(event) => updateTodoText(card.id, item.id, event.target.value)}
-                                        placeholder={todoText.placeholder}
-                                      />
+                                      <div className="todo-item-main">
+                                        <textarea
+                                          className="todo-item-input"
+                                          value={item.text}
+                                          onPointerDown={(event) => event.stopPropagation()}
+                                          onChange={(event) => updateTodoText(card.id, item.id, event.target.value)}
+                                          placeholder={todoText.placeholder}
+                                          rows={2}
+                                        />
+                                        <div className="todo-item-meta">
+                                          <span className={`todo-item-tag todo-tag-${itemTag}`}>
+                                            <span aria-hidden="true" />
+                                            {todoTagLabels[itemTag]}
+                                          </span>
+                                          <span className="todo-board-grip" title={settings.language === 'zh' ? '拖拽排序' : 'Drag to reorder'}>
+                                            ≡
+                                          </span>
+                                        </div>
+                                      </div>
                                       <button
                                         type="button"
                                         className="todo-item-delete"
@@ -4189,6 +4301,19 @@ function App({ runtime = 'web' }: AppProps) {
                 }
               }}
             />
+            <div className="todo-tag-picker" aria-label={settings.language === 'zh' ? '任务标签' : 'Todo tag'}>
+              {TODO_TAGS.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`todo-tag-option todo-tag-${tag} ${todoDraftTag === tag ? 'active' : ''}`}
+                  onClick={() => setTodoDraftTag(tag)}
+                >
+                  <span aria-hidden="true" />
+                  {todoTagLabels[tag]}
+                </button>
+              ))}
+            </div>
             <div className="todo-draft-actions">
               <button type="button" className="todo-draft-secondary" onClick={closeTodoDraft}>
                 {settings.language === 'zh' ? '取消' : 'Cancel'}
