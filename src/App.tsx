@@ -3462,7 +3462,10 @@ function App({ runtime = 'web' }: AppProps) {
     settings.language === 'zh'
       ? `${activeGrid.name} · ${activeCardCount} 张卡片`
       : `${activeGrid.name} · ${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`
-  const productSubtitle = settings.language === 'zh' ? '代办 · 日程 · 便利贴' : 'Todos · Calendar · Sticky notes'
+  const productSubtitle = settings.language === 'zh' ? '本地优先画布工作区' : 'Local-first canvas workspace'
+  const noteActionLabel = settings.language === 'zh' ? text.newNoteCard.replace(/^\+\s*/, '') : '新建便利贴'
+  const todoActionLabel = settings.language === 'zh' ? todoText.newCardButton.replace(/^\+\s*/, '') : '新建待办卡片'
+  const calendarActionLabel = settings.language === 'zh' ? calendarText.newCardButton.replace(/^\+\s*/, '') : '新建日历卡片'
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -3491,15 +3494,15 @@ function App({ runtime = 'web' }: AppProps) {
         <div className="create-actions" aria-label={settings.language === 'zh' ? '创建卡片' : 'Create cards'}>
           <button className="action-btn action-primary" onClick={addNoteCard}>
             <span className="action-icon">＋</span>
-            <span>{text.newNoteCard.replace(/^\+\s*/, '')}</span>
+            <span>{noteActionLabel}</span>
           </button>
           <button className="action-btn" onClick={addTodoCard}>
             <span className="action-icon">✓</span>
-            <span>{todoText.newCardButton.replace(/^\+\s*/, '')}</span>
+            <span>{todoActionLabel}</span>
           </button>
           <button className="action-btn" onClick={addCalendarCard}>
             <span className="action-icon">◷</span>
-            <span>{calendarText.newCardButton.replace(/^\+\s*/, '')}</span>
+            <span>{calendarActionLabel}</span>
           </button>
         </div>
 
