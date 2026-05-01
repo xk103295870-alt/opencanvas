@@ -18,7 +18,7 @@ const DEFAULT_API_HOST = '127.0.0.1'
 const DEFAULT_API_PORT = 8787
 
 function usage() {
-  console.log(`Open Canvas CLI
+  console.log(`Canvas Workbench CLI
 
 Usage:
   canvas-workbench start [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
@@ -26,6 +26,11 @@ Usage:
   canvas-workbench restart [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
   canvas-workbench status [--port <web-port>] [--api-port <api-port>]
   canvas-workbench update [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench grid list [--api-url <url>] [--api-key <key>]
+  canvas-workbench grid add <name> [--api-url <url>] [--api-key <key>]
+  canvas-workbench note add <content> [--title <title>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
+  canvas-workbench todo add <text> [--status todo|doing|done] [--tag event|feature|important|plan|bug|idea] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
+  canvas-workbench calendar event add <title> [--date YYYY-MM-DD] [--time HH:MM] [--end HH:MM] [--all-day] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
 
 Examples:
   canvas-workbench start
@@ -33,6 +38,11 @@ Examples:
   canvas-workbench stop
   canvas-workbench status
   canvas-workbench update
+  canvas-workbench grid list
+  canvas-workbench grid add "B"
+  canvas-workbench note add "Meeting summary" --title "Meeting" --grid "B"
+  canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "B"
+  canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "B"
 `)
 }
 
@@ -45,6 +55,80 @@ function normalizePort(value, fallback) {
   return port
 }
 
+function normalizeApiUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) throw new Error('API URL cannot be empty')
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`
+  try {
+    const url = new URL(withProtocol)
+    return url.href.replace(/\/$/, '')
+  } catch {
+    throw new Error(`Invalid API URL: ${value}`)
+  }
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0')
+}
+
+function todayDateKey(now = new Date()) {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
+}
+
+function monthKeyFromDateKey(dateKey) {
+  return String(dateKey || '').slice(0, 7)
+}
+
+function uid(prefix = 'id') {
+  const crypto = globalThis.crypto
+  const randomId = crypto && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replaceAll('-', '').slice(0, 14)
+    : Math.random().toString(16).slice(2, 16)
+  return `${prefix}-${randomId}`
+}
+
+function normalizeTodoStatus(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'todo' || raw === 'doing' || raw === 'done') return raw
+  throw new Error('Invalid todo status. Use one of: todo, doing, done')
+}
+
+function normalizeTodoTag(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  const allowed = new Set(['event', 'feature', 'important', 'plan', 'bug', 'idea'])
+  if (allowed.has(raw)) return raw
+  throw new Error('Invalid todo tag. Use one of: event, feature, important, plan, bug, idea')
+}
+
+function normalizeDateKey(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return todayDateKey()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  throw new Error('Invalid date. Use YYYY-MM-DD')
+}
+
+function normalizeTimeValue(value, fieldName) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw
+  throw new Error(`Invalid ${fieldName}. Use HH:MM`)
+}
+
+function normalizeCalendarEventOptions(options) {
+  const date = normalizeDateKey(options.date)
+  const startTime = normalizeTimeValue(options.startTime, 'start time')
+  const endTime = normalizeTimeValue(options.endTime, 'end time')
+  const allDay = options.allDay === null ? !startTime && !endTime : Boolean(options.allDay)
+  if (!allDay && (!startTime || !endTime)) {
+    throw new Error('Timed calendar events require --time HH:MM and --end HH:MM')
+  }
+  return { date, allDay, startTime, endTime }
+}
+
+function apiUrlFor(options) {
+  return options.apiUrl || `http://${DEFAULT_API_HOST}:${options.apiPort}`
+}
+
 function parseArgs(argv) {
   const tokens = [...argv]
   const rawCommand = tokens.shift()
@@ -53,6 +137,22 @@ function parseArgs(argv) {
     command = 'help'
   } else if (rawCommand === '--version' || rawCommand === '-v') {
     command = 'version'
+  } else if (rawCommand === 'grid' && tokens[0] === 'list') {
+    tokens.shift()
+    command = 'grid:list'
+  } else if (rawCommand === 'grid' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'grid:add'
+  } else if (rawCommand === 'note' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'note:add'
+  } else if (rawCommand === 'todo' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'todo:add'
+  } else if (rawCommand === 'calendar' && tokens[0] === 'event' && tokens[1] === 'add') {
+    tokens.shift()
+    tokens.shift()
+    command = 'calendar:event:add'
   } else if (rawCommand) {
     command = rawCommand
   }
@@ -60,6 +160,17 @@ function parseArgs(argv) {
     port: DEFAULT_WEB_PORT,
     apiPort: DEFAULT_API_PORT,
     open: true,
+    apiUrl: null,
+    apiKey: process.env.CANVAS_WORKBENCH_API_KEY || '',
+    title: '',
+    gridId: '',
+    status: 'todo',
+    tag: 'event',
+    date: '',
+    startTime: '',
+    endTime: '',
+    allDay: null,
+    contentParts: [],
   }
 
   while (tokens.length > 0) {
@@ -94,6 +205,107 @@ function parseArgs(argv) {
     }
     if (token.startsWith('--api-port=')) {
       options.apiPort = normalizePort(token.slice('--api-port='.length), DEFAULT_API_PORT)
+      continue
+    }
+    if (token === '--api-url') {
+      options.apiUrl = normalizeApiUrl(tokens.shift())
+      continue
+    }
+    if (token.startsWith('--api-url=')) {
+      options.apiUrl = normalizeApiUrl(token.slice('--api-url='.length))
+      continue
+    }
+    if (token === '--api-key') {
+      options.apiKey = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--api-key=')) {
+      options.apiKey = token.slice('--api-key='.length)
+      continue
+    }
+    if (token === '--title') {
+      options.title = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--title=')) {
+      options.title = token.slice('--title='.length)
+      continue
+    }
+    if (token === '--grid' || token === '--grid-id') {
+      options.gridId = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--grid=')) {
+      options.gridId = token.slice('--grid='.length)
+      continue
+    }
+    if (token.startsWith('--grid-id=')) {
+      options.gridId = token.slice('--grid-id='.length)
+      continue
+    }
+    if (token === '--status') {
+      options.status = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--status=')) {
+      options.status = token.slice('--status='.length)
+      continue
+    }
+    if (token === '--tag') {
+      options.tag = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--tag=')) {
+      options.tag = token.slice('--tag='.length)
+      continue
+    }
+    if (token === '--date') {
+      options.date = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--date=')) {
+      options.date = token.slice('--date='.length)
+      continue
+    }
+    if (token === '--time' || token === '--start' || token === '--start-time') {
+      options.startTime = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--time=')) {
+      options.startTime = token.slice('--time='.length)
+      continue
+    }
+    if (token.startsWith('--start=')) {
+      options.startTime = token.slice('--start='.length)
+      continue
+    }
+    if (token.startsWith('--start-time=')) {
+      options.startTime = token.slice('--start-time='.length)
+      continue
+    }
+    if (token === '--end' || token === '--end-time') {
+      options.endTime = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--end=')) {
+      options.endTime = token.slice('--end='.length)
+      continue
+    }
+    if (token.startsWith('--end-time=')) {
+      options.endTime = token.slice('--end-time='.length)
+      continue
+    }
+    if (token === '--all-day') {
+      options.allDay = true
+      continue
+    }
+    if (token === '--no-all-day') {
+      options.allDay = false
+      continue
+    }
+
+    if ((command === 'grid:add' || command === 'note:add' || command === 'todo:add' || command === 'calendar:event:add') && !token.startsWith('-')) {
+      options.contentParts.push(token)
       continue
     }
 
@@ -464,6 +676,342 @@ async function startCommand(options) {
   }
 }
 
+async function httpJson(url, options = {}) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 8000)
+  try {
+    const headers = {
+      ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}),
+      ...(options.headers || {}),
+    }
+    const response = await fetch(url, {
+      method: options.method || 'GET',
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers,
+      signal: controller.signal,
+    })
+    const text = await response.text()
+    let payload = null
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      payload = { ok: false, message: text }
+    }
+    if (!response.ok || payload?.ok === false) {
+      const message = payload?.message || `${response.status} ${response.statusText}`
+      throw new Error(message)
+    }
+    return payload
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function slugifyGridName(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  const ascii = raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return ascii || uid('grid').replace(/^grid-/, '')
+}
+
+function normalizeGridLookup(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^画布\s*/i, '')
+    .replace(/^grid\s+/i, '')
+    .replace(/\s+/g, ' ')
+}
+
+function gridMatchesLookup(grid, lookup) {
+  const raw = String(lookup || '').trim()
+  if (!raw) return false
+  const normalized = normalizeGridLookup(raw)
+  const id = String(grid?.id || '').trim()
+  const name = String(grid?.name || '').trim()
+  return (
+    id === raw ||
+    name === raw ||
+    normalizeGridLookup(id) === normalized ||
+    normalizeGridLookup(name) === normalized ||
+    normalizeGridLookup(name) === normalizeGridLookup(`Grid ${raw}`) ||
+    normalizeGridLookup(`Grid ${name}`) === normalized
+  )
+}
+
+function createGridIdFromName(name, existingGrids = []) {
+  const base = `grid-${slugifyGridName(name)}`
+  const existingIds = new Set(existingGrids.map((grid) => String(grid?.id || '')))
+  if (!existingIds.has(base)) return base
+  let index = 2
+  while (existingIds.has(`${base}-${index}`)) index += 1
+  return `${base}-${index}`
+}
+
+function normalizeUploadedWorkspace(workspace, updates = {}) {
+  const grids = Array.isArray(updates.grids)
+    ? updates.grids
+    : Array.isArray(workspace?.grids)
+      ? workspace.grids
+      : []
+  const activeGridId = String(updates.activeGridId || workspace?.activeGridId || grids[0]?.id || '').trim()
+  return {
+    name: String(updates.name || workspace?.name || 'My Canvas').trim() || 'My Canvas',
+    activeGridId: grids.some((grid) => grid?.id === activeGridId) ? activeGridId : grids[0]?.id,
+    grids,
+  }
+}
+
+async function uploadWorkspace(apiUrl, options, workspace, updates = {}) {
+  const payload = normalizeUploadedWorkspace(workspace, updates)
+  const result = await httpJson(`${apiUrl}/api/v1/state`, {
+    method: 'PUT',
+    apiKey: options.apiKey,
+    body: payload,
+  })
+  return result?.data?.workspace
+}
+
+async function ensureGrid(apiUrl, options, gridNameOrId) {
+  const workspace = await getWorkspace(apiUrl, options)
+  const grids = Array.isArray(workspace?.grids) ? workspace.grids : []
+  const lookup = String(gridNameOrId || '').trim()
+
+  if (!lookup) {
+    const activeGrid = grids.find((grid) => grid.id === workspace?.activeGridId) || grids[0] || null
+    return { workspace, grid: activeGrid, created: false }
+  }
+
+  const matchedGrid = grids.find((grid) => gridMatchesLookup(grid, lookup)) || null
+  if (matchedGrid) return { workspace, grid: matchedGrid, created: false }
+
+  const newGrid = {
+    id: createGridIdFromName(lookup, grids),
+    name: lookup,
+    cards: [],
+  }
+  const nextWorkspace = await uploadWorkspace(apiUrl, options, workspace, {
+    grids: [...grids, newGrid],
+    activeGridId: newGrid.id,
+  })
+  return { workspace: nextWorkspace || { ...workspace, grids: [...grids, newGrid], activeGridId: newGrid.id }, grid: newGrid, created: true }
+}
+
+function printGridLine(grid, activeGridId) {
+  const marker = grid.id === activeGridId ? '*' : ' '
+  const name = String(grid.name || '(untitled)').padEnd(18, ' ')
+  const id = String(grid.id || '').padEnd(20, ' ')
+  const cardCount = Array.isArray(grid.cards) ? grid.cards.length : Number(grid.cardCount || 0)
+  console.log(`${marker} ${name} ${id} ${cardCount} cards`)
+}
+
+async function gridListCommand(options) {
+  const apiUrl = apiUrlFor(options)
+  const workspace = await getWorkspace(apiUrl, options)
+  const grids = Array.isArray(workspace?.grids) ? workspace.grids : []
+
+  console.log('Canvas Workbench grids')
+  console.log(`  api: ${apiUrl}`)
+  if (!grids.length) {
+    console.log('  no grids')
+    return
+  }
+  for (const grid of grids) {
+    printGridLine(grid, workspace?.activeGridId)
+  }
+}
+
+async function gridAddCommand(options) {
+  const name = options.contentParts.join(' ').trim()
+  if (!name) {
+    throw new Error('Grid name is required. Example: canvas-workbench grid add "B"')
+  }
+
+  const apiUrl = apiUrlFor(options)
+  const { grid, created } = await ensureGrid(apiUrl, options, name)
+  console.log(created ? 'Grid created' : 'Grid already exists')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${grid?.id || 'unknown'}`)
+  console.log(`  name: ${grid?.name || name}`)
+}
+
+async function noteAddCommand(options) {
+  const content = options.contentParts.join(' ').trim()
+  if (!content) {
+    throw new Error('Note content is required. Example: canvas-workbench note add "Meeting summary"')
+  }
+
+  const apiUrl = apiUrlFor(options)
+  const gridLookup = String(options.gridId || '').trim()
+  const { grid, created } = await ensureGrid(apiUrl, options, gridLookup)
+  if (!grid?.id) throw new Error('Could not find or create target grid')
+  const payload = {
+    kind: 'note',
+    title: String(options.title || '').trim() || undefined,
+    content,
+    gridId: grid.id,
+    activateGrid: true,
+  }
+
+  const result = await httpJson(`${apiUrl}/api/v1/cards`, {
+    method: 'POST',
+    body: payload,
+    apiKey: options.apiKey,
+  })
+  const data = result?.data || {}
+  console.log('Note created')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${data.gridId || grid.id}${created ? ' (created)' : ''}`)
+  console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
+}
+
+async function getWorkspace(apiUrl, options) {
+  const result = await httpJson(`${apiUrl}/api/v1/state?full=1`, {
+    method: 'GET',
+    apiKey: options.apiKey,
+  })
+  return result?.data?.workspace
+}
+
+async function createSingletonCard(apiUrl, options, kind, title, gridId = '') {
+  const result = await httpJson(`${apiUrl}/api/v1/cards`, {
+    method: 'POST',
+    apiKey: options.apiKey,
+    body: {
+      kind,
+      title,
+      gridId: String(gridId || options.gridId || '').trim() || undefined,
+      activateGrid: true,
+    },
+  })
+  return result?.data || {}
+}
+
+async function updateCard(apiUrl, options, cardId, updates) {
+  const result = await httpJson(`${apiUrl}/api/v1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'PATCH',
+    apiKey: options.apiKey,
+    body: updates,
+  })
+  return result?.data || {}
+}
+
+function findTargetGrid(workspace, gridId) {
+  const grids = Array.isArray(workspace?.grids) ? workspace.grids : []
+  if (gridId) return grids.find((grid) => gridMatchesLookup(grid, gridId)) || null
+  return grids.find((grid) => grid.id === workspace?.activeGridId) || grids[0] || null
+}
+
+async function todoAddCommand(options) {
+  const text = options.contentParts.join(' ').trim()
+  if (!text) {
+    throw new Error('Todo text is required. Example: canvas-workbench todo add "Prepare homepage copy"')
+  }
+
+  const apiUrl = apiUrlFor(options)
+  const status = normalizeTodoStatus(options.status || 'todo')
+  const tag = normalizeTodoTag(options.tag || 'event')
+  const gridId = String(options.gridId || '').trim()
+
+  let workspace = await getWorkspace(apiUrl, options)
+  let targetGrid = findTargetGrid(workspace, gridId)
+  let createdGrid = false
+  if (!targetGrid && gridId) {
+    const ensured = await ensureGrid(apiUrl, options, gridId)
+    workspace = ensured.workspace
+    targetGrid = ensured.grid
+    createdGrid = ensured.created
+  }
+  let todoCard = targetGrid?.cards?.find((card) => card.kind === 'todo') || null
+
+  if (!todoCard) {
+    const created = await createSingletonCard(apiUrl, options, 'todo', 'Todo list', targetGrid?.id || gridId)
+    todoCard = created.card
+    targetGrid = { ...(targetGrid || {}), id: created.gridId || targetGrid?.id || gridId || workspace?.activeGridId || 'grid-a' }
+  }
+
+  if (!todoCard?.id) throw new Error('Could not find or create todo card')
+
+  const nextItem = {
+    id: uid('todo-item'),
+    text,
+    status,
+    tag,
+  }
+  const todoItems = [...(Array.isArray(todoCard.todoItems) ? todoCard.todoItems : []), nextItem]
+  await updateCard(apiUrl, options, todoCard.id, { todoItems })
+
+  console.log('Todo item created')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${targetGrid?.id || 'active'}${createdGrid ? ' (created)' : ''}`)
+  console.log(`  card: ${todoCard.id}`)
+  console.log(`  item: ${nextItem.id}`)
+  console.log(`  status: ${status}`)
+  console.log(`  tag: ${tag}`)
+}
+
+async function calendarEventAddCommand(options) {
+  const title = options.contentParts.join(' ').trim()
+  if (!title) {
+    throw new Error('Calendar event title is required. Example: canvas-workbench calendar event add "Design review"')
+  }
+
+  const apiUrl = apiUrlFor(options)
+  const { date, allDay, startTime, endTime } = normalizeCalendarEventOptions(options)
+  const gridId = String(options.gridId || '').trim()
+
+  let workspace = await getWorkspace(apiUrl, options)
+  let targetGrid = findTargetGrid(workspace, gridId)
+  let createdGrid = false
+  if (!targetGrid && gridId) {
+    const ensured = await ensureGrid(apiUrl, options, gridId)
+    workspace = ensured.workspace
+    targetGrid = ensured.grid
+    createdGrid = ensured.created
+  }
+  let calendarCard = targetGrid?.cards?.find((card) => card.kind === 'calendar') || null
+
+  if (!calendarCard) {
+    const created = await createSingletonCard(apiUrl, options, 'calendar', 'Calendar', targetGrid?.id || gridId)
+    calendarCard = created.card
+    targetGrid = { ...(targetGrid || {}), id: created.gridId || targetGrid?.id || gridId || workspace?.activeGridId || 'grid-a' }
+  }
+
+  if (!calendarCard?.id) throw new Error('Could not find or create calendar card')
+
+  const currentCalendar = calendarCard.calendar || {}
+  const nextEvent = {
+    id: uid('event'),
+    date,
+    title,
+    allDay,
+    ...(allDay ? {} : { startTime, endTime }),
+  }
+  const calendar = {
+    monthCursor: currentCalendar.monthCursor || monthKeyFromDateKey(date),
+    selectedDate: date,
+    viewMode: currentCalendar.viewMode === 'week' ? 'week' : 'month',
+    draftTitle: currentCalendar.draftTitle || '',
+    draftAllDay: typeof currentCalendar.draftAllDay === 'boolean' ? currentCalendar.draftAllDay : true,
+    draftStartTime: currentCalendar.draftStartTime || '09:00',
+    draftEndTime: currentCalendar.draftEndTime || '10:00',
+    events: [...(Array.isArray(currentCalendar.events) ? currentCalendar.events : []), nextEvent],
+  }
+  await updateCard(apiUrl, options, calendarCard.id, { calendar })
+
+  console.log('Calendar event created')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${targetGrid?.id || 'active'}${createdGrid ? ' (created)' : ''}`)
+  console.log(`  card: ${calendarCard.id}`)
+  console.log(`  event: ${nextEvent.id}`)
+  console.log(`  date: ${date}`)
+  console.log(`  time: ${allDay ? 'all-day' : `${startTime}-${endTime}`}`)
+}
+
 async function restartCommand(options) {
   await stopCommand(options)
   await startCommand(options)
@@ -523,8 +1071,28 @@ async function main() {
     await updateCommand(options)
     return
   }
+  if (command === 'grid:list') {
+    await gridListCommand(options)
+    return
+  }
+  if (command === 'grid:add') {
+    await gridAddCommand(options)
+    return
+  }
   if (command === 'status') {
     await statusCommand(options)
+    return
+  }
+  if (command === 'note:add') {
+    await noteAddCommand(options)
+    return
+  }
+  if (command === 'todo:add') {
+    await todoAddCommand(options)
+    return
+  }
+  if (command === 'calendar:event:add') {
+    await calendarEventAddCommand(options)
     return
   }
 

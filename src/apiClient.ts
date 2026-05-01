@@ -1,3 +1,5 @@
+import type { CardData, CardKind, CalendarState, TodoItem } from './shared/workspaceTypes'
+
 export type ServerAccount = {
   id: string
   name: string
@@ -33,36 +35,7 @@ export type ServerSessionResponse = {
   }
 }
 
-export type ServerWorkspaceCard = {
-  id: string
-  kind: 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
-  title: string
-  content: string
-  x: number
-  y: number
-  width: number
-  height: number
-  fileName?: string
-  externalUrl?: string
-  todoItems?: Array<{ id: string; text: string; status: 'todo' | 'doing' | 'done' }>
-  calendar?: {
-    monthCursor: string
-    selectedDate: string
-    viewMode: 'month' | 'week'
-    draftTitle: string
-    draftAllDay: boolean
-    draftStartTime: string
-    draftEndTime: string
-    events: Array<{
-      id: string
-      date: string
-      title: string
-      allDay: boolean
-      startTime?: string
-      endTime?: string
-    }>
-  }
-}
+export type ServerWorkspaceCard = CardData
 
 export type ServerCardCreateResponse = {
   cardId: string
@@ -136,9 +109,28 @@ export type ServerAssetDeleteResponse = {
   assetId: string
 }
 
+export type ServerAssetDownloadResponse = {
+  blob: Blob
+  type: string
+}
+
+export type ServerStateUploadPayload = {
+  name?: string
+  activeGridId?: string
+  grids: Array<{
+    id: string
+    name: string
+    cards: CardData[]
+  }>
+}
+
+export type ServerStateUploadResponse = {
+  workspace: ServerStateResponse['workspace']
+}
+
 export type ServerCardCreatePayload = {
   id?: string
-  kind?: ServerWorkspaceCard['kind']
+  kind?: CardKind
   gridId?: string
   title?: string
   content?: string
@@ -149,15 +141,8 @@ export type ServerCardCreatePayload = {
   activateGrid?: boolean
   fileName?: string
   mediaUrl?: string
-  todoItems?: Array<string | { text?: string; done?: boolean; status?: 'todo' | 'doing' | 'done' }>
-  calendar?: {
-    monthCursor?: string
-    selectedDate?: string
-    viewMode?: 'month' | 'week'
-    draftTitle?: string
-    draftAllDay?: boolean
-    draftStartTime?: string
-    draftEndTime?: string
+  todoItems?: Array<string | { text?: string; done?: boolean; status?: 'todo' | 'doing' | 'done'; tag?: string }>
+  calendar?: Partial<Omit<CalendarState, 'events'>> & {
     events?: Array<{
       title?: string
       date?: string
@@ -173,7 +158,9 @@ export type ServerCardUpdatePayload = Partial<
     ServerWorkspaceCard,
     'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'
   >
->
+> & {
+  todoItems?: TodoItem[]
+}
 
 export type ServerStateResponse = {
   account: ServerAccount
@@ -291,10 +278,15 @@ export async function apiGetSessionMe(accessToken: string, baseUrl?: string) {
   }, baseUrl)
 }
 
+function bearerHeaders(token: string): Record<string, string> {
+  const trimmed = token.trim()
+  return trimmed ? { Authorization: `Bearer ${trimmed}` } : {}
+}
+
 export async function apiCreateCard(apiKey: string, payload: ServerCardCreatePayload, baseUrl?: string) {
   return requestJson<ServerCardCreateResponse>('/api/v1/cards', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
     body: JSON.stringify(payload),
   }, baseUrl)
 }
@@ -302,7 +294,7 @@ export async function apiCreateCard(apiKey: string, payload: ServerCardCreatePay
 export async function apiCreateGrid(apiKey: string, payload: ServerGridCreatePayload, baseUrl?: string) {
   return requestJson<ServerGridCreateResponse>('/api/v1/grids', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
     body: JSON.stringify(payload),
   }, baseUrl)
 }
@@ -315,7 +307,7 @@ export async function apiUpdateGrid(
 ) {
   return requestJson<ServerGridUpdateResponse>(`/api/v1/grids/${encodeURIComponent(gridId)}`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
     body: JSON.stringify(updates),
   }, baseUrl)
 }
@@ -323,14 +315,14 @@ export async function apiUpdateGrid(
 export async function apiDeleteGrid(apiKey: string, gridId: string, baseUrl?: string) {
   return requestJson<ServerGridDeleteResponse>(`/api/v1/grids/${encodeURIComponent(gridId)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
   }, baseUrl)
 }
 
 export async function apiCreateAsset(apiKey: string, payload: ServerAssetUploadPayload, baseUrl?: string) {
   return requestJson<ServerAssetUploadResponse>('/api/v1/assets', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
     body: JSON.stringify(payload),
   }, baseUrl)
 }
@@ -338,14 +330,42 @@ export async function apiCreateAsset(apiKey: string, payload: ServerAssetUploadP
 export async function apiDeleteAsset(apiKey: string, assetId: string, baseUrl?: string) {
   return requestJson<ServerAssetDeleteResponse>(`/api/v1/assets/${encodeURIComponent(assetId)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
   }, baseUrl)
+}
+
+export async function apiDownloadAsset(assetUrl: string, timeoutMs = 10000): Promise<ServerAssetDownloadResponse> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), Math.max(1000, timeoutMs))
+  try {
+    const response = await fetch(assetUrl, { method: 'GET', signal: controller.signal })
+    if (!response.ok) {
+      throw new Error(`Asset download failed: ${response.status}`)
+    }
+    const blob = await response.blob()
+    return { blob, type: response.headers.get('Content-Type') || blob.type || 'application/octet-stream' }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Asset download timeout')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 export async function apiGetWorkspaceState(apiKey: string, baseUrl?: string) {
   return requestJson<ServerStateResponse>('/api/v1/state?full=1', {
     method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
+  }, baseUrl)
+}
+
+export async function apiUploadWorkspaceState(apiKey: string, payload: ServerStateUploadPayload, baseUrl?: string) {
+  return requestJson<ServerStateUploadResponse>('/api/v1/state', {
+    method: 'PUT',
+    headers: bearerHeaders(apiKey),
+    body: JSON.stringify(payload),
   }, baseUrl)
 }
 
@@ -357,7 +377,7 @@ export async function apiUpdateCard(
 ) {
   return requestJson<ServerCardUpdateResponse>(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
     body: JSON.stringify(updates),
   }, baseUrl)
 }
@@ -365,7 +385,7 @@ export async function apiUpdateCard(
 export async function apiDeleteCard(apiKey: string, cardId: string, baseUrl?: string) {
   return requestJson<ServerCardDeleteResponse>(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: bearerHeaders(apiKey),
   }, baseUrl)
 }
 

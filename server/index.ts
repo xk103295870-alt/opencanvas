@@ -4,51 +4,17 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import express, { type NextFunction, type Request, type Response } from 'express'
-
-type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
-type CalendarViewMode = 'month' | 'week'
-type TodoLane = 'todo' | 'doing' | 'done'
-
-type TodoItem = {
-  id: string
-  text: string
-  status: TodoLane
-}
-
-type CalendarEvent = {
-  id: string
-  date: string
-  title: string
-  allDay: boolean
-  startTime?: string
-  endTime?: string
-}
-
-type CalendarState = {
-  monthCursor: string
-  selectedDate: string
-  viewMode: CalendarViewMode
-  draftTitle: string
-  draftAllDay: boolean
-  draftStartTime: string
-  draftEndTime: string
-  events: CalendarEvent[]
-}
-
-type CardData = {
-  id: string
-  kind: CardKind
-  title: string
-  content: string
-  x: number
-  y: number
-  width: number
-  height: number
-  fileName?: string
-  externalUrl?: string
-  todoItems?: TodoItem[]
-  calendar?: CalendarState
-}
+import {
+  CARD_DEFAULT_SIZES,
+  isSingletonCardKind,
+  normalizeCalendarState,
+  normalizeCardKind,
+  normalizeTodoItems,
+  type CalendarState,
+  type CardData,
+  type CardKind,
+  type GridData,
+} from '../src/shared/workspaceTypes'
 
 type AssetRecord = {
   id: string
@@ -134,11 +100,11 @@ type CanvasWorkbenchCreateCardPayload = {
   activateGrid?: boolean
   fileName?: string
   mediaUrl?: string
-  todoItems?: Array<string | { text?: string; done?: boolean; status?: TodoLane | string }>
+  todoItems?: Array<string | { text?: string; done?: boolean; status?: string; tag?: string }>
   calendar?: {
     monthCursor?: string
     selectedDate?: string
-    viewMode?: CalendarViewMode
+    viewMode?: CalendarState['viewMode']
     draftTitle?: string
     draftAllDay?: boolean
     draftStartTime?: string
@@ -151,6 +117,12 @@ type CanvasWorkbenchCreateCardPayload = {
       endTime?: string
     }>
   }
+}
+
+type CanvasWorkbenchWorkspaceUploadPayload = {
+  name?: string
+  activeGridId?: string
+  grids?: GridData[]
 }
 
 type CanvasWorkbenchGridCreatePayload = {
@@ -524,29 +496,6 @@ function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function parseCardKind(input: unknown): CardKind {
-  const value = String(input || '').trim().toLowerCase()
-  if (value === 'hint') return 'hint'
-  if (value === 'image') return 'image'
-  if (value === 'video') return 'video'
-  if (value === 'pdf') return 'pdf'
-  if (value === 'todo') return 'todo'
-  if (value === 'calendar') return 'calendar'
-  return 'note'
-}
-
-function isSingletonCardKind(kind: CardKind) {
-  return kind === 'todo' || kind === 'calendar'
-}
-
-function normalizeTodoLane(input: unknown, doneFallback = false): TodoLane {
-  const value = String(input || '')
-    .trim()
-    .toLowerCase()
-  if (value === 'todo' || value === 'doing' || value === 'done') return value
-  return doneFallback ? 'done' : 'todo'
-}
-
 function inferDefaultTitle(kind: CardKind) {
   switch (kind) {
     case 'hint':
@@ -567,73 +516,62 @@ function inferDefaultTitle(kind: CardKind) {
   }
 }
 
-function defaultCalendarState(): CalendarState {
-  const today = new Date().toISOString().slice(0, 10)
-  return {
-    monthCursor: today.slice(0, 7),
-    selectedDate: today,
-    viewMode: 'month',
-    draftTitle: '',
-    draftAllDay: true,
-    draftStartTime: '09:00',
-    draftEndTime: '10:00',
-    events: [],
-  }
-}
-
-function normalizeTodoItems(input: CanvasWorkbenchCreateCardPayload['todoItems']): TodoItem[] {
+function normalizeUploadedGrids(input: unknown): GridData[] {
   if (!Array.isArray(input)) return []
-  const out: TodoItem[] = []
-  for (const item of input) {
-    if (typeof item === 'string') {
-      const text = item.trim()
-      if (!text) continue
-      out.push({ id: `todo-${uid(10)}`, text, status: 'todo' })
-      continue
+
+  const grids: GridData[] = []
+  const seenGridIds = new Set<string>()
+
+  input.forEach((gridInput, gridIndex) => {
+    if (!gridInput || typeof gridInput !== 'object') return
+    const rawGrid = gridInput as Partial<GridData>
+    const fallbackGridId = gridIndex === 0 ? 'grid-a' : `grid-${uid(8)}`
+    const gridId = normalizeGridId(rawGrid.id) || fallbackGridId
+    const uniqueGridId = seenGridIds.has(gridId) ? `${gridId}-${uid(6)}` : gridId
+    seenGridIds.add(uniqueGridId)
+
+    const cards: CardData[] = []
+    const seenCardIds = new Set<string>()
+    if (Array.isArray(rawGrid.cards)) {
+      rawGrid.cards.forEach((cardInput) => {
+        if (!cardInput || typeof cardInput !== 'object') return
+        const rawCard = cardInput as Partial<CardData>
+        const kind = normalizeCardKind(rawCard.kind)
+        const defaultSize = CARD_DEFAULT_SIZES[kind]
+        const fallbackCardId = `${kind}-${uid(14)}`
+        const cardId = normalizeCardId(rawCard.id) || fallbackCardId
+        const uniqueCardId = seenCardIds.has(cardId) ? `${cardId}-${uid(6)}` : cardId
+        seenCardIds.add(uniqueCardId)
+
+        const card: CardData = {
+          id: uniqueCardId,
+          kind,
+          title: String(rawCard.title || '').trim() || inferDefaultTitle(kind),
+          content: String(rawCard.content || ''),
+          x: clamp(toFiniteNumber(rawCard.x, randomInt(120, 860)), -200, 6000),
+          y: clamp(toFiniteNumber(rawCard.y, randomInt(120, 860)), -200, 4000),
+          width: clamp(toFiniteNumber(rawCard.width, defaultSize.width), 220, 1400),
+          height: clamp(toFiniteNumber(rawCard.height, defaultSize.height), 160, 1200),
+        }
+
+        if (rawCard.fileId !== undefined) card.fileId = String(rawCard.fileId || '').trim() || undefined
+        if (rawCard.fileName !== undefined) card.fileName = String(rawCard.fileName || '').trim() || undefined
+        if (rawCard.externalUrl !== undefined) card.externalUrl = String(rawCard.externalUrl || '').trim() || undefined
+        if (kind === 'todo') card.todoItems = normalizeTodoItems(rawCard.todoItems)
+        if (kind === 'calendar') card.calendar = normalizeCalendarState(rawCard.calendar)
+
+        cards.push(card)
+      })
     }
-    if (!item || typeof item !== 'object') continue
-    const text = String(item.text || '').trim()
-    if (!text) continue
-    out.push({
-      id: `todo-${uid(10)}`,
-      text,
-      status: normalizeTodoLane(item.status, Boolean(item.done)),
+
+    grids.push({
+      id: uniqueGridId,
+      name: String(rawGrid.name || '').trim() || `Grid ${gridIndex + 1}`,
+      cards,
     })
-  }
-  return out
-}
+  })
 
-function normalizeCalendar(input: CanvasWorkbenchCreateCardPayload['calendar']): CalendarState {
-  const base = defaultCalendarState()
-  if (!input || typeof input !== 'object') return base
-  const events: CalendarEvent[] = Array.isArray(input.events)
-    ? input.events
-        .map((event) => {
-          const title = String(event?.title || '').trim()
-          if (!title) return null
-          const date = String(event?.date || base.selectedDate).slice(0, 10)
-          return {
-            id: `event-${uid(10)}`,
-            title,
-            date,
-            allDay: event?.allDay !== false,
-            startTime: event?.startTime ? String(event.startTime).slice(0, 5) : undefined,
-            endTime: event?.endTime ? String(event.endTime).slice(0, 5) : undefined,
-          }
-        })
-        .filter((event): event is CalendarEvent => Boolean(event))
-    : []
-
-  return {
-    monthCursor: String(input.monthCursor || base.monthCursor).slice(0, 7),
-    selectedDate: String(input.selectedDate || base.selectedDate).slice(0, 10),
-    viewMode: input.viewMode === 'week' ? 'week' : 'month',
-    draftTitle: String(input.draftTitle || ''),
-    draftAllDay: input.draftAllDay !== false,
-    draftStartTime: String(input.draftStartTime || base.draftStartTime).slice(0, 5),
-    draftEndTime: String(input.draftEndTime || base.draftEndTime).slice(0, 5),
-    events,
-  }
+  return grids
 }
 
 function createDefaultWorkspace(accountId: string): WorkspaceRecord {
@@ -1462,6 +1400,49 @@ app.post('/api/v1/system/update', requireSession, (req, res) => {
   }
 })
 
+app.put('/api/v1/state', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const body = (req.body || {}) as CanvasWorkbenchWorkspaceUploadPayload
+  const nextGrids = normalizeUploadedGrids(body.grids)
+  if (!nextGrids.length) {
+    res.status(400).json({ ok: false, message: 'At least one grid is required' })
+    return
+  }
+
+  const requestedActiveGridId = typeof body.activeGridId === 'string' ? body.activeGridId.trim() : ''
+  ctx.workspace.name = String(body.name || '').trim() || ctx.workspace.name || 'My Canvas'
+  ctx.workspace.grids = nextGrids
+  ctx.workspace.activeGridId = nextGrids.some((grid) => grid.id === requestedActiveGridId)
+    ? requestedActiveGridId
+    : nextGrids[0].id
+  ctx.workspace.updatedAt = nowIso()
+  saveDb()
+
+  res.json({
+    ok: true,
+    message: 'Workspace uploaded',
+    data: {
+      workspace: {
+        id: ctx.workspace.id,
+        name: ctx.workspace.name,
+        activeGridId: ctx.workspace.activeGridId,
+        updatedAt: ctx.workspace.updatedAt,
+        grids: ctx.workspace.grids.map((grid) => ({
+          id: grid.id,
+          name: grid.name,
+          cardCount: grid.cards.length,
+          cards: grid.cards,
+        })),
+      },
+    },
+  })
+})
+
 app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   const ctx = ensureCtx(req)
   if (!ctx.workspace) {
@@ -1470,7 +1451,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   }
 
   const body = (req.body || {}) as CanvasWorkbenchCreateCardPayload
-  const kind = parseCardKind(body.kind)
+  const kind = normalizeCardKind(body.kind)
   const requestedCardId = normalizeCardId(body.id ?? body.cardId)
 
   const targetGrid =
@@ -1506,8 +1487,9 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     return
   }
 
-  const width = clamp(toFiniteNumber(body.width, kind === 'calendar' ? 760 : kind === 'todo' ? 760 : 420), 220, 1400)
-  const height = clamp(toFiniteNumber(body.height, kind === 'calendar' ? 520 : kind === 'todo' ? 420 : 300), 160, 1200)
+  const defaultSize = CARD_DEFAULT_SIZES[kind]
+  const width = clamp(toFiniteNumber(body.width, defaultSize.width), 220, 1400)
+  const height = clamp(toFiniteNumber(body.height, defaultSize.height), 160, 1200)
   const x = clamp(toFiniteNumber(body.x, randomInt(120, 860)), -200, 6000)
   const y = clamp(toFiniteNumber(body.y, randomInt(120, 860)), -200, 4000)
 
@@ -1530,7 +1512,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
     card.todoItems = normalizeTodoItems(body.todoItems)
   }
   if (kind === 'calendar') {
-    card.calendar = normalizeCalendar(body.calendar)
+    card.calendar = normalizeCalendarState(body.calendar)
   }
 
   targetGrid.cards.push(card)
@@ -1589,7 +1571,7 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
       next.todoItems = normalizeTodoItems(body.todoItems)
     }
     if (body.calendar !== undefined) {
-      next.calendar = normalizeCalendar(body.calendar)
+      next.calendar = normalizeCalendarState(body.calendar)
     }
     grid.cards[index] = next
     updatedCard = next

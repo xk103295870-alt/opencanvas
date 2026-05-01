@@ -6,78 +6,52 @@ import {
   apiCreateAsset,
   apiCreateCard,
   apiCreateGrid,
+  apiCheckHealth,
   apiDeleteAsset,
   apiDeleteCard,
   apiDeleteGrid,
+  apiDownloadAsset,
   apiGetWorkspaceState,
   apiUpdateCard,
   apiUpdateGrid,
+  apiUploadWorkspaceState,
   getApiBaseUrl,
 } from './apiClient'
+import {
+  CARD_DEFAULT_SIZES,
+  INITIAL_VIEWPORT,
+  TODO_FILTERS,
+  TODO_LANES,
+  TODO_TAGS,
+  createTodoItem,
+  isSingletonCardKind,
+  normalizeCalendarEvents,
+  normalizeCalendarState,
+  normalizeCardKind,
+  normalizeGridsForTodoBoard,
+  normalizeTodoLane,
+  normalizeTodoTag,
+  normalizeTodoItems,
+  type CalendarEvent,
+  type CalendarState,
+  type CalendarViewMode,
+  type CardData,
+  type CardKind,
+  type ExternalCalendarInput,
+  type ExternalTodoInput,
+  type GridData,
+  type PersistedAppState,
+  type TodoFilter,
+  type TodoItem,
+  type TodoLane,
+  type TodoTag,
+  type ViewportState,
+} from './shared/workspaceTypes'
 
 type LanguageCode = 'zh' | 'en'
-type ThemeMode = 'system' | 'light' | 'dark' | 'glass'
+type ThemeMode = 'system' | 'light' | 'dark'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
-type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
-type CalendarViewMode = 'month' | 'week'
-type TodoLane = 'todo' | 'doing' | 'done'
-type TodoTag = 'event' | 'feature' | 'important' | 'plan' | 'bug' | 'idea'
-type TodoFilter = 'all' | TodoTag
-
-type TodoItem = {
-  id: string
-  text: string
-  status: TodoLane
-  tag?: TodoTag
-}
-
-type CalendarEvent = {
-  id: string
-  date: string
-  title: string
-  allDay: boolean
-  startTime?: string
-  endTime?: string
-}
-
-type CalendarState = {
-  monthCursor: string
-  selectedDate: string
-  viewMode: CalendarViewMode
-  draftTitle: string
-  draftAllDay: boolean
-  draftStartTime: string
-  draftEndTime: string
-  events: CalendarEvent[]
-}
-
-type CardData = {
-  id: string
-  kind: CardKind
-  title: string
-  content: string
-  x: number
-  y: number
-  width: number
-  height: number
-  fileId?: string
-  fileName?: string
-  externalUrl?: string
-  todoItems?: TodoItem[]
-  calendar?: CalendarState
-}
-
-type GridData = {
-  id: string
-  name: string
-  cards: CardData[]
-}
-
-type ViewportState = {
-  x: number
-  y: number
-  zoom: number
-}
+type LocalApiStatus = 'idle' | 'checking' | 'online' | 'offline'
 
 type DragState = {
   gridId: string
@@ -120,11 +94,9 @@ type StoredAsset = {
   createdAt: number
 }
 
-type PersistedAppState = {
-  version: number
-  grids: GridData[]
-  activeGridId: string
-  viewport: ViewportState
+type DownloadedAssetRestore = {
+  asset: StoredAsset
+  url: string
 }
 
 type AppSettings = {
@@ -254,7 +226,6 @@ type I18nText = {
   themeSystem: string
   themeLight: string
   themeDark: string
-  themeGlass: string
   unnamedGrid: string
   unnamedCard: string
   demoUser: string
@@ -265,6 +236,24 @@ type I18nText = {
   syncDebounceLabel: string
   cliBridgeTitle: string
   cliBridgeHint: string
+  localApiTitle: string
+  localApiHint: string
+  localApiStatusOnline: string
+  localApiStatusOffline: string
+  localApiStatusChecking: string
+  localApiStatusIdle: string
+  localApiRefresh: string
+  localApiOpenHealth: string
+  localApiCopyStartCommand: string
+  localApiStartButton: string
+  localApiStarting: string
+  localApiStartSuccess: string
+  localApiStartFailedPrefix: string
+  localApiStartCommandCopied: string
+  localApiBrowserCannotStart: string
+  localApiUrlLabel: string
+  localApiVersionLabel: string
+  localApiStartCommandLabel: string
   updateTitle: string
   updateHint: string
   currentVersionLabel: string
@@ -337,20 +326,6 @@ type ParticleRuntime = {
   dotAlpha: number
   bloomAlpha: number
   bloomRadius: number
-}
-
-type ExternalTodoInput = string | { text: string; done?: boolean; status?: TodoLane; tag?: TodoTag | string }
-
-type ExternalCalendarEventInput = {
-  title: string
-  date?: string
-  allDay?: boolean
-  startTime?: string
-  endTime?: string
-}
-
-type ExternalCalendarInput = Partial<Omit<CalendarState, 'events'>> & {
-  events?: ExternalCalendarEventInput[]
 }
 
 type CanvasWorkbenchCreateCardPayload = {
@@ -565,11 +540,10 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageZh: '中文',
     languageEn: 'English',
     themeTitle: '主题',
-    themeHint: '可跟随系统，也可切换浅色、深色或 Apple 风格液体玻璃',
+    themeHint: '可跟随系统，也可手动切换浅色或深色',
     themeSystem: '跟随系统',
     themeLight: '浅色',
     themeDark: '深色',
-    themeGlass: '液体玻璃',
     unnamedGrid: '未命名画布',
     unnamedCard: '未命名卡片',
     demoUser: '演示用户',
@@ -580,6 +554,24 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncDebounceLabel: '自动同步延迟（毫秒）',
     cliBridgeTitle: 'CLI Bridge 集成',
     cliBridgeHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
+    localApiTitle: '本地 API',
+    localApiHint: '本地 API 负责 CLI、Web 和 Obsidian 之间的数据交换。这里可以查看连接状态。',
+    localApiStatusOnline: '在线',
+    localApiStatusOffline: '离线',
+    localApiStatusChecking: '检测中',
+    localApiStatusIdle: '未检测',
+    localApiRefresh: '刷新状态',
+    localApiOpenHealth: '打开 health',
+    localApiCopyStartCommand: '复制启动命令',
+    localApiStartButton: '启动本地 API',
+    localApiStarting: '正在启动...',
+    localApiStartSuccess: '本地 API 启动命令已发送。',
+    localApiStartFailedPrefix: '启动失败：',
+    localApiStartCommandCopied: '启动命令已复制。',
+    localApiBrowserCannotStart: '浏览器/Obsidian 页面不能直接拉起本地 Node 进程；请在终端运行下面命令。',
+    localApiUrlLabel: 'API 地址',
+    localApiVersionLabel: 'API 版本',
+    localApiStartCommandLabel: '启动命令',
     updateTitle: '在线更新',
     updateHint: '点击后会先拉取最新代码、安装依赖，再重启本地服务。仅适用于 git 仓库安装，若有本地改动请先提交或暂存。',
     currentVersionLabel: '当前版本',
@@ -647,11 +639,10 @@ const I18N: Record<LanguageCode, I18nText> = {
     languageZh: '中文',
     languageEn: 'English',
     themeTitle: 'Theme',
-    themeHint: 'Follow system or switch manually between light, dark, or an Apple-style liquid glass look',
+    themeHint: 'Follow system or switch manually between light and dark',
     themeSystem: 'System',
     themeLight: 'Light',
     themeDark: 'Dark',
-    themeGlass: 'Liquid Glass',
     unnamedGrid: 'Untitled Grid',
     unnamedCard: 'Untitled Card',
     demoUser: 'Demo User',
@@ -662,6 +653,24 @@ const I18N: Record<LanguageCode, I18nText> = {
     syncDebounceLabel: 'Auto sync debounce (ms)',
     cliBridgeTitle: 'CLI Bridge Integration',
     cliBridgeHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
+    localApiTitle: 'Local API',
+    localApiHint: 'The Local API exchanges data between CLI, Web, and Obsidian. Check its connection status here.',
+    localApiStatusOnline: 'Online',
+    localApiStatusOffline: 'Offline',
+    localApiStatusChecking: 'Checking',
+    localApiStatusIdle: 'Not checked',
+    localApiRefresh: 'Refresh status',
+    localApiOpenHealth: 'Open health',
+    localApiCopyStartCommand: 'Copy start command',
+    localApiStartButton: 'Start Local API',
+    localApiStarting: 'Starting...',
+    localApiStartSuccess: 'Local API start command sent.',
+    localApiStartFailedPrefix: 'Start failed: ',
+    localApiStartCommandCopied: 'Start command copied.',
+    localApiBrowserCannotStart: 'A browser/Obsidian page cannot directly start the local Node process. Run the command below in Terminal.',
+    localApiUrlLabel: 'API URL',
+    localApiVersionLabel: 'API version',
+    localApiStartCommandLabel: 'Start command',
     updateTitle: 'Online Update',
     updateHint: 'Pull the latest code, install dependencies, and restart local services. Git checkout installs only. Commit or stash local changes first.',
     currentVersionLabel: 'Current version',
@@ -784,6 +793,9 @@ const parseDateKey = (value: string): Date => {
   return new Date(year, month - 1, day)
 }
 
+const toDateKeyOrFallback = (value: string | undefined, fallback: string) =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : fallback
+
 const shiftDateKey = (dateKey: string, deltaDays: number) => {
   const date = parseDateKey(dateKey)
   date.setDate(date.getDate() + deltaDays)
@@ -883,61 +895,6 @@ const getMsUntilNextLocalDay = () => {
   return Math.max(1000, nextDay.getTime() - now.getTime())
 }
 
-const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
-const TODO_TAGS: TodoTag[] = ['event', 'feature', 'important', 'plan', 'bug', 'idea']
-const TODO_FILTERS: TodoFilter[] = ['all', ...TODO_TAGS]
-
-const normalizeTodoLane = (value: unknown, doneFallback = false): TodoLane => {
-  const lane = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (lane === 'todo' || lane === 'doing' || lane === 'done') return lane
-  return doneFallback ? 'done' : 'todo'
-}
-
-const normalizeTodoTag = (value: unknown): TodoTag => {
-  const tag = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (tag === 'feature' || tag === 'important' || tag === 'plan' || tag === 'bug' || tag === 'idea') return tag
-  return 'event'
-}
-
-const createTodoItem = (text: string, status: TodoLane = 'todo', tag: TodoTag = 'event'): TodoItem => ({
-  id: uid('todo-item'),
-  text,
-  status,
-  tag,
-})
-
-const normalizeTodoItemsForCard = (items: TodoItem[] | undefined): TodoItem[] => {
-  if (!Array.isArray(items)) return []
-  const normalizedItems: TodoItem[] = []
-  for (const item of items) {
-    const text = String(item?.text ?? '').trim()
-    if (!text) continue
-    const rawDone = item && typeof item === 'object' && 'done' in item ? Boolean((item as { done?: boolean }).done) : false
-    normalizedItems.push({
-      id: String(item?.id || uid('todo-item')),
-      text,
-      status: normalizeTodoLane(item?.status, rawDone),
-      tag: normalizeTodoTag(item?.tag),
-    })
-  }
-  return normalizedItems
-}
-
-const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
-  if (!Array.isArray(input)) return []
-  return input.map((grid) => ({
-    ...grid,
-    cards: grid.cards.map((card) =>
-      card.kind === 'todo'
-        ? {
-            ...card,
-            todoItems: normalizeTodoItemsForCard(card.todoItems),
-          }
-        : card,
-    ),
-  }))
-}
-
 const isMediaCardKind = (kind: CardKind): kind is Extract<CardKind, 'image' | 'video' | 'pdf'> =>
   kind === 'image' || kind === 'video' || kind === 'pdf'
 
@@ -950,54 +907,36 @@ const mergeRemoteGridsWithLocalMediaCards = (remoteGrids: GridData[], localGrids
     const localGrid = localById.get(remoteGrid.id)
     if (!localGrid) return remoteGrid
 
+    const localCardsById = new Map(localGrid.cards.map((card) => [card.id, card]))
     const remoteCardIds = new Set(remoteGrid.cards.map((card) => card.id))
+    const mergedRemoteCards = remoteGrid.cards.map((remoteCard) => {
+      const localCard = localCardsById.get(remoteCard.id)
+      if (!localCard || !isMediaCardKind(remoteCard.kind) || !isMediaCardKind(localCard.kind)) return remoteCard
+
+      const preservedFileId = localCard.fileId && !remoteCard.fileId ? localCard.fileId : remoteCard.fileId
+      return {
+        ...remoteCard,
+        ...(preservedFileId ? { fileId: preservedFileId } : {}),
+        fileName: remoteCard.fileName || localCard.fileName,
+        externalUrl: remoteCard.externalUrl || localCard.externalUrl,
+      }
+    })
     const preservedMediaCards = localGrid.cards
       .filter((card) => isMediaCardKind(card.kind) && !remoteCardIds.has(card.id))
       .map((card) => ({ ...card }))
 
-    if (preservedMediaCards.length === 0) return remoteGrid
+    if (preservedMediaCards.length === 0 && mergedRemoteCards === remoteGrid.cards) return remoteGrid
 
     return {
       ...remoteGrid,
-      cards: [...remoteGrid.cards, ...preservedMediaCards],
+      cards: [...mergedRemoteCards, ...preservedMediaCards],
     }
   })
 }
 
-const createDefaultCalendarState = (): CalendarState => {
-  const today = toDateKey(new Date())
-  return {
-    monthCursor: toMonthKey(new Date()),
-    selectedDate: today,
-    viewMode: 'month',
-    draftTitle: '',
-    draftAllDay: true,
-    draftStartTime: '09:00',
-    draftEndTime: '10:00',
-    events: [],
-  }
-}
+const withCalendarDefaults = normalizeCalendarState
 
-const withCalendarDefaults = (calendar?: CalendarState): CalendarState => {
-  const fallback = createDefaultCalendarState()
-  if (!calendar) return fallback
-
-  return {
-    monthCursor: calendar.monthCursor || fallback.monthCursor,
-    selectedDate: calendar.selectedDate || fallback.selectedDate,
-    viewMode: calendar.viewMode === 'week' ? 'week' : 'month',
-    draftTitle: calendar.draftTitle ?? '',
-    draftAllDay: calendar.draftAllDay ?? true,
-    draftStartTime: calendar.draftStartTime || fallback.draftStartTime,
-    draftEndTime: calendar.draftEndTime || fallback.draftEndTime,
-    events: (calendar.events ?? []).map((eventItem) => ({
-      ...eventItem,
-      allDay: eventItem.allDay ?? true,
-    })),
-  }
-}
-
-const initialViewport: ViewportState = { x: 0, y: 0, zoom: 1 }
+const initialViewport: ViewportState = INITIAL_VIEWPORT
 
 const initialGrids: GridData[] = [
   {
@@ -1079,7 +1018,6 @@ const normalizeThemeMode = (value: unknown): ThemeMode => {
     .toLowerCase()
   if (mode === 'light') return 'light'
   if (mode === 'dark') return 'dark'
-  if (mode === 'glass') return 'glass'
   return 'system'
 }
 
@@ -1155,72 +1093,13 @@ const dataUrlToBlob = async (dataUrl: string) => {
 
 const cloudKey = (userId: string) => `${CLOUD_KEY_PREFIX}${userId}`
 
-const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar'])
-
-const normalizeCardKind = (value: unknown): CardKind => {
-  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  return CARD_KIND_SET.has(raw as CardKind) ? (raw as CardKind) : 'note'
-}
-
-const isSingletonCardKind = (kind: CardKind) => kind === 'todo' || kind === 'calendar'
-
 const toFiniteNumber = (value: unknown, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
 
-const toDateKeyOrFallback = (value: string | undefined, fallback: string) =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : fallback
+const toTodoItems = (input: ExternalTodoInput[] | undefined) => normalizeTodoItems(input)
 
-const toTodoItems = (input: ExternalTodoInput[] | undefined) =>
-  Array.isArray(input)
-    ? input
-        .map((item) => {
-          if (typeof item === 'string') {
-            const text = item.trim()
-            return text ? createTodoItem(text) : null
-          }
-
-          const text = String(item?.text ?? '').trim()
-          if (!text) return null
-          const doneFallback = item?.done === true
-          return {
-            id: uid('todo-item'),
-            text,
-            status: normalizeTodoLane(item?.status, doneFallback),
-            tag: normalizeTodoTag(item?.tag),
-          } satisfies TodoItem
-        })
-        .filter((item): item is TodoItem => Boolean(item))
-    : []
-
-const toCalendarEvents = (input: ExternalCalendarEventInput[] | undefined, fallbackDate: string) =>
-  Array.isArray(input)
-    ? input
-        .map((eventItem) => {
-          const title = String(eventItem?.title ?? '').trim()
-          if (!title) return null
-
-          const dateKey = toDateKeyOrFallback(eventItem?.date, fallbackDate)
-          const allDay = eventItem?.allDay !== false
-          const range = normalizeTimeRange(
-            String(eventItem?.startTime ?? ''),
-            String(eventItem?.endTime ?? ''),
-          )
-
-          return {
-            id: uid('event'),
-            date: dateKey,
-            title,
-            allDay,
-            ...(allDay
-              ? {}
-              : {
-                  startTime: range?.[0],
-                  endTime: range?.[1],
-                }),
-          } satisfies CalendarEvent
-        })
-        .filter((eventItem): eventItem is CalendarEvent => Boolean(eventItem))
-    : []
+const toCalendarEvents = (input: ExternalCalendarInput['events'] | undefined, fallbackDate: string) =>
+  normalizeCalendarEvents(input, fallbackDate)
 
 const openDatabase = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -1366,11 +1245,26 @@ const clearAssets = async () => {
 
 type AppRuntime = 'web' | 'obsidian'
 
-type AppProps = {
-  runtime?: AppRuntime
+type StartLocalApiResult = {
+  ok: boolean
+  message?: string
+  pid?: number
 }
 
-function App({ runtime = 'web' }: AppProps) {
+type LocalApiHealthResult = {
+  ok: boolean
+  version?: string
+  apiBaseUrl?: string
+  message?: string
+}
+
+type AppProps = {
+  runtime?: AppRuntime
+  onStartLocalApi?: (input: { apiBaseUrl: string }) => Promise<StartLocalApiResult>
+  onCheckLocalApiHealth?: (input: { apiBaseUrl: string }) => Promise<LocalApiHealthResult>
+}
+
+function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppProps) {
   const isObsidianRuntime = runtime === 'obsidian'
   const [grids, setGrids] = useState<GridData[]>(initialGrids)
   const [activeGridId, setActiveGridId] = useState(initialGrids[0].id)
@@ -1383,6 +1277,11 @@ function App({ runtime = 'web' }: AppProps) {
   const [hydrated, setHydrated] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [localApiMenuOpen, setLocalApiMenuOpen] = useState(false)
+  const [localApiStatus, setLocalApiStatus] = useState<LocalApiStatus>('idle')
+  const [localApiStarting, setLocalApiStarting] = useState(false)
+  const [localApiHealth, setLocalApiHealth] = useState<{ version?: string; apiBaseUrl?: string } | null>(null)
+  const [localApiStatusMessage, setLocalApiStatusMessage] = useState('')
   const [todoDraftTarget, setTodoDraftTarget] = useState<{ cardId: string; lane: TodoLane } | null>(null)
   const [todoDraftText, setTodoDraftText] = useState('')
   const [todoDraftTag, setTodoDraftTag] = useState<TodoTag>('event')
@@ -1678,7 +1577,88 @@ function App({ runtime = 'web' }: AppProps) {
     })
   }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, viewport])
 
-  const resolveApiBaseUrl = useCallback(() => (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim(), [serverAuth?.apiBaseUrl])
+  const resolveApiBaseUrl = useCallback(() => {
+    const configured = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
+    if (isObsidianRuntime && configured === 'http://127.0.0.1:8787') return 'http://127.0.0.1:8799'
+    return configured
+  }, [isObsidianRuntime, serverAuth?.apiBaseUrl])
+  const resolveOptionalApiKey = useCallback(() => serverAuth?.lastApiKey ?? '', [serverAuth?.lastApiKey])
+  const localApiBaseUrl = resolveApiBaseUrl()
+  const localApiStartCommand = useMemo(() => {
+    try {
+      const url = new URL(localApiBaseUrl)
+      return `canvas-workbench start --api-port ${url.port || '8787'}`
+    } catch {
+      return 'canvas-workbench start'
+    }
+  }, [localApiBaseUrl])
+
+  const refreshLocalApiStatus = useCallback(async () => {
+    setLocalApiStatus('checking')
+    setLocalApiStatusMessage('')
+    try {
+      const baseUrl = resolveApiBaseUrl()
+      const health = onCheckLocalApiHealth
+        ? await onCheckLocalApiHealth({ apiBaseUrl: baseUrl })
+        : await apiCheckHealth(baseUrl, 1500)
+      const healthMessage = 'message' in health && typeof health.message === 'string' ? health.message : ''
+      setLocalApiHealth({ version: health.version, apiBaseUrl: health.apiBaseUrl || baseUrl })
+      setLocalApiStatus(health.ok === false ? 'offline' : 'online')
+      setLocalApiStatusMessage(health.ok === false ? healthMessage : '')
+    } catch (error) {
+      setLocalApiHealth(null)
+      setLocalApiStatus('offline')
+      setLocalApiStatusMessage(error instanceof Error ? error.message : String(error))
+    }
+  }, [onCheckLocalApiHealth, resolveApiBaseUrl])
+
+  const copyLocalApiStartCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(localApiStartCommand)
+      setLocalApiStatusMessage(text.localApiStartCommandCopied)
+    } catch (error) {
+      setLocalApiStatusMessage(error instanceof Error ? error.message : String(error))
+    }
+  }, [localApiStartCommand, text.localApiStartCommandCopied])
+
+  const openLocalApiHealth = useCallback(() => {
+    window.open(`${localApiBaseUrl.replace(/\/$/, '')}/health`, '_blank', 'noopener,noreferrer')
+  }, [localApiBaseUrl])
+
+  const handleStartLocalApi = useCallback(async () => {
+    setLocalApiStarting(true)
+    if (!onStartLocalApi) {
+      await copyLocalApiStartCommand()
+      setLocalApiStarting(false)
+      return
+    }
+
+    setLocalApiStatusMessage(text.localApiStarting)
+    try {
+      const result = await onStartLocalApi({ apiBaseUrl: localApiBaseUrl })
+      if (!result.ok) {
+        throw new Error(result.message || text.localApiStartFailedPrefix)
+      }
+      setLocalApiStatusMessage(result.message || `${text.localApiStartSuccess}${result.pid ? ` PID ${result.pid}` : ''}`)
+      const delays = [800, 1800, 3200, 5200]
+      delays.forEach((delay) => {
+        window.setTimeout(() => {
+          void refreshLocalApiStatus()
+        }, delay)
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLocalApiStatusMessage(`${text.localApiStartFailedPrefix}${message}`)
+      setLocalApiStatus('offline')
+    } finally {
+      window.setTimeout(() => setLocalApiStarting(false), 1400)
+    }
+  }, [copyLocalApiStartCommand, localApiBaseUrl, onStartLocalApi, refreshLocalApiStatus, text.localApiStartFailedPrefix, text.localApiStartSuccess, text.localApiStarting])
+
+  useEffect(() => {
+    if (!settingsOpen) return
+    void refreshLocalApiStatus()
+  }, [refreshLocalApiStatus, settingsOpen])
 
   const updateCliBridgeLayoutSyncMeta = useCallback((partial: Partial<CliBridgeLayoutSyncMeta>) => {
     const next = normalizeCliBridgeLayoutSyncMeta({ ...cliBridgeLayoutSyncRef.current, ...partial })
@@ -1689,11 +1669,11 @@ function App({ runtime = 'web' }: AppProps) {
 
   const persistCliBridgeGridCreate = useCallback(
     async (grid: GridData, activateGrid = false) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
         await apiCreateGrid(
-          serverAuth.lastApiKey,
+          resolveOptionalApiKey(),
           {
             id: grid.id,
             name: grid.name,
@@ -1708,15 +1688,15 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const persistCliBridgeGridUpdate = useCallback(
     async (gridId: string, updates: { name?: string; activate?: boolean }) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiUpdateGrid(serverAuth.lastApiKey, gridId, updates, resolveApiBaseUrl())
+        await apiUpdateGrid(resolveOptionalApiKey(), gridId, updates, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1724,15 +1704,15 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const persistCliBridgeGridDelete = useCallback(
     async (gridId: string) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiDeleteGrid(serverAuth.lastApiKey, gridId, resolveApiBaseUrl())
+        await apiDeleteGrid(resolveOptionalApiKey(), gridId, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1740,17 +1720,17 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const persistCliBridgeAssetUpload = useCallback(
     async (assetId: string, name: string, type: string, blob: Blob) => {
-      if (!account || !serverAuth?.lastApiKey) return null
+      if (!account) return null
 
       try {
         const dataUrl = await blobToDataUrl(blob)
         const uploaded = await apiCreateAsset(
-          serverAuth.lastApiKey,
+          resolveOptionalApiKey(),
           {
             id: assetId,
             name,
@@ -1766,15 +1746,15 @@ function App({ runtime = 'web' }: AppProps) {
         return null
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const persistCliBridgeAssetDelete = useCallback(
     async (assetId: string) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiDeleteAsset(serverAuth.lastApiKey, assetId, resolveApiBaseUrl())
+        await apiDeleteAsset(resolveOptionalApiKey(), assetId, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1782,7 +1762,7 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const clearCliBridgePatchTimer = useCallback((cardId: string) => {
@@ -1796,10 +1776,10 @@ function App({ runtime = 'web' }: AppProps) {
 
   const persistCliBridgeCardPatch = useCallback(
     async (cardId: string, updates: CliBridgeCardPatch) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
+        await apiUpdateCard(resolveOptionalApiKey(), cardId, updates, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1807,7 +1787,7 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const scheduleCliBridgeCardPatch = useCallback(
@@ -1833,11 +1813,11 @@ function App({ runtime = 'web' }: AppProps) {
 
   const persistCliBridgeCardCreate = useCallback(
     async (gridId: string, card: CardData, activateGrid = false) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
         await apiCreateCard(
-          serverAuth.lastApiKey,
+          resolveOptionalApiKey(),
           {
             id: card.id,
             kind: card.kind,
@@ -1863,15 +1843,15 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const persistCliBridgeCardDelete = useCallback(
     async (cardId: string) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiDeleteCard(serverAuth.lastApiKey, cardId, resolveApiBaseUrl())
+        await apiDeleteCard(resolveOptionalApiKey(), cardId, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1879,7 +1859,7 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   useEffect(() => {
@@ -1901,22 +1881,56 @@ function App({ runtime = 'web' }: AppProps) {
     [],
   )
 
-  const pullCliBridgeWorkspace = useCallback(async () => {
-    if (!account || !serverAuth?.lastApiKey) return false
+  const restoreRemoteMediaAssets = useCallback(async (nextGrids: GridData[]) => {
+    const restored: Record<string, DownloadedAssetRestore> = {}
+    const seenAssetIds = new Set<string>()
+
+    for (const grid of nextGrids) {
+      for (const card of grid.cards) {
+        if (!isMediaCardKind(card.kind) || !card.fileId || !card.externalUrl) continue
+        if (assetUrlsRef.current[card.fileId] || seenAssetIds.has(card.fileId)) continue
+        seenAssetIds.add(card.fileId)
+
+        try {
+          const downloaded = await apiDownloadAsset(card.externalUrl)
+          const blob = downloaded.blob
+          const asset: StoredAsset = {
+            id: card.fileId,
+            blob,
+            name: card.fileName || card.title || card.fileId,
+            type: downloaded.type || blob.type || 'application/octet-stream',
+            createdAt: Date.now(),
+          }
+          await putAsset(asset)
+          restored[card.fileId] = {
+            asset,
+            url: URL.createObjectURL(blob),
+          }
+        } catch (error) {
+          console.error('Failed to restore Local API media asset:', error)
+        }
+      }
+    }
+
+    return restored
+  }, [])
+
+  const pullCliBridgeWorkspace = useCallback(async (force = false, apiBaseUrlOverride?: string) => {
+    if (!account) return false
 
     try {
       const { lastLayoutMutationAt, lastLayoutSyncAt } = cliBridgeLayoutSyncRef.current
-      if (lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
+      if (!force && lastLayoutMutationAt > lastLayoutSyncAt + 1000) {
         return false
       }
 
-      if (Object.keys(cliBridgePendingPatchRef.current).length > 0) {
+      if (!force && Object.keys(cliBridgePendingPatchRef.current).length > 0) {
         return false
       }
 
-      const remote = await apiGetWorkspaceState(serverAuth.lastApiKey, resolveApiBaseUrl())
+      const remote = await apiGetWorkspaceState(resolveOptionalApiKey(), apiBaseUrlOverride || resolveApiBaseUrl())
       const remoteUpdatedAt = remote.workspace.updatedAt || null
-      if (remoteUpdatedAt && remoteUpdatedAt === lastCliBridgeWorkspaceUpdatedAtRef.current) {
+      if (!force && remoteUpdatedAt && remoteUpdatedAt === lastCliBridgeWorkspaceUpdatedAtRef.current) {
         return false
       }
 
@@ -1929,7 +1943,8 @@ function App({ runtime = 'web' }: AppProps) {
         : []
 
       const hasRemoteCards = remoteGrids.some((grid) => grid.cards.length > 0)
-      if (!hasRemoteCards && lastCliBridgeWorkspaceUpdatedAtRef.current === null) {
+      const hasLocalCards = gridsRef.current.some((grid) => grid.cards.length > 0)
+      if (!hasRemoteCards && hasLocalCards && !force) {
         lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
         return false
       }
@@ -1941,6 +1956,20 @@ function App({ runtime = 'web' }: AppProps) {
       if (!nextGrids.length) {
         lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
         return false
+      }
+
+      const restoredMediaAssets = await restoreRemoteMediaAssets(nextGrids)
+      const restoredAssetUrls = Object.fromEntries(
+        Object.entries(restoredMediaAssets).map(([assetId, restored]) => [assetId, restored.url]),
+      )
+
+      if (Object.keys(restoredAssetUrls).length > 0) {
+        setAssetUrls((current) => {
+          Object.keys(restoredAssetUrls).forEach((assetId) => {
+            if (current[assetId]) URL.revokeObjectURL(restoredAssetUrls[assetId])
+          })
+          return { ...current, ...restoredAssetUrls }
+        })
       }
 
       skipLocalSyncMetaUpdateRef.current = true
@@ -1964,17 +1993,17 @@ function App({ runtime = 'web' }: AppProps) {
         skipLocalSyncMetaUpdateRef.current = false
       }, 0)
     }
-  }, [account, resolveApiBaseUrl, serverAuth?.lastApiKey, setActiveGridId, setGrids, updateCliBridgeLayoutSyncMeta, updateSyncMeta])
+  }, [account, resolveApiBaseUrl, resolveOptionalApiKey, restoreRemoteMediaAssets, setActiveGridId, setGrids, updateCliBridgeLayoutSyncMeta, updateSyncMeta])
 
   const persistCliBridgeCardLayout = useCallback(
     async (
       cardId: string,
       updates: { x?: number; y?: number; width?: number; height?: number },
     ) => {
-      if (!account || !serverAuth?.lastApiKey) return false
+      if (!account) return false
 
       try {
-        await apiUpdateCard(serverAuth.lastApiKey, cardId, updates, resolveApiBaseUrl())
+        await apiUpdateCard(resolveOptionalApiKey(), cardId, updates, resolveApiBaseUrl())
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         return true
       } catch (error) {
@@ -1982,7 +2011,7 @@ function App({ runtime = 'web' }: AppProps) {
         return false
       }
     },
-    [account, resolveApiBaseUrl, serverAuth?.lastApiKey, updateCliBridgeLayoutSyncMeta],
+    [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
   const serializeAssetsForCloud = useCallback(async () => {
@@ -2158,8 +2187,7 @@ function App({ runtime = 'web' }: AppProps) {
   }, [activeGridId, account, grids, hydrated, isObsidianRuntime, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
 
   useEffect(() => {
-    if (isObsidianRuntime) return
-    if (!hydrated || !account || !serverAuth?.lastApiKey) return
+    if (!hydrated || !account) return
 
     let cancelled = false
     const run = async () => {
@@ -2168,6 +2196,10 @@ function App({ runtime = 'web' }: AppProps) {
     }
 
     void run()
+    if (isObsidianRuntime) return () => {
+      cancelled = true
+    }
+
     const timer = window.setInterval(() => {
       void run()
     }, 6000)
@@ -2176,7 +2208,7 @@ function App({ runtime = 'web' }: AppProps) {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [account, hydrated, isObsidianRuntime, pullCliBridgeWorkspace, serverAuth?.lastApiKey])
+  }, [account, hydrated, isObsidianRuntime, pullCliBridgeWorkspace])
 
   const toWorldPoint = useCallback((clientX: number, clientY: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -2477,20 +2509,7 @@ function App({ runtime = 'web' }: AppProps) {
                 ? text.newNoteCard.replace('+ ', '')
                 : text.unnamedCard
 
-      const defaultSize =
-        kind === 'todo'
-          ? { width: 760, height: 430 }
-          : kind === 'calendar'
-            ? { width: 480, height: 560 }
-            : kind === 'hint'
-              ? { width: 300, height: 420 }
-              : kind === 'image'
-                ? { width: 360, height: 280 }
-                : kind === 'video'
-                  ? { width: 420, height: 300 }
-                : kind === 'pdf'
-                    ? { width: 460, height: 360 }
-                    : { width: 340, height: 280 }
+      const defaultSize = CARD_DEFAULT_SIZES[kind]
 
       const width = clamp(toFiniteNumber(payload?.width, defaultSize.width), CARD_MIN_WIDTH, CARD_MAX_WIDTH)
       const height = clamp(toFiniteNumber(payload?.height, defaultSize.height), CARD_MIN_HEIGHT, CARD_MAX_HEIGHT)
@@ -2538,8 +2557,7 @@ function App({ runtime = 'web' }: AppProps) {
                 const calendarInput = payload?.calendar
                 const selectedDate = toDateKeyOrFallback(calendarInput?.selectedDate, today)
                 const monthCursor = toDateKeyOrFallback(calendarInput?.monthCursor, toMonthKey(parseDateKey(selectedDate)))
-                const calendarState = withCalendarDefaults({
-                  ...createDefaultCalendarState(),
+                const calendarState = normalizeCalendarState({
                   ...calendarInput,
                   selectedDate,
                   monthCursor,
@@ -3244,6 +3262,27 @@ function App({ runtime = 'web' }: AppProps) {
     void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
+  const updateTodoTag = (cardId: string, todoId: string, tag: TodoTag) => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'todo') return
+
+    const nextTodoItems = (targetCard.todoItems ?? []).map((item) =>
+      item.id === todoId ? { ...item, tag: normalizeTodoTag(tag) } : item,
+    )
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids((current) =>
+      current.map((grid) =>
+        grid.id !== activeGridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, todoItems: nextTodoItems } : card)),
+            },
+      ),
+    )
+    void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
+  }
+
   const updateCalendarCard = (cardId: string, updater: (state: CalendarState) => CalendarState) => {
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
     if (!targetCard || targetCard.kind !== 'calendar') return
@@ -3472,10 +3511,9 @@ function App({ runtime = 'web' }: AppProps) {
 
       nextUrls[assetId] = URL.createObjectURL(file)
 
-      const uploadedAssetUrl =
-        account && serverAuth?.lastApiKey
-          ? await persistCliBridgeAssetUpload(assetId, file.name, file.type || 'application/octet-stream', file)
-          : null
+      const uploadedAssetUrl = account
+        ? await persistCliBridgeAssetUpload(assetId, file.name, file.type || 'application/octet-stream', file)
+        : null
 
       const nextCard: CardData = {
         id: cardId,
@@ -3507,6 +3545,88 @@ function App({ runtime = 'web' }: AppProps) {
       void Promise.all(remoteMediaCards.map((card) => persistCliBridgeCardCreate(activeGridId, card, false)))
     }
     pushParticleImpulse(world.x, world.y, 0.24)
+  }
+
+  const handleDownloadFromLocalApi = async () => {
+    setLocalApiMenuOpen(false)
+    let pulled = await pullCliBridgeWorkspace(true)
+    if (!pulled && isObsidianRuntime && resolveApiBaseUrl() !== 'http://127.0.0.1:8799') {
+      pulled = await pullCliBridgeWorkspace(true, 'http://127.0.0.1:8799')
+    }
+    setSyncStatus(pulled ? 'ok' : 'idle')
+    setSyncMessage(
+      pulled
+        ? settings.language === 'zh'
+          ? '已从本地 API 下载工作区。'
+          : 'Downloaded workspace from Local API.'
+        : settings.language === 'zh'
+          ? '本地 API 暂无可下载的新工作区。'
+          : 'No new Local API workspace to download.',
+    )
+  }
+
+  const handleUploadToLocalApi = async () => {
+    setLocalApiMenuOpen(false)
+    if (!activeGrid) return
+
+    try {
+      const assets = await getAllAssets()
+      const uploadedAssetUrls: Record<string, string> = {}
+      for (const grid of grids) {
+        for (const card of grid.cards) {
+          if (!isMediaCardKind(card.kind) || !card.fileId || card.externalUrl) continue
+          const asset = assets.find((item) => item.id === card.fileId)
+          if (!asset) continue
+          const uploadedUrl = await persistCliBridgeAssetUpload(asset.id, asset.name, asset.type || 'application/octet-stream', asset.blob)
+          if (uploadedUrl) uploadedAssetUrls[card.id] = uploadedUrl
+        }
+      }
+      const gridsForUpload = grids.map((grid) => ({
+        id: grid.id,
+        name: grid.name,
+        cards: grid.cards.map((card) =>
+          uploadedAssetUrls[card.id]
+            ? {
+                ...card,
+                externalUrl: uploadedAssetUrls[card.id],
+              }
+            : card,
+        ),
+      }))
+      const payload = {
+        name: 'My Canvas',
+        activeGridId,
+        grids: gridsForUpload,
+      }
+      await apiUploadWorkspaceState(resolveOptionalApiKey(), payload, resolveApiBaseUrl())
+      if (Object.keys(uploadedAssetUrls).length > 0) {
+        setGrids((current) =>
+          current.map((grid) => ({
+            ...grid,
+            cards: grid.cards.map((card) =>
+              uploadedAssetUrls[card.id]
+                ? {
+                    ...card,
+                    externalUrl: uploadedAssetUrls[card.id],
+                  }
+                : card,
+            ),
+          })),
+        )
+      }
+      updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+      setSyncStatus('ok')
+      setSyncMessage(settings.language === 'zh' ? '已上传到本地 API。' : 'Uploaded workspace to Local API.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSyncStatus('error')
+      setSyncMessage(
+        settings.language === 'zh'
+          ? `上传到本地 API 失败：${message}`
+          : `Failed to upload to Local API: ${message}`,
+      )
+      console.error('Failed to upload workspace to Local API:', error)
+    }
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
@@ -3681,6 +3801,25 @@ function App({ runtime = 'web' }: AppProps) {
               ＋
             </button>
           </div>
+          <div className="local-api-menu">
+            <button
+              className="zoom-btn reset local-api-trigger"
+              onClick={() => setLocalApiMenuOpen((open) => !open)}
+              aria-expanded={localApiMenuOpen}
+            >
+              {settings.language === 'zh' ? '本地 API' : 'Local API'} ▾
+            </button>
+            {localApiMenuOpen ? (
+              <div className="local-api-dropdown">
+                <button type="button" onClick={handleDownloadFromLocalApi}>
+                  {settings.language === 'zh' ? '从本地 API 下载' : 'Download from Local API'}
+                </button>
+                <button type="button" onClick={handleUploadToLocalApi}>
+                  {settings.language === 'zh' ? '上传到本地 API' : 'Upload to Local API'}
+                </button>
+              </div>
+            ) : null}
+          </div>
           <button className="zoom-btn reset" onClick={() => setViewport(initialViewport)}>
             {text.reset}
           </button>
@@ -3700,7 +3839,7 @@ function App({ runtime = 'web' }: AppProps) {
           <div className="canvas-grid" />
 
           {activeGrid.cards.map((card) => {
-            const fileUrl = card.fileId ? assetUrls[card.fileId] : card.externalUrl
+            const fileUrl = card.fileId ? assetUrls[card.fileId] || card.externalUrl : card.externalUrl
             const isMinimizableCard = card.kind === 'todo' || card.kind === 'calendar'
             const isMinimizedCard = isMinimizableCard && minimizedCardIds.includes(card.id)
             const cardTypeLabel = card.kind === 'todo' ? todoText.title : card.kind === 'calendar' ? calendarText.title : card.kind
@@ -3904,10 +4043,26 @@ function App({ runtime = 'web' }: AppProps) {
                                           rows={2}
                                         />
                                         <div className="todo-item-meta">
-                                          <span className={`todo-item-tag todo-tag-${itemTag}`}>
-                                            <span aria-hidden="true" />
-                                            {todoTagLabels[itemTag]}
-                                          </span>
+                                          <label className="todo-item-tag-select-wrap">
+                                            <span className={`todo-item-tag todo-tag-${itemTag}`} aria-hidden="true">
+                                              <span />
+                                              {todoTagLabels[itemTag]}
+                                            </span>
+                                            <select
+                                              className="todo-item-tag-select"
+                                              value={itemTag}
+                                              onPointerDown={(event) => event.stopPropagation()}
+                                              onClick={(event) => event.stopPropagation()}
+                                              onChange={(event) => updateTodoTag(card.id, item.id, normalizeTodoTag(event.target.value))}
+                                              aria-label={settings.language === 'zh' ? '修改任务标签' : 'Change todo tag'}
+                                            >
+                                              {TODO_TAGS.map((tag) => (
+                                                <option key={tag} value={tag}>
+                                                  {todoTagLabels[tag]}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
                                           <span className="todo-board-grip" title={settings.language === 'zh' ? '拖拽排序' : 'Drag to reorder'}>
                                             ≡
                                           </span>
@@ -4381,12 +4536,48 @@ function App({ runtime = 'web' }: AppProps) {
                 >
                   {text.themeDark}
                 </button>
-                <button
-                  className={`lang-option ${settings.themeMode === 'glass' ? 'active' : ''}`}
-                  onClick={() => updateSettings({ themeMode: 'glass' })}
-                >
-                  {text.themeGlass}
-                </button>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <h3>{text.localApiTitle}</h3>
+              <p>{text.localApiHint}</p>
+              <div className="local-api-status-card">
+                <div className="local-api-status-head">
+                  <span className={`local-api-status-pill ${localApiStatus}`}>
+                    {localApiStatus === 'online'
+                      ? text.localApiStatusOnline
+                      : localApiStatus === 'offline'
+                        ? text.localApiStatusOffline
+                        : localApiStatus === 'checking'
+                          ? text.localApiStatusChecking
+                          : text.localApiStatusIdle}
+                  </span>
+                  <span>{localApiHealth?.version ? `${text.localApiVersionLabel}: ${localApiHealth.version}` : localApiBaseUrl}</span>
+                </div>
+                <dl className="local-api-meta">
+                  <div>
+                    <dt>{text.localApiUrlLabel}</dt>
+                    <dd>{localApiHealth?.apiBaseUrl || localApiBaseUrl}</dd>
+                  </div>
+                  <div>
+                    <dt>{text.localApiStartCommandLabel}</dt>
+                    <dd className="local-api-command">{localApiStartCommand}</dd>
+                  </div>
+                </dl>
+                <p>{text.localApiBrowserCannotStart}</p>
+                {localApiStatusMessage ? <p className="local-api-status-message">{localApiStatusMessage}</p> : null}
+                <div className="local-api-actions">
+                  <button type="button" className="settings-inline-btn" onClick={() => void refreshLocalApiStatus()}>
+                    {text.localApiRefresh}
+                  </button>
+                  <button type="button" className="settings-inline-btn" onClick={openLocalApiHealth}>
+                    {text.localApiOpenHealth}
+                  </button>
+                  <button type="button" className="settings-inline-btn" onClick={() => void handleStartLocalApi()} disabled={localApiStarting}>
+                    {localApiStarting ? text.localApiStarting : onStartLocalApi ? text.localApiStartButton : text.localApiCopyStartCommand}
+                  </button>
+                </div>
               </div>
             </div>
 

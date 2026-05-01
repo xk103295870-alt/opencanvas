@@ -1,4 +1,4 @@
-# Open Canvas API Reference
+# Canvas Workbench API Reference
 
 This document summarizes the current API contract implemented in `server/index.ts`.
 
@@ -78,7 +78,7 @@ Request body:
 
 ```json
 {
-  "name": "Open Canvas User",
+  "name": "Canvas Workbench User",
   "email": "user@example.com",
   "provider": "demo",
   "avatarUrl": "https://..."
@@ -97,7 +97,7 @@ Response `data`:
 {
   "account": {
     "id": "acct-...",
-    "name": "Open Canvas User",
+    "name": "Canvas Workbench User",
     "email": "user@example.com",
     "provider": "demo",
     "avatarUrl": "https://..."
@@ -120,7 +120,7 @@ Request body:
 
 ```json
 {
-  "name": "Open Canvas API Key",
+  "name": "Canvas Workbench API Key",
   "scopes": ["canvas:read", "canvas:write"]
 }
 ```
@@ -132,7 +132,7 @@ Response `data`:
   "apiKey": "oc_live_key-..._...",
   "key": {
     "id": "key-...",
-    "name": "Open Canvas API Key",
+    "name": "Canvas Workbench API Key",
     "prefix": "oc_live_key-...",
     "scopes": ["canvas:read", "canvas:write"],
     "createdAt": "2026-03-01T00:00:00.000Z"
@@ -300,7 +300,10 @@ Supported kinds:
 Kind-specific fields:
 
 - media (`image|video|pdf`): `fileName`, `mediaUrl`
-- `todo`: `todoItems` (array of string or object `{ text, done?, status? }`)
+- `todo`: `todoItems` (array of string or object `{ text, done?, status?, tag? }`)
+  - allowed `status`: `todo`, `doing`, `done`
+  - allowed `tag`: `event`, `feature`, `important`, `plan`, `bug`, `idea`
+  - missing or unknown `tag` defaults to `event`
 - `calendar`: `calendar` object with cursor/selected date/view/events
 
 Card policy:
@@ -368,7 +371,7 @@ curl -X POST http://127.0.0.1:8787/api/v1/auth/demo-login \
 curl -X POST http://127.0.0.1:8787/api/v1/auth/api-keys \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"name":"Open Canvas API Key","scopes":["canvas:read","canvas:write"]}'
+  -d '{"name":"Canvas Workbench API Key","scopes":["canvas:read","canvas:write"]}'
 ```
 
 3. Create card:
@@ -388,9 +391,26 @@ curl -X POST http://127.0.0.1:8787/api/v1/cards \
   - sessions
   - apiKeys
   - workspaces
+  - assets
 
 ## 9. Compatibility Notes
 
 - Keep using `/api/v1/*` only.
 - Do not use removed legacy `/v1/*` endpoints.
 - For tooling and contract validation, prefer `GET /openapi.json`.
+
+## 10. Shared Data Contract Notes
+
+Canvas Workbench now uses one shared workspace contract across the frontend, API client, and local API server for core card data:
+
+- `todoItems[]` include `id`, `text`, `status`, and optional `tag`.
+- Missing Todo tags are normalized to `event` for backward compatibility with older local data.
+- Calendar defaults use local-date keys (`YYYY-MM-DD`) to avoid UTC timezone drift.
+- Default card sizes are aligned between frontend and API:
+  - note: `340 x 280`
+  - todo: `760 x 430`
+  - calendar: `480 x 560`
+  - hint: `300 x 420`
+  - image: `360 x 280`
+  - video: `420 x 300`
+  - pdf: `460 x 360`

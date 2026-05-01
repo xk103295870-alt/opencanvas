@@ -455,7 +455,8 @@
 
 .canvas-status,
 .canvas-command-group,
-.zoom-btn {
+.zoom-btn,
+.local-api-dropdown {
   background: color-mix(in srgb, var(--app-bg) 86%, transparent);
   border: 1px solid var(--line);
   backdrop-filter: blur(10px);
@@ -528,6 +529,42 @@
 
 .zoom-btn.settings-trigger {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+
+.local-api-menu {
+  position: relative;
+}
+
+.local-api-trigger {
+  min-width: 96px;
+}
+
+.local-api-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 210px;
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--card-shadow) 35%, transparent);
+}
+
+.local-api-dropdown button {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 11px;
+}
+
+.local-api-dropdown button:hover {
+  background: var(--icon-bg);
 }
 
 .zoom-label {
@@ -1164,6 +1201,40 @@
   padding: 3px 7px;
   font-size: 11px;
   font-weight: 650;
+}
+
+.todo-item-tag-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.todo-item-tag-select-wrap .todo-item-tag {
+  pointer-events: none;
+  padding-right: 18px;
+}
+
+.todo-item-tag-select-wrap::after {
+  content: '▾';
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-52%);
+  color: var(--text-dim);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.todo-item-tag-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .todo-item-tag span {
@@ -1915,150 +1986,272 @@
   color: var(--text-main);
 }
 
-:root[data-theme='glass'] .sidebar,
-:root[data-theme='glass'] .action-btn,
-:root[data-theme='glass'] .icon-btn,
-:root[data-theme='glass'] .grid-item,
-:root[data-theme='glass'] .canvas-toolbar,
-:root[data-theme='glass'] .zoom-btn,
-:root[data-theme='glass'] .todo-lane,
-:root[data-theme='glass'] .todo-board-item,
-:root[data-theme='glass'] .calendar-day,
-:root[data-theme='glass'] .calendar-day-preview-item,
-:root[data-theme='glass'] .calendar-event-item,
-:root[data-theme='glass'] .settings-group,
-:root[data-theme='glass'] .canvas-status,
-:root[data-theme='glass'] .canvas-command-group,
-:root[data-theme='glass'] .language-switch,
-:root[data-theme='glass'] .calendar-view-switch,
-:root[data-theme='glass'] .todo-add-btn,
-:root[data-theme='glass'] .calendar-add-btn,
-:root[data-theme='glass'] .calendar-nav-btn,
-:root[data-theme='glass'] .settings-close {
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+.local-api-status-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-bg-top) 82%, transparent);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
 }
 
-:root[data-theme='glass'] .sidebar {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    18px 0 42px rgba(120, 149, 188, 0.16);
+.local-api-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-soft);
+  font-size: 12px;
 }
 
-:root[data-theme='glass'] .action-btn,
-:root[data-theme='glass'] .icon-btn,
-:root[data-theme='glass'] .grid-item,
-:root[data-theme='glass'] .canvas-toolbar,
-:root[data-theme='glass'] .zoom-btn,
-:root[data-theme='glass'] .todo-lane,
-:root[data-theme='glass'] .todo-board-item,
-:root[data-theme='glass'] .calendar-day,
-:root[data-theme='glass'] .calendar-day-preview-item,
-:root[data-theme='glass'] .calendar-event-item,
-:root[data-theme='glass'] .settings-group,
-:root[data-theme='glass'] .canvas-status,
-:root[data-theme='glass'] .canvas-command-group,
-:root[data-theme='glass'] .todo-add-btn,
-:root[data-theme='glass'] .calendar-add-btn,
-:root[data-theme='glass'] .calendar-nav-btn,
-:root[data-theme='glass'] .settings-close {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.56),
-    0 14px 34px rgba(96, 124, 166, 0.12);
+.local-api-status-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--text-soft);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-:root[data-theme='glass'] .brand-logo {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.14) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 10px 24px rgba(103, 129, 170, 0.16);
-}
-
-:root[data-theme='glass'] .card,
-:root[data-theme='glass'] .confirm-dialog,
-:root[data-theme='glass'] .todo-draft-dialog,
-:root[data-theme='glass'] .settings-dialog {
-  backdrop-filter: blur(30px) saturate(190%);
-  -webkit-backdrop-filter: blur(30px) saturate(190%);
-}
-
-:root[data-theme='glass'] .card {
-  box-shadow:
-    0 26px 62px rgba(84, 112, 154, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    inset 0 -12px 32px rgba(255, 255, 255, 0.08);
-}
-
-:root[data-theme='glass'] .settings-dialog {
-  box-shadow:
-    0 30px 72px rgba(84, 110, 148, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.76);
-}
-
-:root[data-theme='glass'] .card::before,
-:root[data-theme='glass'] .confirm-dialog::before,
-:root[data-theme='glass'] .todo-draft-dialog::before,
-:root[data-theme='glass'] .settings-dialog::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.56) 0%, rgba(255, 255, 255, 0.16) 34%, rgba(255, 255, 255, 0.02) 62%, transparent 100%),
-    radial-gradient(circle at 100% 0%, rgba(130, 178, 255, 0.22), transparent 34%);
-}
-
-:root[data-theme='glass'] .card > :not(.card-resize-handle),
-:root[data-theme='glass'] .confirm-dialog > *,
-:root[data-theme='glass'] .todo-draft-dialog > *,
-:root[data-theme='glass'] .settings-dialog > * {
-  position: relative;
-  z-index: 1;
-}
-
-:root[data-theme='glass'] .grid-item.active,
-:root[data-theme='glass'] .lang-option.active,
-:root[data-theme='glass'] .calendar-view-btn.active {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.24) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 10px 20px rgba(104, 131, 171, 0.14);
-}
-
-:root[data-theme='glass'] .canvas.is-file-over::after {
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(18px) saturate(170%);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
+.local-api-status-pill.online {
+  border-color: color-mix(in srgb, var(--brand-green) 42%, var(--line));
+  background: color-mix(in srgb, var(--brand-green) 13%, var(--badge-bg));
   color: var(--text-main);
 }
 
-:root[data-theme='glass'] .card-header {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.08) 100%);
+.local-api-status-pill.offline {
+  border-color: color-mix(in srgb, #f0803c 42%, var(--line));
+  background: color-mix(in srgb, #f0803c 12%, var(--badge-bg));
+  color: var(--text-main);
 }
 
-:root[data-theme='glass'] .card-resize-handle {
-  border-color: rgba(255, 255, 255, 0.74);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(226, 239, 255, 0.34) 100%);
+.local-api-status-pill.checking {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--badge-bg));
+  color: var(--text-main);
+}
+
+.local-api-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.local-api-meta div {
+  display: grid;
+  gap: 3px;
+}
+
+.local-api-meta dt {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.local-api-meta dd {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.local-api-command {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-bg) 78%, transparent);
+  color: var(--text-main) !important;
+  font-family: var(--font-mono);
+  padding: 7px 8px;
+}
+
+.local-api-status-message {
+  color: var(--text-soft) !important;
+}
+
+.local-api-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-inline-btn {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--icon-bg);
+  color: var(--text-soft);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-inline-btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text-main);
+}
+
+.settings-inline-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+:root[data-theme='light'] .app-shell {
+  background:
+    radial-gradient(circle at 16% 8%, rgba(255, 255, 255, 0.92), transparent 28%),
+    radial-gradient(circle at 82% 6%, rgba(79, 166, 184, 0.16), transparent 30%),
+    radial-gradient(circle at 74% 82%, rgba(225, 179, 117, 0.14), transparent 28%),
+    linear-gradient(145deg, #f8f5ef 0%, #f3f0e8 46%, #eef4f3 100%);
+}
+
+:root[data-theme='light'] .sidebar {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 10px 24px rgba(99, 125, 166, 0.22);
+    inset -1px 0 0 rgba(255, 255, 255, 0.72),
+    18px 0 44px rgba(66, 74, 91, 0.08);
 }
 
-:root[data-theme='glass'] .card-resize-handle::before {
-  border-right-color: rgba(23, 45, 74, 0.56);
-  border-bottom-color: rgba(23, 45, 74, 0.56);
+:root[data-theme='light'] .sidebar-toggle,
+:root[data-theme='light'] .canvas-toolbar,
+:root[data-theme='light'] .canvas-status,
+:root[data-theme='light'] .canvas-command-group,
+:root[data-theme='light'] .zoom-btn,
+:root[data-theme='light'] .local-api-dropdown {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(42, 53, 71, 0.1);
+  box-shadow:
+    0 14px 34px rgba(45, 56, 75, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
-:root[data-theme='glass'] .grid-remove-btn {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(229, 240, 255, 0.22) 100%);
-  border-color: rgba(255, 255, 255, 0.42);
+:root[data-theme='light'] .action-btn,
+:root[data-theme='light'] .icon-btn,
+:root[data-theme='light'] .grid-item,
+:root[data-theme='light'] .calendar-nav-btn,
+:root[data-theme='light'] .settings-close {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(42, 53, 71, 0.09);
+}
+
+:root[data-theme='light'] .grid-item.active,
+:root[data-theme='light'] .calendar-view-btn.active,
+:root[data-theme='light'] .lang-option.active {
+  background: linear-gradient(180deg, rgba(35, 133, 154, 0.13), rgba(35, 133, 154, 0.07));
+  border-color: rgba(35, 133, 154, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 8px 16px rgba(103, 129, 170, 0.12);
+    0 10px 20px rgba(35, 133, 154, 0.08);
 }
 
-:root[data-theme='glass'] .media-video {
-  background: linear-gradient(180deg, rgba(12, 22, 40, 0.9) 0%, rgba(18, 28, 48, 0.96) 100%);
+:root[data-theme='light'] .action-btn.action-primary,
+:root[data-theme='light'] .todo-add-btn,
+:root[data-theme='light'] .calendar-add-btn,
+:root[data-theme='light'] .todo-draft-primary {
+  border-color: rgba(35, 133, 154, 0.24);
+  background: linear-gradient(180deg, rgba(35, 133, 154, 0.14), rgba(35, 133, 154, 0.08));
+  color: var(--text-main);
+}
+
+:root[data-theme='light'] .card {
+  border-color: rgba(42, 53, 71, 0.1);
+  box-shadow:
+    0 22px 52px rgba(42, 52, 68, 0.13),
+    0 4px 14px rgba(42, 52, 68, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme='light'] .card:hover {
+  border-color: rgba(35, 133, 154, 0.24);
+  box-shadow:
+    0 26px 58px rgba(42, 52, 68, 0.15),
+    0 5px 16px rgba(42, 52, 68, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme='light'] .card-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(250, 247, 241, 0.62));
+  border-bottom-color: rgba(42, 53, 71, 0.09);
+}
+
+:root[data-theme='light'] .card-kind-pill,
+:root[data-theme='light'] .todo-board-total,
+:root[data-theme='light'] .todo-lane-count,
+:root[data-theme='light'] .todo-item-tag {
+  background: rgba(246, 242, 234, 0.9);
+  border-color: rgba(42, 53, 71, 0.09);
+}
+
+:root[data-theme='light'] .note-editor {
+  color: var(--text-main);
+}
+
+:root[data-theme='light'] .card-title-input,
+:root[data-theme='light'] .todo-entry-input,
+:root[data-theme='light'] .todo-item-input:focus,
+:root[data-theme='light'] .calendar-entry-input,
+:root[data-theme='light'] .calendar-event-input,
+:root[data-theme='light'] .grid-name-input,
+:root[data-theme='light'] .settings-text-input {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(42, 53, 71, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+:root[data-theme='light'] .todo-card-body {
+  background:
+    radial-gradient(circle at 12px 12px, rgba(35, 133, 154, 0.08) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(246, 242, 234, 0.22) 60%, transparent);
+}
+
+:root[data-theme='light'] .todo-lane {
+  border-color: rgba(42, 53, 71, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(250, 247, 241, 0.74));
+  box-shadow:
+    0 12px 26px rgba(45, 56, 75, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+:root[data-theme='light'] .todo-board-item {
+  border-color: rgba(42, 53, 71, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 247, 241, 0.9));
+  box-shadow:
+    0 12px 28px rgba(45, 56, 75, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme='light'] .todo-board-item:hover {
+  border-color: rgba(35, 133, 154, 0.24);
+}
+
+:root[data-theme='light'] .calendar-day,
+:root[data-theme='light'] .calendar-day-preview-item,
+:root[data-theme='light'] .calendar-event-item,
+:root[data-theme='light'] .settings-group,
+:root[data-theme='light'] .local-api-status-card,
+:root[data-theme='light'] .language-switch,
+:root[data-theme='light'] .calendar-view-switch {
+  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(42, 53, 71, 0.09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+:root[data-theme='light'] .calendar-day:hover {
+  border-color: rgba(35, 133, 154, 0.2);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+:root[data-theme='light'] .calendar-day.selected {
+  border-color: rgba(32, 216, 90, 0.62);
+  background: linear-gradient(180deg, rgba(32, 216, 90, 0.12), rgba(255, 255, 255, 0.72));
+}
+
+:root[data-theme='light'] .confirm-dialog,
+:root[data-theme='light'] .todo-draft-dialog,
+:root[data-theme='light'] .settings-dialog {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 247, 241, 0.96));
+  border-color: rgba(42, 53, 71, 0.1);
+  box-shadow: 0 30px 80px rgba(38, 48, 66, 0.2);
 }
 
 @keyframes settings-in {
