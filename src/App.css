@@ -2071,6 +2071,22 @@
   color: var(--text-soft) !important;
 }
 
+.local-api-auto-save {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.local-api-auto-save strong {
+  color: var(--text-main);
+  font-size: 13px;
+}
+
+.local-api-auto-save p {
+  margin: 4px 0 0;
+}
+
 .local-api-actions {
   display: flex;
   flex-wrap: wrap;

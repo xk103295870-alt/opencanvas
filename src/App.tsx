@@ -105,6 +105,8 @@ type AppSettings = {
   autoSync: boolean
   syncOnStartup: boolean
   syncDebounceMs: number
+  localApiAutoSaveEnabled: boolean
+  localApiAutoSaveMinutes: number
 }
 
 type AccountProvider = 'demo' | 'google'
@@ -251,6 +253,13 @@ type I18nText = {
   localApiStartFailedPrefix: string
   localApiStartCommandCopied: string
   localApiBrowserCannotStart: string
+  localApiAutoSaveTitle: string
+  localApiAutoSaveHint: string
+  localApiAutoSaveIntervalLabel: string
+  localApiAutoSaveEnable: string
+  localApiAutoSaveDisable: string
+  localApiAutoSaveEnabledStatus: string
+  localApiAutoSaveDisabledStatus: string
   localApiUrlLabel: string
   localApiVersionLabel: string
   localApiStartCommandLabel: string
@@ -477,6 +486,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSync: true,
   syncOnStartup: true,
   syncDebounceMs: 2400,
+  localApiAutoSaveEnabled: false,
+  localApiAutoSaveMinutes: 5,
 }
 
 const DEFAULT_CLI_BRIDGE_CONFIG: CliBridgeConfig = {
@@ -568,7 +579,14 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiStartSuccess: '本地 API 启动命令已发送。',
     localApiStartFailedPrefix: '启动失败：',
     localApiStartCommandCopied: '启动命令已复制。',
-    localApiBrowserCannotStart: '浏览器/Obsidian 页面不能直接拉起本地 Node 进程；请在终端运行下面命令。',
+    localApiBrowserCannotStart: '浏览器页面不能直接拉起本地 Node 进程；Obsidian 插件可直接启动。',
+    localApiAutoSaveTitle: '自动保存到本地 API',
+    localApiAutoSaveHint: '开启后会按设定间隔自动上传当前工作区到本地 API。',
+    localApiAutoSaveIntervalLabel: '自动保存间隔（分钟）',
+    localApiAutoSaveEnable: '开启自动保存',
+    localApiAutoSaveDisable: '关闭自动保存',
+    localApiAutoSaveEnabledStatus: '自动保存已开启',
+    localApiAutoSaveDisabledStatus: '自动保存未开启',
     localApiUrlLabel: 'API 地址',
     localApiVersionLabel: 'API 版本',
     localApiStartCommandLabel: '启动命令',
@@ -667,7 +685,14 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiStartSuccess: 'Local API start command sent.',
     localApiStartFailedPrefix: 'Start failed: ',
     localApiStartCommandCopied: 'Start command copied.',
-    localApiBrowserCannotStart: 'A browser/Obsidian page cannot directly start the local Node process. Run the command below in Terminal.',
+    localApiBrowserCannotStart: 'Browser pages cannot directly start the local Node process. The Obsidian plugin can start it directly.',
+    localApiAutoSaveTitle: 'Auto-save to Local API',
+    localApiAutoSaveHint: 'When enabled, the current workspace is uploaded to the Local API on this interval.',
+    localApiAutoSaveIntervalLabel: 'Auto-save interval (minutes)',
+    localApiAutoSaveEnable: 'Turn on auto-save',
+    localApiAutoSaveDisable: 'Turn off auto-save',
+    localApiAutoSaveEnabledStatus: 'Auto-save is on',
+    localApiAutoSaveDisabledStatus: 'Auto-save is off',
     localApiUrlLabel: 'API URL',
     localApiVersionLabel: 'API version',
     localApiStartCommandLabel: 'Start command',
@@ -1030,6 +1055,13 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
   const syncDebounceMs = Number.isFinite(syncDebounceMsRaw)
     ? Math.max(500, Math.min(12_000, Math.round(syncDebounceMsRaw)))
     : DEFAULT_SETTINGS.syncDebounceMs
+  const localApiAutoSaveEnabled = typeof input?.localApiAutoSaveEnabled === 'boolean'
+    ? input.localApiAutoSaveEnabled
+    : DEFAULT_SETTINGS.localApiAutoSaveEnabled
+  const localApiAutoSaveMinutesRaw = Number(input?.localApiAutoSaveMinutes)
+  const localApiAutoSaveMinutes = Number.isFinite(localApiAutoSaveMinutesRaw)
+    ? Math.max(1, Math.min(240, Math.round(localApiAutoSaveMinutesRaw)))
+    : DEFAULT_SETTINGS.localApiAutoSaveMinutes
 
   return {
     language,
@@ -1037,6 +1069,8 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
     autoSync,
     syncOnStartup,
     syncDebounceMs,
+    localApiAutoSaveEnabled,
+    localApiAutoSaveMinutes,
   }
 }
 
@@ -1325,6 +1359,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
+  const localApiAutoSaveRunningRef = useRef(false)
   const startupSyncUserRef = useRef<string | null>(null)
   const serverAuth = useRef<DisabledRemoteAuth | null>(null).current
   const lastCliBridgeWorkspaceUpdatedAtRef = useRef<string | null>(null)
@@ -1862,6 +1897,78 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     [account, resolveApiBaseUrl, resolveOptionalApiKey, updateCliBridgeLayoutSyncMeta],
   )
 
+  const uploadWorkspaceToLocalApi = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      const currentGrids = gridsRef.current
+      const currentActiveGrid = currentGrids.find((grid) => grid.id === activeGridId) ?? currentGrids[0]
+      if (!currentActiveGrid) return false
+
+      try {
+        const assets = await getAllAssets()
+        const uploadedAssetUrls: Record<string, string> = {}
+        for (const grid of currentGrids) {
+          for (const card of grid.cards) {
+            if (!isMediaCardKind(card.kind) || !card.fileId || card.externalUrl) continue
+            const asset = assets.find((item) => item.id === card.fileId)
+            if (!asset) continue
+            const uploadedUrl = await persistCliBridgeAssetUpload(asset.id, asset.name, asset.type || 'application/octet-stream', asset.blob)
+            if (uploadedUrl) uploadedAssetUrls[card.id] = uploadedUrl
+          }
+        }
+        const gridsForUpload = currentGrids.map((grid) => ({
+          id: grid.id,
+          name: grid.name,
+          cards: grid.cards.map((card) =>
+            uploadedAssetUrls[card.id]
+              ? {
+                  ...card,
+                  externalUrl: uploadedAssetUrls[card.id],
+                }
+              : card,
+          ),
+        }))
+        const payload = {
+          name: 'My Canvas',
+          activeGridId,
+          grids: gridsForUpload,
+        }
+        await apiUploadWorkspaceState(resolveOptionalApiKey(), payload, resolveApiBaseUrl())
+        if (Object.keys(uploadedAssetUrls).length > 0) {
+          setGrids((current) =>
+            current.map((grid) => ({
+              ...grid,
+              cards: grid.cards.map((card) =>
+                uploadedAssetUrls[card.id]
+                  ? {
+                      ...card,
+                      externalUrl: uploadedAssetUrls[card.id],
+                    }
+                  : card,
+              ),
+            })),
+          )
+        }
+        updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
+        setSyncStatus('ok')
+        if (!silent) {
+          setSyncMessage(settings.language === 'zh' ? '已上传到本地 API。' : 'Uploaded workspace to Local API.')
+        }
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setSyncStatus('error')
+        setSyncMessage(
+          settings.language === 'zh'
+            ? `上传到本地 API 失败：${message}`
+            : `Failed to upload to Local API: ${message}`,
+        )
+        console.error('Failed to upload workspace to Local API:', error)
+        return false
+      }
+    },
+    [activeGridId, persistCliBridgeAssetUpload, resolveApiBaseUrl, resolveOptionalApiKey, settings.language, updateCliBridgeLayoutSyncMeta],
+  )
+
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('canvas-workbench:config', {
@@ -2185,6 +2292,25 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       window.clearTimeout(timer)
     }
   }, [activeGridId, account, grids, hydrated, isObsidianRuntime, performSync, settings.autoSync, settings.syncDebounceMs, viewport])
+
+  useEffect(() => {
+    if (!hydrated || !account || !settings.localApiAutoSaveEnabled) return
+
+    const intervalMs = Math.max(1, settings.localApiAutoSaveMinutes) * 60_000
+    const runAutoSave = () => {
+      if (skipLocalSyncMetaUpdateRef.current || localApiAutoSaveRunningRef.current) return
+      localApiAutoSaveRunningRef.current = true
+      void uploadWorkspaceToLocalApi({ silent: true }).finally(() => {
+        localApiAutoSaveRunningRef.current = false
+      })
+    }
+    const timer = window.setInterval(runAutoSave, intervalMs)
+    runAutoSave()
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [account, hydrated, settings.localApiAutoSaveEnabled, settings.localApiAutoSaveMinutes, uploadWorkspaceToLocalApi])
 
   useEffect(() => {
     if (!hydrated || !account) return
@@ -3567,66 +3693,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const handleUploadToLocalApi = async () => {
     setLocalApiMenuOpen(false)
-    if (!activeGrid) return
-
-    try {
-      const assets = await getAllAssets()
-      const uploadedAssetUrls: Record<string, string> = {}
-      for (const grid of grids) {
-        for (const card of grid.cards) {
-          if (!isMediaCardKind(card.kind) || !card.fileId || card.externalUrl) continue
-          const asset = assets.find((item) => item.id === card.fileId)
-          if (!asset) continue
-          const uploadedUrl = await persistCliBridgeAssetUpload(asset.id, asset.name, asset.type || 'application/octet-stream', asset.blob)
-          if (uploadedUrl) uploadedAssetUrls[card.id] = uploadedUrl
-        }
-      }
-      const gridsForUpload = grids.map((grid) => ({
-        id: grid.id,
-        name: grid.name,
-        cards: grid.cards.map((card) =>
-          uploadedAssetUrls[card.id]
-            ? {
-                ...card,
-                externalUrl: uploadedAssetUrls[card.id],
-              }
-            : card,
-        ),
-      }))
-      const payload = {
-        name: 'My Canvas',
-        activeGridId,
-        grids: gridsForUpload,
-      }
-      await apiUploadWorkspaceState(resolveOptionalApiKey(), payload, resolveApiBaseUrl())
-      if (Object.keys(uploadedAssetUrls).length > 0) {
-        setGrids((current) =>
-          current.map((grid) => ({
-            ...grid,
-            cards: grid.cards.map((card) =>
-              uploadedAssetUrls[card.id]
-                ? {
-                    ...card,
-                    externalUrl: uploadedAssetUrls[card.id],
-                  }
-                : card,
-            ),
-          })),
-        )
-      }
-      updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
-      setSyncStatus('ok')
-      setSyncMessage(settings.language === 'zh' ? '已上传到本地 API。' : 'Uploaded workspace to Local API.')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setSyncStatus('error')
-      setSyncMessage(
-        settings.language === 'zh'
-          ? `上传到本地 API 失败：${message}`
-          : `Failed to upload to Local API: ${message}`,
-      )
-      console.error('Failed to upload workspace to Local API:', error)
-    }
+    await uploadWorkspaceToLocalApi({ silent: false })
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
@@ -4566,6 +4633,38 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   </div>
                 </dl>
                 <p>{text.localApiBrowserCannotStart}</p>
+                <div className="local-api-auto-save">
+                  <div>
+                    <strong>{text.localApiAutoSaveTitle}</strong>
+                    <p>{text.localApiAutoSaveHint}</p>
+                  </div>
+                  <label className="input-row">
+                    <span>{text.localApiAutoSaveIntervalLabel}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="240"
+                      step="1"
+                      className="settings-text-input"
+                      value={settings.localApiAutoSaveMinutes}
+                      onChange={(event) => updateSettings({ localApiAutoSaveMinutes: Number(event.target.value) })}
+                    />
+                  </label>
+                  <div className="local-api-actions">
+                    <span className={`local-api-status-pill ${settings.localApiAutoSaveEnabled ? 'online' : 'idle'}`}>
+                      {settings.localApiAutoSaveEnabled
+                        ? text.localApiAutoSaveEnabledStatus
+                        : text.localApiAutoSaveDisabledStatus}
+                    </span>
+                    <button
+                      type="button"
+                      className="settings-inline-btn"
+                      onClick={() => updateSettings({ localApiAutoSaveEnabled: !settings.localApiAutoSaveEnabled })}
+                    >
+                      {settings.localApiAutoSaveEnabled ? text.localApiAutoSaveDisable : text.localApiAutoSaveEnable}
+                    </button>
+                  </div>
+                </div>
                 {localApiStatusMessage ? <p className="local-api-status-message">{localApiStatusMessage}</p> : null}
                 <div className="local-api-actions">
                   <button type="button" className="settings-inline-btn" onClick={() => void refreshLocalApiStatus()}>

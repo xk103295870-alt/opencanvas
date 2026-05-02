@@ -721,17 +721,11 @@ function requireApiKey(scope: (typeof VALID_SCOPES)[number]) {
 }
 
 app.get('/health', (_req, res) => {
-  const gitStatus = getGitStatus()
   res.json({
     ok: true,
     version: APP_VERSION,
     apiBaseUrl: API_BASE_URL,
     webOrigin: WEB_ORIGIN,
-    updateAvailable: gitStatus.updateAvailable,
-    currentRevision: gitStatus.currentRevision,
-    remoteRevision: gitStatus.remoteRevision,
-    remoteName: gitStatus.remoteName,
-    branchName: gitStatus.branchName,
   })
 })
 
@@ -1344,6 +1338,14 @@ app.delete('/api/v1/assets/:assetId', requireApiKey('canvas:write'), (req, res) 
   saveDb()
 
   res.json({ ok: true, message: 'Asset deleted', data: { assetId } })
+})
+
+app.get('/api/v1/system/git-status', requireSession, (_req, res) => {
+  const gitStatus = getGitStatus()
+  res.json({
+    ok: true,
+    data: gitStatus,
+  })
 })
 
 app.post('/api/v1/system/update', requireSession, (req, res) => {
