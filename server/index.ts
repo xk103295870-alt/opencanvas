@@ -15,76 +15,7 @@ import {
   type CardKind,
   type GridData,
 } from '../src/shared/workspaceTypes'
-
-type AssetRecord = {
-  id: string
-  accountId: string
-  workspaceId: string
-  name: string
-  type: string
-  size: number
-  publicToken: string
-  createdAt: string
-  updatedAt: string
-}
-
-type GridData = {
-  id: string
-  name: string
-  cards: CardData[]
-}
-
-type WorkspaceRecord = {
-  id: string
-  accountId: string
-  name: string
-  activeGridId: string
-  grids: GridData[]
-  createdAt: string
-  updatedAt: string
-}
-
-type AccountProvider = 'demo' | 'google'
-
-type AccountRecord = {
-  id: string
-  name: string
-  email: string
-  provider: AccountProvider
-  avatarUrl?: string
-  createdAt: string
-  updatedAt: string
-}
-
-type SessionRecord = {
-  id: string
-  accountId: string
-  tokenHash: string
-  createdAt: string
-  expiresAt: string
-  lastUsedAt: string
-}
-
-type ApiKeyRecord = {
-  id: string
-  accountId: string
-  name: string
-  keyHash: string
-  prefix: string
-  scopes: string[]
-  createdAt: string
-  lastUsedAt: string
-  revokedAt?: string
-}
-
-type ApiDb = {
-  version: number
-  accounts: AccountRecord[]
-  sessions: SessionRecord[]
-  apiKeys: ApiKeyRecord[]
-  workspaces: WorkspaceRecord[]
-  assets: AssetRecord[]
-}
+import { SqliteStore, type AccountProvider, type AccountRecord, type ApiDb, type ApiKeyRecord, type AssetRecord, type SessionRecord, type WorkspaceRecord } from './storage/sqliteStore'
 
 type CanvasWorkbenchCreateCardPayload = {
   id?: string
@@ -143,12 +74,19 @@ type RequestContext = {
   workspace?: WorkspaceRecord
 }
 
+type SseClient = {
+  id: string
+  workspaceId: string
+  res: Response
+}
+
 const APP_VERSION = '0.2.0-api'
 const API_HOST = process.env.CANVAS_WORKBENCH_API_HOST || '127.0.0.1'
-const API_PORT = Number(process.env.CANVAS_WORKBENCH_API_PORT || '8787')
+const API_PORT = Number(process.env.CANVAS_WORKBENCH_API_PORT || '8799')
 const API_BASE_URL = process.env.CANVAS_WORKBENCH_API_BASE_URL || `http://${API_HOST}:${API_PORT}`
 const WEB_ORIGIN = process.env.CANVAS_WORKBENCH_WEB_ORIGIN || 'http://127.0.0.1:5173'
 const DB_PATH = path.join(process.cwd(), '.runtime', 'api-db.json')
+const SQLITE_DB_PATH = path.join(process.cwd(), '.runtime', 'canvas-workbench.db')
 const ASSET_ROOT = path.join(process.cwd(), '.runtime', 'assets')
 const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
@@ -159,6 +97,7 @@ const LOCAL_ACCOUNT_NAME = 'Local Workspace'
 const STANDARD_PREFIX = '/api/v1'
 
 const app = express()
+const sseClients = new Map<string, SseClient>()
 app.use(
   cors({
     origin: true,
@@ -237,6 +176,40 @@ function toAssetUrl(assetId: string, publicToken: string) {
   return `${API_BASE_URL}/api/v1/assets/${encodeURIComponent(assetId)}?token=${encodeURIComponent(publicToken)}`
 }
 
+function sendSse(res: Response, event: string, data: unknown) {
+  res.write(`event: ${event}\n`)
+  res.write(`data: ${JSON.stringify(data)}\n\n`)
+}
+
+function broadcastWorkspaceEvent(workspace: WorkspaceRecord, operation: string) {
+  const payload = {
+    type: 'workspace.updated',
+    workspaceId: workspace.id,
+    revision: workspace.revision,
+    updatedAt: workspace.updatedAt,
+    source: 'api',
+    operation,
+  }
+
+  for (const client of sseClients.values()) {
+    if (client.workspaceId !== workspace.id) continue
+    sendSse(client.res, 'workspace.updated', payload)
+  }
+}
+
+function commitWorkspaceMutation(workspace: WorkspaceRecord, operation: string) {
+  const touched = store.touchWorkspace(workspace.id)
+  if (touched) {
+    workspace.updatedAt = touched.updatedAt
+    workspace.revision = touched.revision
+  } else {
+    workspace.updatedAt = nowIso()
+    workspace.revision = (workspace.revision ?? 0) + 1
+    saveDb()
+  }
+  broadcastWorkspaceEvent(workspace, operation)
+}
+
 // For /api/v1 requests, normalize internal { ok, ... } payloads into envelope format:
 // success -> { data, meta? }, error -> { error: { code, message, details? } }.
 app.use((req, res, next) => {
@@ -279,7 +252,8 @@ app.use((req, res, next) => {
   next()
 })
 
-const db = loadDb()
+const store = new SqliteStore(SQLITE_DB_PATH, DB_PATH)
+const db = store.snapshot()
 
 function nowIso() {
   return new Date().toISOString()
@@ -424,26 +398,11 @@ function spawnDetachedCommand(command: string, args: string[], env: NodeJS.Proce
 }
 
 function loadDb(): ApiDb {
-  try {
-    if (!fs.existsSync(DB_PATH)) return createEmptyDb()
-    const parsed = JSON.parse(fs.readFileSync(DB_PATH, 'utf8')) as Partial<ApiDb>
-    if (!parsed || typeof parsed !== 'object') return createEmptyDb()
-    return {
-      version: 1,
-      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      apiKeys: Array.isArray(parsed.apiKeys) ? parsed.apiKeys : [],
-      workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
-      assets: Array.isArray(parsed.assets) ? parsed.assets : [],
-    }
-  } catch {
-    return createEmptyDb()
-  }
+  return store.snapshot()
 }
 
 function saveDb() {
-  ensureDirFor(DB_PATH)
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8')
+  store.replaceAll(db)
 }
 
 function createEmptyDb(): ApiDb {
@@ -475,8 +434,10 @@ function toPublicAccount(account: AccountRecord) {
 
 function parseBearer(req: Request) {
   const value = req.headers.authorization
-  if (!value || !value.toLowerCase().startsWith('bearer ')) return null
-  return value.slice(7).trim()
+  if (value && value.toLowerCase().startsWith('bearer ')) return value.slice(7).trim()
+  const queryApiKey = req.query.apiKey
+  if (typeof queryApiKey === 'string' && queryApiKey.trim()) return queryApiKey.trim()
+  return null
 }
 
 function normalizeEmail(raw: string) {
@@ -583,6 +544,7 @@ function createDefaultWorkspace(accountId: string): WorkspaceRecord {
     activeGridId: 'grid-a',
     createdAt: now,
     updatedAt: now,
+    revision: 0,
     grids: [{ id: 'grid-a', name: 'Grid A', cards: [] }],
   }
 }
@@ -681,8 +643,6 @@ function requireApiKey(scope: (typeof VALID_SCOPES)[number]) {
     if (!token) {
       const account = ensureLocalAccount()
       const workspace = ensureWorkspace(account.id)
-      workspace.updatedAt = nowIso()
-      saveDb()
 
       const ctx = ensureCtx(req)
       ctx.account = account
@@ -709,7 +669,6 @@ function requireApiKey(scope: (typeof VALID_SCOPES)[number]) {
     }
     const workspace = ensureWorkspace(account.id)
     apiKey.lastUsedAt = nowIso()
-    workspace.updatedAt = nowIso()
     saveDb()
 
     const ctx = ensureCtx(req)
@@ -1053,6 +1012,7 @@ app.get('/api/v1/state', requireApiKey('canvas:read'), (req, res) => {
       name: ctx.workspace.name,
       activeGridId: ctx.workspace.activeGridId,
       updatedAt: ctx.workspace.updatedAt,
+      revision: ctx.workspace.revision,
       grids: ctx.workspace.grids.map((grid) => ({
         id: grid.id,
         name: grid.name,
@@ -1067,6 +1027,37 @@ app.get('/api/v1/state', requireApiKey('canvas:read'), (req, res) => {
           lastUsedAt: ctx.apiKey.lastUsedAt,
         }
       : null,
+  })
+})
+
+app.get('/api/v1/events/stream', requireApiKey('canvas:read'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders?.()
+
+  const client: SseClient = { id: `sse-${uid(12)}`, workspaceId: ctx.workspace.id, res }
+  sseClients.set(client.id, client)
+  sendSse(res, 'hello', {
+    type: 'hello',
+    workspaceId: ctx.workspace.id,
+    revision: ctx.workspace.revision,
+    updatedAt: ctx.workspace.updatedAt,
+  })
+
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n')
+  }, 25_000)
+
+  req.on('close', () => {
+    clearInterval(heartbeat)
+    sseClients.delete(client.id)
   })
 })
 
@@ -1111,8 +1102,7 @@ app.post('/api/v1/grids', requireApiKey('canvas:write'), (req, res) => {
   const grid: GridData = { id: gridId, name, cards: [] }
   ctx.workspace.grids.push(grid)
   if (body?.activate !== false) ctx.workspace.activeGridId = gridId
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'grid.create')
 
   res.json({
     ok: true,
@@ -1159,8 +1149,7 @@ app.patch('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) => 
     ctx.workspace.activeGridId = grid.id
   }
 
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, hasName ? 'grid.update' : 'grid.activate')
 
   res.json({
     ok: true,
@@ -1205,8 +1194,7 @@ app.delete('/api/v1/grids/:gridId', requireApiKey('canvas:write'), (req, res) =>
     }
   }
 
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'grid.delete')
 
   res.json({
     ok: true,
@@ -1258,7 +1246,7 @@ app.post('/api/v1/assets', requireApiKey('canvas:write'), (req, res) => {
   } else {
     db.assets.push(record)
   }
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'asset.upload')
 
   res.json({
     ok: true,
@@ -1335,7 +1323,7 @@ app.delete('/api/v1/assets/:assetId', requireApiKey('canvas:write'), (req, res) 
   }
 
   db.assets.splice(index, 1)
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'asset.delete')
 
   res.json({ ok: true, message: 'Asset deleted', data: { assetId } })
 })
@@ -1422,8 +1410,7 @@ app.put('/api/v1/state', requireApiKey('canvas:write'), (req, res) => {
   ctx.workspace.activeGridId = nextGrids.some((grid) => grid.id === requestedActiveGridId)
     ? requestedActiveGridId
     : nextGrids[0].id
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'workspace.replace')
 
   res.json({
     ok: true,
@@ -1434,6 +1421,7 @@ app.put('/api/v1/state', requireApiKey('canvas:write'), (req, res) => {
         name: ctx.workspace.name,
         activeGridId: ctx.workspace.activeGridId,
         updatedAt: ctx.workspace.updatedAt,
+        revision: ctx.workspace.revision,
         grids: ctx.workspace.grids.map((grid) => ({
           id: grid.id,
           name: grid.name,
@@ -1472,7 +1460,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   if (existingSingletonCard) {
     if (body.activateGrid) {
       ctx.workspace.activeGridId = targetGrid.id
-      saveDb()
+      commitWorkspaceMutation(ctx.workspace, 'card.reuse')
     }
 
     res.json({
@@ -1519,8 +1507,7 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
 
   targetGrid.cards.push(card)
   if (body.activateGrid) ctx.workspace.activeGridId = targetGrid.id
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'card.create')
 
   res.json({
     ok: true,
@@ -1586,8 +1573,7 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
     return
   }
 
-  ctx.workspace.updatedAt = nowIso()
-  saveDb()
+  commitWorkspaceMutation(ctx.workspace, 'card.update')
   res.json({ ok: true, message: 'Card updated', data: { cardId, gridId: targetGridId, card: updatedCard } })
 })
 
@@ -1609,8 +1595,7 @@ app.delete('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) =>
     if (index < 0) continue
 
     grid.cards.splice(index, 1)
-    ctx.workspace.updatedAt = nowIso()
-    saveDb()
+    commitWorkspaceMutation(ctx.workspace, 'card.delete')
     res.json({ ok: true, message: 'Card deleted', data: { cardId, gridId: grid.id } })
     return
   }
@@ -1636,8 +1621,7 @@ app.post('/api/v1/cards/:cardId/append-note', requireApiKey('canvas:write'), (re
     const card = grid.cards.find((item) => item.id === cardId)
     if (!card) continue
     card.content = card.content ? `${card.content}\n${text}` : text
-    ctx.workspace.updatedAt = nowIso()
-    saveDb()
+    commitWorkspaceMutation(ctx.workspace, 'card.append-note')
     res.json({ ok: true, message: 'Content appended', data: { cardId, gridId: grid.id } })
     return
   }
@@ -1654,5 +1638,5 @@ app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
 app.listen(API_PORT, API_HOST, () => {
   console.log(`[canvas-workbench-api] v${APP_VERSION} listening on ${API_BASE_URL}`)
   console.log(`[canvas-workbench-api] web origin: ${WEB_ORIGIN}`)
-  console.log(`[canvas-workbench-api] db: ${DB_PATH}`)
+  console.log(`[canvas-workbench-api] db: ${store.databasePath}`)
 })

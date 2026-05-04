@@ -15,7 +15,9 @@ import {
   apiUpdateCard,
   apiUpdateGrid,
   apiUploadWorkspaceState,
+  createWorkspaceEventSource,
   getApiBaseUrl,
+  type ServerWorkspaceEvent,
 } from './apiClient'
 import {
   CARD_DEFAULT_SIZES,
@@ -566,7 +568,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     cliBridgeTitle: 'CLI Bridge 集成',
     cliBridgeHint: '这里保留 API、Skill 和本地联动需要的配置，旧网关字段已收起。',
     localApiTitle: '本地 API',
-    localApiHint: '本地 API 负责 CLI、Web 和 Obsidian 之间的数据交换。这里可以查看连接状态。',
+    localApiHint: '本地 API / SQLite 是 CLI、Web 和 Obsidian 共用的本地数据库。在线时会自动同步，下面仅保留状态和兜底操作。',
     localApiStatusOnline: '在线',
     localApiStatusOffline: '离线',
     localApiStatusChecking: '检测中',
@@ -580,13 +582,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiStartFailedPrefix: '启动失败：',
     localApiStartCommandCopied: '启动命令已复制。',
     localApiBrowserCannotStart: '浏览器页面不能直接拉起本地 Node 进程；Obsidian 插件可直接启动。',
-    localApiAutoSaveTitle: '自动保存到本地 API',
-    localApiAutoSaveHint: '开启后会按设定间隔自动上传当前工作区到本地 API。',
-    localApiAutoSaveIntervalLabel: '自动保存间隔（分钟）',
-    localApiAutoSaveEnable: '开启自动保存',
-    localApiAutoSaveDisable: '关闭自动保存',
-    localApiAutoSaveEnabledStatus: '自动保存已开启',
-    localApiAutoSaveDisabledStatus: '自动保存未开启',
+    localApiAutoSaveTitle: '浏览器缓存备份到本地数据库',
+    localApiAutoSaveHint: '在线模式会实时写入本地数据库；此开关仅作为浏览器缓存定时导入的兜底备份。',
+    localApiAutoSaveIntervalLabel: '备份间隔（分钟）',
+    localApiAutoSaveEnable: '开启兜底备份',
+    localApiAutoSaveDisable: '关闭兜底备份',
+    localApiAutoSaveEnabledStatus: '兜底备份已开启',
+    localApiAutoSaveDisabledStatus: '兜底备份未开启',
     localApiUrlLabel: 'API 地址',
     localApiVersionLabel: 'API 版本',
     localApiStartCommandLabel: '启动命令',
@@ -672,7 +674,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     cliBridgeTitle: 'CLI Bridge Integration',
     cliBridgeHint: 'Keep only the API, skill and local integration settings. Legacy gateway fields are hidden.',
     localApiTitle: 'Local API',
-    localApiHint: 'The Local API exchanges data between CLI, Web, and Obsidian. Check its connection status here.',
+    localApiHint: 'The Local API / SQLite database is shared by CLI, Web, and Obsidian. Online mode syncs automatically; this panel keeps status and fallback actions.',
     localApiStatusOnline: 'Online',
     localApiStatusOffline: 'Offline',
     localApiStatusChecking: 'Checking',
@@ -686,13 +688,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiStartFailedPrefix: 'Start failed: ',
     localApiStartCommandCopied: 'Start command copied.',
     localApiBrowserCannotStart: 'Browser pages cannot directly start the local Node process. The Obsidian plugin can start it directly.',
-    localApiAutoSaveTitle: 'Auto-save to Local API',
-    localApiAutoSaveHint: 'When enabled, the current workspace is uploaded to the Local API on this interval.',
-    localApiAutoSaveIntervalLabel: 'Auto-save interval (minutes)',
-    localApiAutoSaveEnable: 'Turn on auto-save',
-    localApiAutoSaveDisable: 'Turn off auto-save',
-    localApiAutoSaveEnabledStatus: 'Auto-save is on',
-    localApiAutoSaveDisabledStatus: 'Auto-save is off',
+    localApiAutoSaveTitle: 'Fallback browser-cache backup to local database',
+    localApiAutoSaveHint: 'Online mode writes to the local database in real time. This switch is only a fallback scheduled import from the browser cache.',
+    localApiAutoSaveIntervalLabel: 'Backup interval (minutes)',
+    localApiAutoSaveEnable: 'Turn on fallback backup',
+    localApiAutoSaveDisable: 'Turn off fallback backup',
+    localApiAutoSaveEnabledStatus: 'Fallback backup is on',
+    localApiAutoSaveDisabledStatus: 'Fallback backup is off',
     localApiUrlLabel: 'API URL',
     localApiVersionLabel: 'API version',
     localApiStartCommandLabel: 'Start command',
@@ -962,6 +964,17 @@ const mergeRemoteGridsWithLocalMediaCards = (remoteGrids: GridData[], localGrids
 const withCalendarDefaults = normalizeCalendarState
 
 const initialViewport: ViewportState = INITIAL_VIEWPORT
+
+const createCenteredViewport = (bounds?: { width: number; height: number } | null): ViewportState => {
+  const width = bounds?.width && bounds.width > 0 ? bounds.width : typeof window !== 'undefined' ? window.innerWidth : 1440
+  const height = bounds?.height && bounds.height > 0 ? bounds.height : typeof window !== 'undefined' ? window.innerHeight : 900
+
+  return {
+    zoom: 1,
+    x: width / 2 - SCENE_WIDTH / 2,
+    y: height / 2 - SCENE_HEIGHT / 2,
+  }
+}
 
 const initialGrids: GridData[] = [
   {
@@ -1363,6 +1376,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const startupSyncUserRef = useRef<string | null>(null)
   const serverAuth = useRef<DisabledRemoteAuth | null>(null).current
   const lastCliBridgeWorkspaceUpdatedAtRef = useRef<string | null>(null)
+  const lastCliBridgeWorkspaceRevisionRef = useRef<number | null>(null)
+  const localApiLiveInitialPullRef = useRef<string | null>(null)
+  const localApiLivePullTimerRef = useRef<number | null>(null)
   const particleRuntimeRef = useRef<ParticleRuntime>({
     energy: 0,
     originX: 50,
@@ -1492,7 +1508,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           const normalizedGrids = normalizeGridsForTodoBoard(persistedState.grids)
           setGrids(normalizedGrids)
           setActiveGridId(persistedState.activeGridId || normalizedGrids[0].id)
-          setViewport(persistedState.viewport ?? initialViewport)
+          setViewport(persistedState.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect()))
         }
 
         const urls: Record<string, string> = {}
@@ -1614,15 +1630,14 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const resolveApiBaseUrl = useCallback(() => {
     const configured = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
-    if (isObsidianRuntime && configured === 'http://127.0.0.1:8787') return 'http://127.0.0.1:8799'
     return configured
-  }, [isObsidianRuntime, serverAuth?.apiBaseUrl])
+  }, [serverAuth?.apiBaseUrl])
   const resolveOptionalApiKey = useCallback(() => serverAuth?.lastApiKey ?? '', [serverAuth?.lastApiKey])
   const localApiBaseUrl = resolveApiBaseUrl()
   const localApiStartCommand = useMemo(() => {
     try {
       const url = new URL(localApiBaseUrl)
-      return `canvas-workbench start --api-port ${url.port || '8787'}`
+      return `canvas-workbench start --api-port ${url.port || '8799'}`
     } catch {
       return 'canvas-workbench start'
     }
@@ -1951,7 +1966,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
         setSyncStatus('ok')
         if (!silent) {
-          setSyncMessage(settings.language === 'zh' ? '已上传到本地 API。' : 'Uploaded workspace to Local API.')
+          setSyncMessage(settings.language === 'zh' ? '已导入到本地数据库。' : 'Imported workspace into local database.')
         }
         return true
       } catch (error) {
@@ -1959,8 +1974,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         setSyncStatus('error')
         setSyncMessage(
           settings.language === 'zh'
-            ? `上传到本地 API 失败：${message}`
-            : `Failed to upload to Local API: ${message}`,
+            ? `导入到本地数据库失败：${message}`
+            : `Failed to import into local database: ${message}`,
         )
         console.error('Failed to upload workspace to Local API:', error)
         return false
@@ -2037,7 +2052,11 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
       const remote = await apiGetWorkspaceState(resolveOptionalApiKey(), apiBaseUrlOverride || resolveApiBaseUrl())
       const remoteUpdatedAt = remote.workspace.updatedAt || null
-      if (!force && remoteUpdatedAt && remoteUpdatedAt === lastCliBridgeWorkspaceUpdatedAtRef.current) {
+      const remoteRevision = typeof remote.workspace.revision === 'number' ? remote.workspace.revision : null
+      if (!force && remoteRevision !== null && remoteRevision === lastCliBridgeWorkspaceRevisionRef.current) {
+        return false
+      }
+      if (!force && remoteRevision === null && remoteUpdatedAt && remoteUpdatedAt === lastCliBridgeWorkspaceUpdatedAtRef.current) {
         return false
       }
 
@@ -2053,6 +2072,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       const hasLocalCards = gridsRef.current.some((grid) => grid.cards.length > 0)
       if (!hasRemoteCards && hasLocalCards && !force) {
         lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+        lastCliBridgeWorkspaceRevisionRef.current = remoteRevision
         return false
       }
 
@@ -2062,6 +2082,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       )
       if (!nextGrids.length) {
         lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+        lastCliBridgeWorkspaceRevisionRef.current = remoteRevision
         return false
       }
 
@@ -2092,6 +2113,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       })
       updateCliBridgeLayoutSyncMeta({ lastLayoutSyncAt: Date.now() })
       lastCliBridgeWorkspaceUpdatedAtRef.current = remoteUpdatedAt
+      lastCliBridgeWorkspaceRevisionRef.current = remoteRevision
       return true
     } catch {
       return false
@@ -2160,7 +2182,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         setAssetUrls(restoredUrls)
         setGrids(normalizeGridsForTodoBoard(snapshot.state.grids))
         setActiveGridId(snapshot.state.activeGridId)
-        setViewport(snapshot.state.viewport ?? initialViewport)
+        setViewport(snapshot.state.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect()))
         updateSyncMeta({
           lastLocalUpdateAt: snapshot.savedAt,
           lastSyncAt: Date.now(),
@@ -2315,6 +2337,60 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   useEffect(() => {
     if (!hydrated || !account) return
 
+    const apiBaseUrl = resolveApiBaseUrl()
+    const stream = createWorkspaceEventSource(resolveOptionalApiKey(), apiBaseUrl)
+    let closed = false
+
+    const schedulePull = (force = false) => {
+      if (closed) return
+      if (localApiLivePullTimerRef.current !== null) {
+        window.clearTimeout(localApiLivePullTimerRef.current)
+      }
+      localApiLivePullTimerRef.current = window.setTimeout(() => {
+        localApiLivePullTimerRef.current = null
+        void pullCliBridgeWorkspace(force, apiBaseUrl)
+      }, force ? 0 : 250)
+    }
+
+    stream.addEventListener('hello', (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data || '{}') as ServerWorkspaceEvent
+      if (typeof payload.revision === 'number') {
+        lastCliBridgeWorkspaceRevisionRef.current = payload.revision
+      }
+      if (payload.updatedAt) {
+        lastCliBridgeWorkspaceUpdatedAtRef.current = payload.updatedAt
+      }
+      if (localApiLiveInitialPullRef.current !== apiBaseUrl) {
+        localApiLiveInitialPullRef.current = apiBaseUrl
+        schedulePull(true)
+      }
+    })
+
+    stream.addEventListener('workspace.updated', (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data || '{}') as ServerWorkspaceEvent
+      if (payload.workspaceId && typeof payload.revision === 'number' && payload.revision === lastCliBridgeWorkspaceRevisionRef.current) {
+        return
+      }
+      schedulePull(false)
+    })
+
+    stream.onerror = () => {
+      stream.close()
+    }
+
+    return () => {
+      closed = true
+      stream.close()
+      if (localApiLivePullTimerRef.current !== null) {
+        window.clearTimeout(localApiLivePullTimerRef.current)
+        localApiLivePullTimerRef.current = null
+      }
+    }
+  }, [account, hydrated, pullCliBridgeWorkspace, resolveApiBaseUrl, resolveOptionalApiKey])
+
+  useEffect(() => {
+    if (!hydrated || !account) return
+
     let cancelled = false
     const run = async () => {
       if (cancelled) return
@@ -2435,7 +2511,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           }),
         )
         const movement = Math.abs(deltaX) + Math.abs(deltaY)
-        pushParticleImpulse(world.x, world.y, 0.08 + movement / 960)
+        pushParticleImpulse(world.x, world.y, 0.18 + movement / 520)
         return
       }
 
@@ -2478,6 +2554,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           width: nextWidth,
           height: nextHeight,
         })
+        pushParticleImpulse(world.x, world.y, 0.26)
       }
 
       const dragState = dragStateRef.current
@@ -3675,19 +3752,16 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const handleDownloadFromLocalApi = async () => {
     setLocalApiMenuOpen(false)
-    let pulled = await pullCliBridgeWorkspace(true)
-    if (!pulled && isObsidianRuntime && resolveApiBaseUrl() !== 'http://127.0.0.1:8799') {
-      pulled = await pullCliBridgeWorkspace(true, 'http://127.0.0.1:8799')
-    }
+    const pulled = await pullCliBridgeWorkspace(true)
     setSyncStatus(pulled ? 'ok' : 'idle')
     setSyncMessage(
       pulled
         ? settings.language === 'zh'
-          ? '已从本地 API 下载工作区。'
-          : 'Downloaded workspace from Local API.'
+          ? '已从本地数据库重新加载工作区。'
+          : 'Reloaded workspace from local database.'
         : settings.language === 'zh'
-          ? '本地 API 暂无可下载的新工作区。'
-          : 'No new Local API workspace to download.',
+          ? '本地数据库暂无更新。'
+          : 'No newer local database workspace to reload.',
     )
   }
 
@@ -3733,7 +3807,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         </div>
 
         <div className="create-actions" aria-label={settings.language === 'zh' ? '创建卡片' : 'Create cards'}>
-          <button className="action-btn action-primary" onClick={addNoteCard}>
+          <button className="action-btn" onClick={addNoteCard}>
             <span className="action-icon">＋</span>
             <span>{noteActionLabel}</span>
           </button>
@@ -3874,20 +3948,20 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
               onClick={() => setLocalApiMenuOpen((open) => !open)}
               aria-expanded={localApiMenuOpen}
             >
-              {settings.language === 'zh' ? '本地 API' : 'Local API'} ▾
+              {settings.language === 'zh' ? '数据管理' : 'Data'} ▾
             </button>
             {localApiMenuOpen ? (
               <div className="local-api-dropdown">
                 <button type="button" onClick={handleDownloadFromLocalApi}>
-                  {settings.language === 'zh' ? '从本地 API 下载' : 'Download from Local API'}
+                  {settings.language === 'zh' ? '从本地数据库重新加载' : 'Reload from local database'}
                 </button>
                 <button type="button" onClick={handleUploadToLocalApi}>
-                  {settings.language === 'zh' ? '上传到本地 API' : 'Upload to Local API'}
+                  {settings.language === 'zh' ? '导入当前画布到本地数据库' : 'Import current canvas into local database'}
                 </button>
               </div>
             ) : null}
           </div>
-          <button className="zoom-btn reset" onClick={() => setViewport(initialViewport)}>
+          <button className="zoom-btn reset" onClick={() => setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect()))}>
             {text.reset}
           </button>
           <button className="zoom-btn reset settings-trigger" onClick={() => setSettingsOpen(true)}>

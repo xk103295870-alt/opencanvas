@@ -15,7 +15,7 @@ const RUNTIME_DIR = path.join(REPO_ROOT, '.runtime')
 const DEFAULT_WEB_HOST = '127.0.0.1'
 const DEFAULT_WEB_PORT = 5173
 const DEFAULT_API_HOST = '127.0.0.1'
-const DEFAULT_API_PORT = 8787
+const DEFAULT_API_PORT = 8799
 
 function usage() {
   console.log(`Canvas Workbench CLI

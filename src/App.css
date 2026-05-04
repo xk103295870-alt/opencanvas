@@ -311,6 +311,8 @@
   gap: 8px;
   min-height: 0;
   overflow: auto;
+  padding: 0 4px 4px;
+  margin: 0 -4px;
 }
 
 .grid-item {
@@ -414,6 +416,81 @@
   --particle-bloom-radius: 360px;
 }
 
+:root[data-theme='dark'] .action-btn,
+:root[data-theme='dark'] .grid-item {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+:root[data-theme='dark'] .grid-item.active {
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-soft);
+  border-color: rgba(255, 255, 255, 0.075);
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] .grid-item:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme='dark'] .action-btn.action-primary {
+  border-color: rgba(255, 255, 255, 0.095);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-soft);
+}
+
+:root[data-theme='dark'] .action-btn:hover,
+:root[data-theme='dark'] .action-btn.action-primary:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .action-icon,
+:root[data-theme='dark'] .grid-badge,
+:root[data-theme='dark'] .grid-remove-btn {
+  opacity: 0.78;
+}
+
+:root[data-theme='dark'] .sidebar {
+  filter: brightness(0.92) saturate(0.9);
+}
+
+:root[data-theme='dark'] .canvas-status strong,
+:root[data-theme='dark'] .zoom-label,
+:root[data-theme='dark'] .zoom-btn,
+:root[data-theme='dark'] .local-api-trigger,
+:root[data-theme='dark'] .local-api-dropdown button,
+:root[data-theme='dark'] .settings-trigger,
+:root[data-theme='dark'] .card-title-text,
+:root[data-theme='dark'] .card-title-input,
+:root[data-theme='dark'] .card-action,
+:root[data-theme='dark'] .card-close {
+  color: #a4b1b9;
+}
+
+:root[data-theme='dark'] .canvas-status span,
+:root[data-theme='dark'] .card-kind-pill,
+:root[data-theme='dark'] .grid-badge,
+:root[data-theme='dark'] .grid-remove-btn {
+  color: rgba(164, 177, 185, 0.72);
+}
+
+:root[data-theme='dark'] .zoom-btn:hover,
+:root[data-theme='dark'] .local-api-dropdown button:hover,
+:root[data-theme='dark'] .card-action:hover,
+:root[data-theme='dark'] .card-close:hover {
+  color: #c4ced4;
+}
+
+:root[data-theme='dark'] .settings-trigger {
+  border-color: rgba(126, 199, 220, 0.22);
+}
+
+:root[data-theme='dark'] .card-title-input::placeholder {
+  color: rgba(164, 177, 185, 0.52);
+}
+
 .canvas.is-panning {
   cursor: grabbing;
 }
@@ -443,9 +520,9 @@
   left: 14px;
   z-index: 30;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
   pointer-events: none;
 }
 
@@ -453,10 +530,22 @@
   pointer-events: auto;
 }
 
-.canvas-status,
 .canvas-command-group,
 .zoom-btn,
 .local-api-dropdown {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--app-bg) 84%, white 16%), color-mix(in srgb, var(--app-bg) 58%, transparent)),
+    color-mix(in srgb, var(--app-bg) 68%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 78%, white 22%);
+  backdrop-filter: blur(22px) saturate(1.45);
+  -webkit-backdrop-filter: blur(22px) saturate(1.45);
+  box-shadow:
+    0 16px 42px color-mix(in srgb, var(--card-shadow) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--line) 42%, transparent);
+}
+
+.canvas-status {
   background: color-mix(in srgb, var(--app-bg) 86%, transparent);
   border: 1px solid var(--line);
   backdrop-filter: blur(10px);
@@ -495,18 +584,40 @@
 .canvas-command-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border-radius: 14px;
-  padding: 4px;
+  gap: 5px;
+  border-radius: 18px;
+  padding: 5px;
+  position: relative;
+  overflow: hidden;
+}
+
+.canvas-command-group::before,
+.zoom-btn::before,
+.local-api-dropdown::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto 1px;
+  height: 45%;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent);
 }
 
 .zoom-btn {
-  border-radius: 10px;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 10px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 12px;
   color: var(--text-soft);
-  font-weight: 600;
+  font-weight: 650;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .canvas-command-group .zoom-btn {
@@ -517,9 +628,13 @@
 }
 
 .zoom-btn:hover {
-  border-color: var(--line-strong);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line-strong));
   color: var(--text-main);
-  background: var(--icon-bg);
+  background: color-mix(in srgb, var(--icon-bg) 70%, white 16%);
+  transform: translateY(-1px);
+  box-shadow:
+    0 18px 42px color-mix(in srgb, var(--card-shadow) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
 .zoom-btn.reset {
@@ -536,7 +651,7 @@
 }
 
 .local-api-trigger {
-  min-width: 96px;
+  min-width: 108px;
 }
 
 .local-api-dropdown {
@@ -544,21 +659,24 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 60;
-  min-width: 210px;
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--card-shadow) 35%, transparent);
+  min-width: 230px;
+  border-radius: 18px;
+  padding: 7px;
+  overflow: hidden;
+  box-shadow:
+    0 20px 48px color-mix(in srgb, var(--card-shadow) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.64);
 }
 
 .local-api-dropdown button {
   width: 100%;
   border: 0;
-  border-radius: 10px;
+  border-radius: 15px;
   background: transparent;
   color: var(--text-main);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   text-align: left;
   padding: 10px 11px;
 }
@@ -612,6 +730,10 @@
   transition: opacity 0.18s linear;
 }
 
+:root[data-theme='dark'] .canvas-grid::before {
+  opacity: calc(var(--particle-energy) * 0.62);
+}
+
 .canvas-grid::after {
   background-image: radial-gradient(
     circle at center,
@@ -653,6 +775,13 @@
 .card.resizing {
   box-shadow:
     0 0 0 1px var(--card-drag-outline),
+    0 28px 48px var(--card-drag-shadow);
+}
+
+:root[data-theme='dark'] .card.resizing {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent),
+    0 0 32px color-mix(in srgb, var(--accent) 12%, transparent),
     0 28px 48px var(--card-drag-shadow);
 }
 
@@ -731,6 +860,27 @@
   border-radius: 999px;
   cursor: default;
   overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--card-bg-top) 82%, white 10%), color-mix(in srgb, var(--card-bg-bottom) 74%, transparent)),
+    color-mix(in srgb, var(--app-bg) 52%, transparent);
+  border-color: color-mix(in srgb, var(--line-strong) 72%, transparent);
+  box-shadow:
+    0 18px 42px color-mix(in srgb, var(--card-shadow) 34%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(1.45);
+  -webkit-backdrop-filter: blur(24px) saturate(1.45);
+}
+
+.card.minimized::before {
+  content: '';
+  position: absolute;
+  inset: 1px 1px auto 1px;
+  height: 46%;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent);
+  z-index: 0;
 }
 
 .card.minimized .card-header {
@@ -739,6 +889,9 @@
   border-radius: inherit;
   padding: 0 12px;
   justify-content: center;
+  background: transparent;
+  position: relative;
+  z-index: 1;
 }
 
 .card.minimized .card-title-wrap {
@@ -757,16 +910,22 @@
 }
 
 .card.minimized .card-kind-pill {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-soft);
+  border-color: color-mix(in srgb, var(--text-soft) 34%, var(--line));
+  background: color-mix(in srgb, var(--text-soft) 10%, transparent);
+  text-transform: none;
+  letter-spacing: 0.03em;
+  font-size: 12px;
+}
+
+:root[data-theme='dark'] .card.minimized .card-kind-pill {
+  color: #a4b1b9;
+  border-color: rgba(164, 177, 185, 0.3);
+  background: rgba(164, 177, 185, 0.08);
 }
 
 .card.minimized .card-action {
-  width: 26px;
-  height: 26px;
-  position: absolute;
-  right: 14px;
+  display: none;
 }
 
 .card.minimized .card-minimize {
@@ -2128,17 +2287,28 @@
     18px 0 44px rgba(66, 74, 91, 0.08);
 }
 
+:root[data-theme='light'] .canvas-toolbar {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 :root[data-theme='light'] .sidebar-toggle,
-:root[data-theme='light'] .canvas-toolbar,
-:root[data-theme='light'] .canvas-status,
 :root[data-theme='light'] .canvas-command-group,
 :root[data-theme='light'] .zoom-btn,
 :root[data-theme='light'] .local-api-dropdown {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(42, 53, 71, 0.1);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36)),
+    rgba(255, 255, 255, 0.42);
+  border-color: rgba(42, 53, 71, 0.11);
   box-shadow:
-    0 14px 34px rgba(45, 56, 75, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    0 16px 38px rgba(45, 56, 75, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(42, 53, 71, 0.06);
+  backdrop-filter: blur(24px) saturate(1.55);
+  -webkit-backdrop-filter: blur(24px) saturate(1.55);
 }
 
 :root[data-theme='light'] .action-btn,

@@ -169,6 +169,7 @@ export type ServerStateResponse = {
     name: string
     activeGridId: string
     updatedAt: string
+    revision?: number
     grids: Array<{
       id: string
       name: string
@@ -183,7 +184,16 @@ export type ServerStateResponse = {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_CANVAS_WORKBENCH_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8787'
+export type ServerWorkspaceEvent = {
+  type: 'hello' | 'workspace.updated'
+  workspaceId: string
+  revision?: number
+  updatedAt?: string
+  source?: string
+  operation?: string
+}
+
+const API_BASE_URL = (import.meta.env.VITE_CANVAS_WORKBENCH_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8799'
 
 export type ServerHealthResponse = {
   ok?: boolean
@@ -418,6 +428,13 @@ export async function apiTriggerUpdate(accessToken: string, baseUrl?: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   }, baseUrl)
+}
+
+export function createWorkspaceEventSource(apiKey: string, baseUrl?: string) {
+  const url = new URL(`${resolveBaseUrl(baseUrl)}/api/v1/events/stream`)
+  const trimmed = apiKey.trim()
+  if (trimmed) url.searchParams.set('apiKey', trimmed)
+  return new EventSource(url.toString())
 }
 
 export function getApiBaseUrl() {

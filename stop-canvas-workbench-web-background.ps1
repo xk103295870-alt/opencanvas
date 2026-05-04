@@ -1,6 +1,6 @@
 param(
   [int]$Port = 5173,
-  [int]$ApiPort = 8787
+  [int]$ApiPort = 8799
 )
 
 $ErrorActionPreference = 'SilentlyContinue'

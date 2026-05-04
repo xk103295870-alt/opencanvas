@@ -31,9 +31,9 @@ const FALLBACK_CLI_PATH = `${FALLBACK_REPO_ROOT}/bin/canvas-workbench.mjs`
 function portFromApiBaseUrl(apiBaseUrl: string) {
   try {
     const url = new URL(apiBaseUrl)
-    return url.port || '8787'
+    return url.port || '8799'
   } catch {
-    return '8787'
+    return '8799'
   }
 }
 
