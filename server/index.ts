@@ -202,15 +202,10 @@ function broadcastWorkspaceEvent(workspace: WorkspaceRecord, operation: string) 
 }
 
 function commitWorkspaceMutation(workspace: WorkspaceRecord, operation: string) {
-  const touched = store.touchWorkspace(workspace.id)
-  if (touched) {
-    workspace.updatedAt = touched.updatedAt
-    workspace.revision = touched.revision
-  } else {
-    workspace.updatedAt = nowIso()
-    workspace.revision = (workspace.revision ?? 0) + 1
-    saveDb()
-  }
+  const now = nowIso()
+  workspace.updatedAt = now
+  workspace.revision = (workspace.revision ?? 0) + 1
+  store.upsertWorkspace(workspace)
   broadcastWorkspaceEvent(workspace, operation)
 }
 
