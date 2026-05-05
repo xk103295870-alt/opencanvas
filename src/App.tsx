@@ -265,6 +265,14 @@ type I18nText = {
   localApiUrlLabel: string
   localApiVersionLabel: string
   localApiStartCommandLabel: string
+  localApiToolbarOnline: string
+  localApiToolbarOffline: string
+  localApiToolbarChecking: string
+  localApiToolbarIdle: string
+  dataManagementTitle: string
+  dataManagementHint: string
+  dataManagementReload: string
+  dataManagementImport: string
   updateTitle: string
   updateHint: string
   currentVersionLabel: string
@@ -592,6 +600,14 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiUrlLabel: 'API 地址',
     localApiVersionLabel: 'API 版本',
     localApiStartCommandLabel: '启动命令',
+    localApiToolbarOnline: '本地 API 在线',
+    localApiToolbarOffline: '连接本地 API',
+    localApiToolbarChecking: '检测本地 API',
+    localApiToolbarIdle: '连接本地 API',
+    dataManagementTitle: '数据管理',
+    dataManagementHint: '本地数据库重载和导入工具保留在这里，作为离线恢复、备份和调试入口。',
+    dataManagementReload: '从本地数据库重新加载',
+    dataManagementImport: '导入当前画布到本地数据库',
     updateTitle: '在线更新',
     updateHint: '点击后会先拉取最新代码、安装依赖，再重启本地服务。仅适用于 git 仓库安装，若有本地改动请先提交或暂存。',
     currentVersionLabel: '当前版本',
@@ -698,6 +714,14 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiUrlLabel: 'API URL',
     localApiVersionLabel: 'API version',
     localApiStartCommandLabel: 'Start command',
+    localApiToolbarOnline: 'Local API Online',
+    localApiToolbarOffline: 'Connect Local API',
+    localApiToolbarChecking: 'Checking Local API',
+    localApiToolbarIdle: 'Connect Local API',
+    dataManagementTitle: 'Data Management',
+    dataManagementHint: 'Local database reload and import tools live here as fallback recovery, backup, and debugging actions.',
+    dataManagementReload: 'Reload from local database',
+    dataManagementImport: 'Import current canvas into local database',
     updateTitle: 'Online Update',
     updateHint: 'Pull the latest code, install dependencies, and restart local services. Git checkout installs only. Commit or stash local changes first.',
     currentVersionLabel: 'Current version',
@@ -1332,7 +1356,6 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [hydrated, setHydrated] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [localApiMenuOpen, setLocalApiMenuOpen] = useState(false)
   const [localApiStatus, setLocalApiStatus] = useState<LocalApiStatus>('idle')
   const [localApiStarting, setLocalApiStarting] = useState(false)
   const [localApiHealth, setLocalApiHealth] = useState<{ version?: string; apiBaseUrl?: string } | null>(null)
@@ -1685,6 +1708,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const handleStartLocalApi = useCallback(async () => {
     setLocalApiStarting(true)
+    setLocalApiStatus('checking')
     if (!onStartLocalApi) {
       await copyLocalApiStartCommand()
       setLocalApiStarting(false)
@@ -1712,6 +1736,14 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       window.setTimeout(() => setLocalApiStarting(false), 1400)
     }
   }, [copyLocalApiStartCommand, localApiBaseUrl, onStartLocalApi, refreshLocalApiStatus, text.localApiStartFailedPrefix, text.localApiStartSuccess, text.localApiStarting])
+
+  const handleLocalApiToolbarAction = useCallback(async () => {
+    if (localApiStatus === 'online') {
+      void refreshLocalApiStatus()
+      return
+    }
+    await handleStartLocalApi()
+  }, [handleStartLocalApi, localApiStatus, refreshLocalApiStatus])
 
   useEffect(() => {
     if (!settingsOpen) return
@@ -3761,7 +3793,6 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }
 
   const handleDownloadFromLocalApi = async () => {
-    setLocalApiMenuOpen(false)
     const pulled = await pullCliBridgeWorkspace(true)
     setSyncStatus(pulled ? 'ok' : 'idle')
     setSyncMessage(
@@ -3776,11 +3807,18 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }
 
   const handleUploadToLocalApi = async () => {
-    setLocalApiMenuOpen(false)
     await uploadWorkspaceToLocalApi({ silent: false })
   }
 
   const zoomPercent = `${Math.round(viewport.zoom * 100)}%`
+  const localApiToolbarLabel =
+    localApiStarting || localApiStatus === 'checking'
+      ? text.localApiToolbarChecking
+      : localApiStatus === 'online'
+        ? text.localApiToolbarOnline
+        : localApiStatus === 'offline'
+          ? text.localApiToolbarOffline
+          : text.localApiToolbarIdle
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
   const activeCardCount = activeGrid.cards.length
   const canvasStatusLabel =
@@ -3952,25 +3990,16 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
               ＋
             </button>
           </div>
-          <div className="local-api-menu">
-            <button
-              className="zoom-btn reset local-api-trigger"
-              onClick={() => setLocalApiMenuOpen((open) => !open)}
-              aria-expanded={localApiMenuOpen}
-            >
-              {settings.language === 'zh' ? '数据管理' : 'Data'} ▾
-            </button>
-            {localApiMenuOpen ? (
-              <div className="local-api-dropdown">
-                <button type="button" onClick={handleDownloadFromLocalApi}>
-                  {settings.language === 'zh' ? '从本地数据库重新加载' : 'Reload from local database'}
-                </button>
-                <button type="button" onClick={handleUploadToLocalApi}>
-                  {settings.language === 'zh' ? '导入当前画布到本地数据库' : 'Import current canvas into local database'}
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <button
+            type="button"
+            className={`zoom-btn reset local-api-trigger local-api-status-trigger ${localApiStatus}`}
+            onClick={() => void handleLocalApiToolbarAction()}
+            disabled={localApiStarting || localApiStatus === 'checking'}
+            title={localApiStatusMessage || localApiBaseUrl}
+          >
+            <span className="local-api-status-dot" aria-hidden="true" />
+            {localApiToolbarLabel}
+          </button>
           <button className="zoom-btn reset" onClick={() => setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect()))}>
             {text.reset}
           </button>
@@ -4761,6 +4790,19 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                     {localApiStarting ? text.localApiStarting : onStartLocalApi ? text.localApiStartButton : text.localApiCopyStartCommand}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <h3>{text.dataManagementTitle}</h3>
+              <p>{text.dataManagementHint}</p>
+              <div className="local-api-actions">
+                <button type="button" className="settings-inline-btn" onClick={handleDownloadFromLocalApi}>
+                  {text.dataManagementReload}
+                </button>
+                <button type="button" className="settings-inline-btn" onClick={handleUploadToLocalApi}>
+                  {text.dataManagementImport}
+                </button>
               </div>
             </div>
 

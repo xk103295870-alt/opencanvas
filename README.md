@@ -52,14 +52,15 @@ Do not put the whole `dist-obsidian` folder inside the plugin folder. Put the fi
 - Media cards for images, videos, and PDFs
 - Card dragging, resizing, editing, minimizing, and delete confirmation
 - Collapsible sidebar
-- Local persistence by default
-- No-login local mode
-- Native Obsidian plugin build
-- Local API and API-key interfaces retained for future CLI/AI integration
+- Local SQLite database shared by Web, Obsidian, and CLI
+- Local API status button in the top toolbar
+- Data Management tools inside Settings for local database reload/import
+- CLI commands for writing notes, todos, calendar events, and grids
+- API-key interfaces retained for future CLI/AI integration
 
 ## Does it require a backend service?
 
-No. When used as an Obsidian plugin, Canvas Workbench runs directly inside Obsidian and does **not** require:
+No for normal Obsidian-only usage. Canvas Workbench opens directly inside Obsidian without requiring the user to manually start:
 
 ```bash
 npm run dev
@@ -67,7 +68,34 @@ npm run api:dev
 canvas-workbench start
 ```
 
-Those commands are only for development, browser usage, or future CLI/API integration.
+For CLI / AI-agent workflows, the Local API is used as the shared local database gateway. The Obsidian plugin can start/check the Local API from the UI, and the top toolbar shows the current Local API status.
+
+## Local API, SQLite, and Data Management
+
+Canvas Workbench uses a local SQLite database for Web / Obsidian / CLI synchronization:
+
+```text
+.runtime/canvas-workbench.db
+```
+
+Default Local API URL:
+
+```text
+http://127.0.0.1:8799
+```
+
+When the Local API is online, CLI writes go through the API into SQLite. Open Web / Obsidian windows receive `workspace.updated` events and pull the latest workspace automatically.
+
+The top toolbar shows a Local API status action:
+
+- `Connect Local API` / `连接本地 API`: offline or not checked; click to start/connect.
+- `Checking Local API` / `检测本地 API`: startup or health check in progress.
+- `Local API Online` / `本地 API 在线`: connected.
+
+Manual database fallback tools are inside **Settings → Data Management**:
+
+- Reload from local database
+- Import current canvas into local database
 
 ## Browser / CLI Quick Start
 
@@ -87,11 +115,42 @@ npm run dev
 
 ## CLI
 
+Service management:
+
 - `canvas-workbench start`
 - `canvas-workbench start --no-open`
 - `canvas-workbench status`
 - `canvas-workbench update`
 - `canvas-workbench stop`
+
+Canvas data commands:
+
+```bash
+canvas-workbench grid list
+canvas-workbench grid add "Product Planning"
+canvas-workbench note add "Meeting summary" --title "Meeting" --grid "Product Planning"
+canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "Product Planning"
+canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "Product Planning"
+```
+
+Notes:
+
+- CLI data commands require the Local API to be running/online. In Obsidian, click the top toolbar Local API status button (`Connect Local API` / `连接本地 API`) before using CLI or agent writes.
+- Todo status values: `todo`, `doing`, `done`.
+- Todo tag values: `event`, `feature`, `important`, `plan`, `bug`, `idea`.
+- Calendar timed events use `--time` and `--end`.
+- CLI-created note/todo/calendar cards default to the canvas center.
+- Commands also accept `--api-url <url>` and `--api-key <key>` when needed.
+
+## Claude Skill for CLI / agent writing
+
+A packaged Claude Skill is provided for other agents to quickly write data into Canvas Workbench through the CLI:
+
+- Skill package: [`release/canvas-workbench-cli.skill`](./release/canvas-workbench-cli.skill)
+- Recommended location in Obsidian docs: `工作室产品文档/Canvas Workbench/canvas-workbench-cli.skill`
+- Markdown copy: `工作室产品文档/Canvas Workbench/Canvas Workbench CLI Skill.md`
+
+Use this Skill when an agent needs to add notes, todos, calendar events, or project records into Canvas Workbench. The Local API must be online before the Skill/CLI can write data.
 
 ## Development
 

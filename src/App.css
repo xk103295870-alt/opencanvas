@@ -460,7 +460,6 @@
 :root[data-theme='dark'] .zoom-label,
 :root[data-theme='dark'] .zoom-btn,
 :root[data-theme='dark'] .local-api-trigger,
-:root[data-theme='dark'] .local-api-dropdown button,
 :root[data-theme='dark'] .settings-trigger,
 :root[data-theme='dark'] .card-title-text,
 :root[data-theme='dark'] .card-title-input,
@@ -477,7 +476,6 @@
 }
 
 :root[data-theme='dark'] .zoom-btn:hover,
-:root[data-theme='dark'] .local-api-dropdown button:hover,
 :root[data-theme='dark'] .card-action:hover,
 :root[data-theme='dark'] .card-close:hover {
   color: #c4ced4;
@@ -531,8 +529,7 @@
 }
 
 .canvas-command-group,
-.zoom-btn,
-.local-api-dropdown {
+.zoom-btn {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--app-bg) 84%, white 16%), color-mix(in srgb, var(--app-bg) 58%, transparent)),
     color-mix(in srgb, var(--app-bg) 68%, transparent);
@@ -592,8 +589,7 @@
 }
 
 .canvas-command-group::before,
-.zoom-btn::before,
-.local-api-dropdown::before {
+.zoom-btn::before {
   content: '';
   position: absolute;
   inset: 1px 1px auto 1px;
@@ -646,43 +642,48 @@
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
-.local-api-menu {
-  position: relative;
-}
-
 .local-api-trigger {
-  min-width: 108px;
+  min-width: 132px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
 }
 
-.local-api-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 60;
-  min-width: 230px;
-  border-radius: 18px;
-  padding: 7px;
-  overflow: hidden;
-  box-shadow:
-    0 20px 48px color-mix(in srgb, var(--card-shadow) 32%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.64);
+.local-api-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-dim);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 12%, transparent);
 }
 
-.local-api-dropdown button {
-  width: 100%;
-  border: 0;
-  border-radius: 15px;
-  background: transparent;
-  color: var(--text-main);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  text-align: left;
-  padding: 10px 11px;
+.local-api-status-trigger.online .local-api-status-dot {
+  background: var(--brand-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-green) 15%, transparent);
 }
 
-.local-api-dropdown button:hover {
-  background: var(--icon-bg);
+.local-api-status-trigger.offline .local-api-status-dot {
+  background: #f0803c;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #f0803c 16%, transparent);
+}
+
+.local-api-status-trigger.checking .local-api-status-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  animation: api-status-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes api-status-pulse {
+  from {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
 }
 
 .zoom-label {
@@ -2297,8 +2298,7 @@
 
 :root[data-theme='light'] .sidebar-toggle,
 :root[data-theme='light'] .canvas-command-group,
-:root[data-theme='light'] .zoom-btn,
-:root[data-theme='light'] .local-api-dropdown {
+:root[data-theme='light'] .zoom-btn {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36)),
     rgba(255, 255, 255, 0.42);

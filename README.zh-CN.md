@@ -50,16 +50,15 @@ Canvas Workbench 是一个本地优先的 Obsidian 画布工作台，内置代�
 - 图片、视频、PDF 媒体卡片
 - 卡片拖拽、缩放、编辑、最小化和删除确认
 - 左侧边栏可收起 / 展开
-- 默认本地持久化
-- 默认免登录本地模式
-- Obsidian 原生插件构建
-- 保留本地 API 和 API Key 接口，方便未来扩展 CLI / AI 联动
+- Web / Obsidian / CLI 共用的本地 SQLite 数据库
+- 顶部工具栏显示本地 API 连接状态
+- 设置里的数据管理工具，支持本地数据库重新加载 / 导入
+- CLI 支持写入便利贴、待办、日历事件和画布
+- 保留 API Key 接口，方便后续扩展 CLI / AI 联动
 
 ## 是否需要启动后端服务？
 
-不需要。
-
-作为 Obsidian 插件使用时，Canvas Workbench 会直接在 Obsidian 内运行，不需要启动：
+普通 Obsidian 插件使用不需要手动启动后端服务。Canvas Workbench 可以直接在 Obsidian 内打开，不需要用户手动运行：
 
 ```bash
 npm run dev
@@ -67,7 +66,34 @@ npm run api:dev
 canvas-workbench start
 ```
 
-这些命令只用于开发、浏览器版本、或者未来 CLI/API 联动场景。
+如果要使用 CLI / AI 智能体写入能力，则会使用 Local API 作为共享本地数据库入口。Obsidian 插件可以从界面里启动 / 检测 Local API，顶部工具栏会显示当前 Local API 状态。
+
+## Local API、SQLite 与数据管理
+
+Canvas Workbench 使用本地 SQLite 数据库同步 Web / Obsidian / CLI 数据：
+
+```text
+.runtime/canvas-workbench.db
+```
+
+默认 Local API 地址：
+
+```text
+http://127.0.0.1:8799
+```
+
+Local API 在线时，CLI 会通过 API 写入 SQLite。打开中的 Web / Obsidian UI 会收到 `workspace.updated` 事件，并自动拉取最新工作区。
+
+顶部工具栏显示本地 API 状态按钮：
+
+- `连接本地 API`：离线或未检测，点击后启动 / 连接本地 API。
+- `检测本地 API`：正在启动或检测。
+- `本地 API 在线`：已连接。
+
+手动兜底工具放在 **设置 → 数据管理**：
+
+- 从本地数据库重新加载
+- 导入当前画布到本地数据库
 
 ## 浏览器 / CLI 快速启动
 
@@ -87,11 +113,42 @@ npm run dev
 
 ## CLI 命令
 
+服务管理：
+
 - `canvas-workbench start` 启动 Web + API
 - `canvas-workbench start --no-open` 启动但不自动打开浏览器
 - `canvas-workbench status` 查看运行状态
 - `canvas-workbench update` 在线更新
 - `canvas-workbench stop` 停止服务
+
+画布数据写入：
+
+```bash
+canvas-workbench grid list
+canvas-workbench grid add "产品规划"
+canvas-workbench note add "会议总结" --title "会议" --grid "产品规划"
+canvas-workbench todo add "准备首页文案" --status doing --tag plan --grid "产品规划"
+canvas-workbench calendar event add "设计评审" --date 2026-05-01 --time 11:00 --end 12:00 --grid "产品规划"
+```
+
+说明：
+
+- CLI 数据写入需要先让 Local API 处于运行 / 在线状态。在 Obsidian 中使用前，先点击顶部工具栏的本地 API 状态按钮（`连接本地 API` / `Connect Local API`）。
+- Todo 状态可用：`todo`、`doing`、`done`。
+- Todo 标签可用：`event`、`feature`、`important`、`plan`、`bug`、`idea`。
+- 日历定时事件使用 `--time` 和 `--end`。
+- CLI 创建的便利贴、待办、日历卡片默认出现在画布中心。
+- 如有需要，命令也支持 `--api-url <url>` 和 `--api-key <key>`。
+
+## Claude Skill：CLI / 智能体写入
+
+项目提供了一个打包好的 Claude Skill，方便其他智能体快速通过 CLI 把数据写入 Canvas Workbench：
+
+- Skill 包：[`release/canvas-workbench-cli.skill`](./release/canvas-workbench-cli.skill)
+- 推荐存放位置：`工作室产品文档/Canvas Workbench/canvas-workbench-cli.skill`
+- Markdown 说明文档：`工作室产品文档/Canvas Workbench/Canvas Workbench CLI Skill.md`
+
+当智能体需要写入便利贴、待办、日历事件、项目记录时，可以使用这个 Skill。使用 Skill / CLI 写入前，需要先确保 Local API 在线。
 
 ## 开发命令
 
