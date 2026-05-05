@@ -976,6 +976,14 @@ const createCenteredViewport = (bounds?: { width: number; height: number } | nul
   }
 }
 
+const getViewportCenterWorldPoint = (bounds: { width: number; height: number } | null | undefined, viewport: ViewportState) => {
+  if (!bounds) return { x: SCENE_WIDTH / 2, y: SCENE_HEIGHT / 2 }
+  return {
+    x: (bounds.width / 2 - viewport.x) / viewport.zoom,
+    y: (bounds.height / 2 - viewport.y) / viewport.zoom,
+  }
+}
+
 const initialGrids: GridData[] = [
   {
     id: 'grid-a',
@@ -2720,22 +2728,15 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       const content = String(payload?.content ?? '').trim()
       const cardId = String(payload?.id || '').trim() || uid(kind)
       const externalTodoItems = toTodoItems(payload?.todoItems)
-      const canvasBounds = canvasRef.current?.getBoundingClientRect()
-      const currentViewport = viewportRef.current
-      const centeredWorldPoint = canvasBounds
-        ? {
-            x: (canvasBounds.width / 2 - currentViewport.x) / currentViewport.zoom,
-            y: (canvasBounds.height / 2 - currentViewport.y) / currentViewport.zoom,
-          }
-        : { x: 140, y: 140 }
+      const centeredWorldPoint = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
 
       const cardBase: CardData = {
         id: cardId,
         kind,
         title,
         content: kind === 'note' ? content || text.notePlaceholder : content,
-        x: clamp(toFiniteNumber(payload?.x, centeredWorldPoint.x - width / 2), -200, SCENE_WIDTH - 60),
-        y: clamp(toFiniteNumber(payload?.y, centeredWorldPoint.y - height / 2), -200, SCENE_HEIGHT - 60),
+        x: clamp(toFiniteNumber(payload?.x, centeredWorldPoint.x - width / 2), -200, SCENE_WIDTH),
+        y: clamp(toFiniteNumber(payload?.y, centeredWorldPoint.y - height / 2), -200, SCENE_HEIGHT),
         width,
         height,
         fileName: payload?.fileName,
@@ -2834,26 +2835,35 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }
 
   const addNoteCard = () => {
+    const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
     createCardInternal({
       kind: 'note',
       width: 340,
       height: 280,
+      x: center.x - 340 / 2,
+      y: center.y - 280 / 2,
     })
   }
 
   const addTodoCard = () => {
+    const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
     createCardInternal({
       kind: 'todo',
       width: 760,
       height: 430,
+      x: center.x - 760 / 2,
+      y: center.y - 430 / 2,
     })
   }
 
   const addCalendarCard = () => {
+    const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
     createCardInternal({
       kind: 'calendar',
       width: 480,
       height: 560,
+      x: center.x - 480 / 2,
+      y: center.y - 560 / 2,
     })
   }
 

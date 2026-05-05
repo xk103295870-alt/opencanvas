@@ -16,6 +16,23 @@ const DEFAULT_WEB_HOST = '127.0.0.1'
 const DEFAULT_WEB_PORT = 5173
 const DEFAULT_API_HOST = '127.0.0.1'
 const DEFAULT_API_PORT = 8799
+const SCENE_WIDTH = 6000
+const SCENE_HEIGHT = 4000
+const CLI_CARD_DEFAULT_SIZES = {
+  note: { width: 340, height: 280 },
+  todo: { width: 760, height: 430 },
+  calendar: { width: 480, height: 560 },
+}
+
+function centeredCardPosition(kind) {
+  const size = CLI_CARD_DEFAULT_SIZES[kind] || CLI_CARD_DEFAULT_SIZES.note
+  return {
+    x: SCENE_WIDTH / 2 - size.width / 2,
+    y: SCENE_HEIGHT / 2 - size.height / 2,
+    width: size.width,
+    height: size.height,
+  }
+}
 
 function usage() {
   console.log(`Canvas Workbench CLI
@@ -855,6 +872,7 @@ async function noteAddCommand(options) {
     content,
     gridId: grid.id,
     activateGrid: true,
+    ...centeredCardPosition('note'),
   }
 
   const result = await httpJson(`${apiUrl}/api/v1/cards`, {
@@ -886,6 +904,7 @@ async function createSingletonCard(apiUrl, options, kind, title, gridId = '') {
       title,
       gridId: String(gridId || options.gridId || '').trim() || undefined,
       activateGrid: true,
+      ...centeredCardPosition(kind),
     },
   })
   return result?.data || {}

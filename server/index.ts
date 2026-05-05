@@ -90,6 +90,10 @@ const SQLITE_DB_PATH = path.join(process.cwd(), '.runtime', 'canvas-workbench.db
 const ASSET_ROOT = path.join(process.cwd(), '.runtime', 'assets')
 const UPDATE_LOG_PATH = path.join(process.cwd(), '.runtime', 'update.log')
 const SESSION_TTL_DAYS = 30
+const SCENE_WIDTH = 6000
+const SCENE_HEIGHT = 4000
+const SCENE_CENTER_X = SCENE_WIDTH / 2
+const SCENE_CENTER_Y = SCENE_HEIGHT / 2
 const VALID_SCOPES = ['canvas:read', 'canvas:write'] as const
 const LOCAL_ACCOUNT_ID = 'acct-local-canvas-workbench'
 const LOCAL_ACCOUNT_EMAIL = 'local@canvas-workbench.local'
@@ -453,10 +457,6 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
 }
 
-function randomInt(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min
-}
-
 function inferDefaultTitle(kind: CardKind) {
   switch (kind) {
     case 'hint':
@@ -509,8 +509,8 @@ function normalizeUploadedGrids(input: unknown): GridData[] {
           kind,
           title: String(rawCard.title || '').trim() || inferDefaultTitle(kind),
           content: String(rawCard.content || ''),
-          x: clamp(toFiniteNumber(rawCard.x, randomInt(120, 860)), -200, 6000),
-          y: clamp(toFiniteNumber(rawCard.y, randomInt(120, 860)), -200, 4000),
+          x: clamp(toFiniteNumber(rawCard.x, SCENE_CENTER_X - defaultSize.width / 2), -200, SCENE_WIDTH),
+          y: clamp(toFiniteNumber(rawCard.y, SCENE_CENTER_Y - defaultSize.height / 2), -200, SCENE_HEIGHT),
           width: clamp(toFiniteNumber(rawCard.width, defaultSize.width), 220, 1400),
           height: clamp(toFiniteNumber(rawCard.height, defaultSize.height), 160, 1200),
         }
@@ -1480,8 +1480,8 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   const defaultSize = CARD_DEFAULT_SIZES[kind]
   const width = clamp(toFiniteNumber(body.width, defaultSize.width), 220, 1400)
   const height = clamp(toFiniteNumber(body.height, defaultSize.height), 160, 1200)
-  const x = clamp(toFiniteNumber(body.x, randomInt(120, 860)), -200, 6000)
-  const y = clamp(toFiniteNumber(body.y, randomInt(120, 860)), -200, 4000)
+  const x = clamp(toFiniteNumber(body.x, SCENE_CENTER_X - width / 2), -200, SCENE_WIDTH)
+  const y = clamp(toFiniteNumber(body.y, SCENE_CENTER_Y - height / 2), -200, SCENE_HEIGHT)
 
   const card: CardData = {
     id: cardId,
@@ -1545,8 +1545,8 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
       ...current,
       title: body.title !== undefined ? String(body.title || '').trim() || current.title : current.title,
       content: body.content !== undefined ? String(body.content || '') : current.content,
-      x: body.x !== undefined ? clamp(toFiniteNumber(body.x, current.x), -200, 6000) : current.x,
-      y: body.y !== undefined ? clamp(toFiniteNumber(body.y, current.y), -200, 4000) : current.y,
+      x: body.x !== undefined ? clamp(toFiniteNumber(body.x, current.x), -200, SCENE_WIDTH) : current.x,
+      y: body.y !== undefined ? clamp(toFiniteNumber(body.y, current.y), -200, SCENE_HEIGHT) : current.y,
       width: body.width !== undefined ? clamp(toFiniteNumber(body.width, current.width), 220, 1400) : current.width,
       height: body.height !== undefined ? clamp(toFiniteNumber(body.height, current.height), 160, 1200) : current.height,
     }
