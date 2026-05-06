@@ -1002,11 +1002,19 @@
   outline: none;
   resize: none;
   padding: 16px 14px;
-  background: transparent;
+  appearance: none;
+  background: color-mix(in srgb, var(--card-bg-bottom) 28%, transparent);
   color: var(--text-soft);
+  -webkit-text-fill-color: var(--text-soft);
+  caret-color: var(--accent);
   font-family: var(--font-mono);
   font-size: 15px;
   line-height: 1.45;
+}
+
+.note-editor::placeholder {
+  color: color-mix(in srgb, var(--text-dim) 78%, transparent);
+  -webkit-text-fill-color: color-mix(in srgb, var(--text-dim) 78%, transparent);
 }
 
 .todo-card-body {
@@ -2369,7 +2377,19 @@
 }
 
 :root[data-theme='light'] .note-editor {
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--text-soft);
+  -webkit-text-fill-color: var(--text-soft);
+}
+
+:root[data-theme='light'] .note-editor:focus {
   color: var(--text-main);
+  -webkit-text-fill-color: var(--text-main);
+}
+
+:root[data-theme='light'] .note-editor::placeholder {
+  color: rgba(77, 90, 109, 0.55);
+  -webkit-text-fill-color: rgba(77, 90, 109, 0.55);
 }
 
 :root[data-theme='light'] .card-title-input,
