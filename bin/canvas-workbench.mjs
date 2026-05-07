@@ -16,12 +16,13 @@ const DEFAULT_WEB_HOST = '127.0.0.1'
 const DEFAULT_WEB_PORT = 5173
 const DEFAULT_API_HOST = '127.0.0.1'
 const DEFAULT_API_PORT = 8799
-const SCENE_WIDTH = 6000
-const SCENE_HEIGHT = 4000
+const SCENE_WIDTH = 20_000_000
+const SCENE_HEIGHT = 20_000_000
 const CLI_CARD_DEFAULT_SIZES = {
   note: { width: 340, height: 280 },
   todo: { width: 760, height: 430 },
   calendar: { width: 480, height: 560 },
+  eventFlow: { width: 760, height: 480 },
 }
 
 function centeredCardPosition(kind) {
@@ -48,6 +49,7 @@ Usage:
   canvas-workbench note add <content> [--title <title>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench todo add <text> [--status todo|doing|done] [--tag event|feature|important|plan|bug|idea] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench calendar event add <title> [--date YYYY-MM-DD] [--time HH:MM] [--end HH:MM] [--all-day] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
+  canvas-workbench flow add <title> [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
 
 Examples:
   canvas-workbench start
@@ -60,6 +62,7 @@ Examples:
   canvas-workbench note add "Meeting summary" --title "Meeting" --grid "B"
   canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "B"
   canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "B"
+  canvas-workbench flow add "User onboarding flow" --grid "B"
 `)
 }
 
@@ -170,6 +173,9 @@ function parseArgs(argv) {
     tokens.shift()
     tokens.shift()
     command = 'calendar:event:add'
+  } else if (rawCommand === 'flow' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'flow:add'
   } else if (rawCommand) {
     command = rawCommand
   }
@@ -887,6 +893,50 @@ async function noteAddCommand(options) {
   console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
 }
 
+async function flowAddCommand(options) {
+  const title = String(options.title || options.contentParts.join(' ') || '').trim()
+  if (!title) {
+    throw new Error('Flow title is required. Example: canvas-workbench flow add "User onboarding flow"')
+  }
+
+  const apiUrl = apiUrlFor(options)
+  const gridLookup = String(options.gridId || '').trim()
+  const { grid, created } = await ensureGrid(apiUrl, options, gridLookup)
+  if (!grid?.id) throw new Error('Could not find or create target grid')
+  const payload = {
+    kind: 'eventFlow',
+    title,
+    content: '',
+    gridId: grid.id,
+    activateGrid: true,
+    ...centeredCardPosition('eventFlow'),
+    eventFlow: {
+      draftTitle: '',
+      nodes: [
+        {
+          id: `flow-node-${uid()}`,
+          title: '',
+          kind: 'start',
+          x: 72,
+          y: 150,
+        },
+      ],
+      edges: [],
+    },
+  }
+
+  const result = await httpJson(`${apiUrl}/api/v1/cards`, {
+    method: 'POST',
+    body: payload,
+    apiKey: options.apiKey,
+  })
+  const data = result?.data || {}
+  console.log('Event flow created')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${data.gridId || grid.id}${created ? ' (created)' : ''}`)
+  console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
+}
+
 async function getWorkspace(apiUrl, options) {
   const result = await httpJson(`${apiUrl}/api/v1/state?full=1`, {
     method: 'GET',
@@ -1112,6 +1162,10 @@ async function main() {
   }
   if (command === 'calendar:event:add') {
     await calendarEventAddCommand(options)
+    return
+  }
+  if (command === 'flow:add') {
+    await flowAddCommand(options)
     return
   }
 
