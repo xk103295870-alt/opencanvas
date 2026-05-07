@@ -1881,6 +1881,16 @@
   font-size: 12px;
 }
 
+.calendar-day-holiday {
+  font-size: 9px;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.1;
+}
+
 .calendar-day-count {
   min-width: 16px;
   height: 16px;

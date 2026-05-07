@@ -53,6 +53,7 @@ import {
   type TodoTag,
   type ViewportState,
 } from './shared/workspaceTypes'
+import { getHolidays, type HolidayInfo } from './shared/holidays'
 
 type LanguageCode = 'zh' | 'en'
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -136,6 +137,7 @@ type AppSettings = {
   syncDebounceMs: number
   localApiAutoSaveEnabled: boolean
   localApiAutoSaveMinutes: number
+  calendarHolidayMode: 'none' | 'china' | 'us' | 'both'
 }
 
 type AccountProvider = 'demo' | 'google'
@@ -205,6 +207,7 @@ type CloudSnapshot = {
 type CalendarDayCell = {
   dateKey: string
   inMonth: boolean
+  holidays?: HolidayInfo[]
 }
 
 type I18nText = {
@@ -298,6 +301,12 @@ type I18nText = {
   localApiAutoSaveDisable: string
   localApiAutoSaveEnabledStatus: string
   localApiAutoSaveDisabledStatus: string
+  calendarHolidayTitle: string
+  calendarHolidayHint: string
+  calendarHolidayNone: string
+  calendarHolidayChina: string
+  calendarHolidayUS: string
+  calendarHolidayBoth: string
   localApiUrlLabel: string
   localApiVersionLabel: string
   localApiStartCommandLabel: string
@@ -536,6 +545,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   syncDebounceMs: 2400,
   localApiAutoSaveEnabled: false,
   localApiAutoSaveMinutes: 5,
+  calendarHolidayMode: 'none',
 }
 
 const DEFAULT_CLI_BRIDGE_CONFIG: CliBridgeConfig = {
@@ -644,6 +654,12 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiAutoSaveDisable: '关闭兜底备份',
     localApiAutoSaveEnabledStatus: '兜底备份已开启',
     localApiAutoSaveDisabledStatus: '兜底备份未开启',
+    calendarHolidayTitle: '日历节假日',
+    calendarHolidayHint: '在日历卡片中显示节假日标注。',
+    calendarHolidayNone: '不显示',
+    calendarHolidayChina: '中国节日',
+    calendarHolidayUS: '美国节日',
+    calendarHolidayBoth: '全部显示',
     localApiUrlLabel: 'API 地址',
     localApiVersionLabel: 'API 版本',
     localApiStartCommandLabel: '启动命令',
@@ -767,6 +783,12 @@ const I18N: Record<LanguageCode, I18nText> = {
     localApiAutoSaveDisable: 'Turn off fallback backup',
     localApiAutoSaveEnabledStatus: 'Fallback backup is on',
     localApiAutoSaveDisabledStatus: 'Fallback backup is off',
+    calendarHolidayTitle: 'Calendar Holidays',
+    calendarHolidayHint: 'Show holiday labels in calendar cards.',
+    calendarHolidayNone: 'None',
+    calendarHolidayChina: 'China',
+    calendarHolidayUS: 'US',
+    calendarHolidayBoth: 'All',
     localApiUrlLabel: 'API URL',
     localApiVersionLabel: 'API version',
     localApiStartCommandLabel: 'Start command',
@@ -1182,6 +1204,9 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
   const localApiAutoSaveMinutes = Number.isFinite(localApiAutoSaveMinutesRaw)
     ? Math.max(1, Math.min(240, Math.round(localApiAutoSaveMinutesRaw)))
     : DEFAULT_SETTINGS.localApiAutoSaveMinutes
+  const calendarHolidayMode = ['none', 'china', 'us', 'both'].includes(String(input?.calendarHolidayMode))
+    ? (String(input?.calendarHolidayMode) as 'none' | 'china' | 'us' | 'both')
+    : DEFAULT_SETTINGS.calendarHolidayMode
 
   return {
     language,
@@ -1191,6 +1216,7 @@ const normalizeSettings = (input: Partial<AppSettings> | null | undefined): AppS
     syncDebounceMs,
     localApiAutoSaveEnabled,
     localApiAutoSaveMinutes,
+    calendarHolidayMode,
   }
 }
 
@@ -4867,6 +4893,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                               const dayEvents = eventsByDate[day.dateKey] ?? []
                               const eventCount = dayEvents.length
                               const dropKey = `${card.id}:${day.dateKey}`
+                              const holidays = getHolidays(day.dateKey, settings.calendarHolidayMode)
+                              const holidayLabel = holidays[0]
+                                ? settings.language === 'zh'
+                                  ? holidays[0].name
+                                  : holidays[0].nameEn
+                                : null
 
                               return (
                                 <button
@@ -4884,6 +4916,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                       <span className="calendar-day-week">{calendarText.weekdays[dayIndex]}</span>
                                     ) : null}
                                     <span className="calendar-day-number">{Number(day.dateKey.slice(8, 10))}</span>
+                                    {holidayLabel ? <span className="calendar-day-holiday" title={holidays.map((h) => (settings.language === 'zh' ? h.name : h.nameEn)).join(', ')}>{holidayLabel}</span> : null}
                                   </span>
 
                                   {eventCount > 0 ? <span className="calendar-day-count">{eventCount}</span> : null}
@@ -5356,6 +5389,37 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   onClick={() => updateSettings({ themeMode: 'dark' })}
                 >
                   {text.themeDark}
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <h3>{text.calendarHolidayTitle}</h3>
+              <p>{text.calendarHolidayHint}</p>
+              <div className="language-switch">
+                <button
+                  className={`lang-option ${settings.calendarHolidayMode === 'none' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ calendarHolidayMode: 'none' })}
+                >
+                  {text.calendarHolidayNone}
+                </button>
+                <button
+                  className={`lang-option ${settings.calendarHolidayMode === 'china' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ calendarHolidayMode: 'china' })}
+                >
+                  {text.calendarHolidayChina}
+                </button>
+                <button
+                  className={`lang-option ${settings.calendarHolidayMode === 'us' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ calendarHolidayMode: 'us' })}
+                >
+                  {text.calendarHolidayUS}
+                </button>
+                <button
+                  className={`lang-option ${settings.calendarHolidayMode === 'both' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ calendarHolidayMode: 'both' })}
+                >
+                  {text.calendarHolidayBoth}
                 </button>
               </div>
             </div>
