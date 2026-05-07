@@ -4922,7 +4922,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                   type="button"
                                   className={`calendar-day ${day.inMonth ? '' : 'outside'} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''} ${calendarDropTarget === dropKey ? 'drop-target' : ''}`}
                                   onPointerDown={(event) => event.stopPropagation()}
-                                  onClick={() => openCalendarDraft(card.id, day.dateKey)}
+                                  onClick={() => selectCalendarDate(card.id, day.dateKey)}
+                                  onDoubleClick={() => openCalendarDraft(card.id, day.dateKey)}
                                   onDragOver={(event) => onCalendarDayDragOver(event, card.id, day.dateKey)}
                                   onDragLeave={() => onCalendarDayDragLeave(card.id, day.dateKey)}
                                   onDrop={(event) => onCalendarDayDrop(event, card.id, day.dateKey)}
