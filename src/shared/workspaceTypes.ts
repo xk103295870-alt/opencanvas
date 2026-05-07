@@ -279,7 +279,7 @@ export const createDefaultEventFlowState = (): EventFlowState => ({
   nodes: [
     {
       id: `flow-node-${cryptoRandomId()}`,
-      title: '起点',
+      title: '',
       kind: 'start',
       x: 72,
       y: 150,
@@ -305,7 +305,7 @@ export const normalizeEventFlowState = (input?: ExternalEventFlowInput | EventFl
       const kind = index === 0 ? normalizeEventFlowNodeKind(nodeInput.kind ?? 'start') : normalizeEventFlowNodeKind(nodeInput.kind)
       return {
         id,
-        title: String(nodeInput.title ?? (kind === 'start' ? '起点' : '新节点')).trim() || (kind === 'start' ? '起点' : '新节点'),
+        title: String(nodeInput.title ?? '').trim(),
         x: Number.isFinite(nodeInput.x) ? Number(nodeInput.x) : 72 + index * 180,
         y: Number.isFinite(nodeInput.y) ? Number(nodeInput.y) : 150,
         kind,

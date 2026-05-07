@@ -237,6 +237,7 @@ type I18nText = {
   eventFlowNewNode: string
   eventFlowDragHint: string
   eventFlowDeleteNode: string
+  eventFlowNodePlaceholder: string
   newGridAria: string
   removeGridAria: string
   grids: string
@@ -581,6 +582,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     eventFlowStart: '起点',
     eventFlowNewNode: '新节点',
     eventFlowDragHint: '拖动圆点连接节点',
+    eventFlowDeleteNode: '删除节点',
+    eventFlowNodePlaceholder: '输入节点内容…',
     newGridAria: '新建画布',
     removeGridAria: '删除画布',
     grids: '画布',
@@ -702,6 +705,8 @@ const I18N: Record<LanguageCode, I18nText> = {
     eventFlowStart: 'Start',
     eventFlowNewNode: 'New node',
     eventFlowDragHint: 'Drag the dot to connect nodes',
+    eventFlowDeleteNode: 'Delete node',
+    eventFlowNodePlaceholder: 'Enter node content…',
     newGridAria: 'New grid',
     removeGridAria: 'Remove grid',
     grids: 'GRIDS',
@@ -3749,7 +3754,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         ...state.nodes,
         {
           id: uid('flow-node'),
-          title: text.eventFlowNewNode,
+          title: '',
           kind: 'step',
           x: 120 + state.nodes.length * 42,
           y: 120 + state.nodes.length * 34,
@@ -3761,7 +3766,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const addEventFlowNextNode = (cardId: string, sourceNode: EventFlowNode) => {
     const nextNode: EventFlowNode = {
       id: uid('flow-node'),
-      title: text.eventFlowNewNode,
+      title: '',
       kind: 'step',
       x: sourceNode.x + 285,
       y: sourceNode.y,
@@ -3789,6 +3794,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }
 
   const startEventFlowNodeDrag = (event: React.PointerEvent<HTMLElement>, cardId: string, node: EventFlowNode) => {
+    if (eventFlowEdgeDragRef.current) return
+    const target = event.target as HTMLElement
+    if (target.closest('.event-flow-node-title') || target.closest('.event-flow-next-btn') || target.closest('.event-flow-node-handle')) return
     const canvasElement = event.currentTarget.closest('.event-flow-canvas') as HTMLElement | null
     if (!canvasElement) return
     const canvasBounds = canvasElement.getBoundingClientRect()
@@ -3836,6 +3844,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const finishEventFlowEdgeDrag = (event: React.PointerEvent<HTMLElement>, cardId: string, targetNode: EventFlowNode) => {
     const dragState = eventFlowEdgeDragRef.current
     if (!dragState || dragState.cardId !== cardId) return
+    if (dragState.sourceNodeId === targetNode.id) return
     event.stopPropagation()
     connectEventFlowNodesDirect({
       cardId,
@@ -3884,8 +3893,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     if (!sourceNodeId || !targetNodeId || sourceNodeId === targetNodeId) return
     const label = text.eventFlowNext.replace(/^\+\s*/, '')
     const edgeId = uid('flow-edge')
-    const sourceTitle = sourceNodeTitle || text.eventFlowStart
-    const targetTitle = targetNodeTitle || text.eventFlowNewNode
+    const sourceTitle = sourceNodeTitle ?? text.eventFlowStart
+    const targetTitle = targetNodeTitle ?? text.eventFlowNewNode
 
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     commitGrids((current) =>
@@ -5049,9 +5058,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                   <span className="event-flow-node-type">{node.kind === 'start' ? text.eventFlowStart : text.eventFlowNewNode}</span>
                                   <textarea
                                     className="event-flow-node-title"
-                                    value={node.title}
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onChange={(event) => updateEventFlowNodeTitle(card.id, node.id, event.target.value)}
+                                    defaultValue={node.title}
+                                    placeholder={text.eventFlowNodePlaceholder}
+                                    onBlur={(event) => updateEventFlowNodeTitle(card.id, node.id, event.currentTarget.value)}
                                   />
                                   <button
                                     type="button"

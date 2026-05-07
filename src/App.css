@@ -1159,12 +1159,20 @@
   resize: none;
   padding: 0;
   color: var(--text-main);
-  -webkit-text-fill-color: var(--text-main);
   background: transparent;
   font: inherit;
   font-size: 15px;
   line-height: 1.35;
   font-weight: 760;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.event-flow-node-title:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .event-flow-next-btn {
