@@ -406,6 +406,7 @@
   position: relative;
   overflow: hidden;
   cursor: grab;
+  background-color: var(--canvas-base);
   --particle-energy: 0;
   --particle-origin-x: 50%;
   --particle-origin-y: 50%;

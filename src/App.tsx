@@ -519,8 +519,8 @@ const BRAND_LOGO_DATA_URL = `data:image/svg+xml,${encodeURIComponent(
   '<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="13" y="13" width="230" height="230" rx="43" fill="#22F15A"/><path d="M62 77H86.5L100.5 163H102.5L116.5 103H140L154 163H156L170 77H194.5L171.5 179H139.5L128.5 128.5H127.5L116.5 179H84.5L62 77Z" fill="#050505"/></svg>',
 )}`
 
-const SCENE_WIDTH = 6000
-const SCENE_HEIGHT = 4000
+const SCENE_WIDTH = 20_000_000
+const SCENE_HEIGHT = 20_000_000
 const ZOOM_MIN = 0.45
 const ZOOM_MAX = 2.4
 const CARD_MIN_WIDTH = 220
@@ -1048,15 +1048,31 @@ const withCalendarDefaults = normalizeCalendarState
 
 const initialViewport: ViewportState = INITIAL_VIEWPORT
 
-const createCenteredViewport = (bounds?: { width: number; height: number } | null): ViewportState => {
+const createCenteredViewport = (
+  bounds?: { width: number; height: number } | null,
+  target?: { x: number; y: number } | null,
+): ViewportState => {
   const width = bounds?.width && bounds.width > 0 ? bounds.width : typeof window !== 'undefined' ? window.innerWidth : 1440
   const height = bounds?.height && bounds.height > 0 ? bounds.height : typeof window !== 'undefined' ? window.innerHeight : 900
+  const tx = target?.x ?? SCENE_WIDTH / 2
+  const ty = target?.y ?? SCENE_HEIGHT / 2
 
   return {
     zoom: 1,
-    x: width / 2 - SCENE_WIDTH / 2,
-    y: height / 2 - SCENE_HEIGHT / 2,
+    x: width / 2 - tx,
+    y: height / 2 - ty,
   }
+}
+
+const getCardsCenter = (grid: GridData | undefined): { x: number; y: number } | null => {
+  if (!grid || grid.cards.length === 0) return null
+  let sx = 0
+  let sy = 0
+  for (const c of grid.cards) {
+    sx += c.x + c.width / 2
+    sy += c.y + c.height / 2
+  }
+  return { x: sx / grid.cards.length, y: sy / grid.cards.length }
 }
 
 const getViewportCenterWorldPoint = (bounds: { width: number; height: number } | null | undefined, viewport: ViewportState) => {
@@ -1609,9 +1625,11 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         const persistedState = persistedShadow ?? stateFromDb
         if (persistedState && persistedState.grids.length > 0) {
           const normalizedGrids = normalizeGridsForTodoBoard(persistedState.grids)
+          const targetGridId = persistedState.activeGridId || normalizedGrids[0].id
+          const targetGrid = normalizedGrids.find((g) => g.id === targetGridId) ?? normalizedGrids[0]
           setGrids(normalizedGrids)
-          setActiveGridId(persistedState.activeGridId || normalizedGrids[0].id)
-          setViewport(persistedState.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect()))
+          setActiveGridId(targetGridId)
+          setViewport(persistedState.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(targetGrid)))
         }
 
         const urls: Record<string, string> = {}
@@ -2292,10 +2310,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           restoredUrls[asset.id] = URL.createObjectURL(blob)
         }
 
+        const normalizedGrids = normalizeGridsForTodoBoard(snapshot.state.grids)
+        const targetGridId = snapshot.state.activeGridId
+        const targetGrid = normalizedGrids.find((g) => g.id === targetGridId) ?? normalizedGrids[0]
         setAssetUrls(restoredUrls)
-        setGrids(normalizeGridsForTodoBoard(snapshot.state.grids))
-        setActiveGridId(snapshot.state.activeGridId)
-        setViewport(snapshot.state.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect()))
+        setGrids(normalizedGrids)
+        setActiveGridId(targetGridId)
+        setViewport(snapshot.state.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(targetGrid)))
         updateSyncMeta({
           lastLocalUpdateAt: snapshot.savedAt,
           lastSyncAt: Date.now(),
@@ -4462,7 +4483,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             <span className="local-api-status-dot" aria-hidden="true" />
             {localApiToolbarLabel}
           </button>
-          <button className="zoom-btn reset" onClick={() => setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect()))}>
+          <button className="zoom-btn reset" onClick={() => setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(activeGrid)))}>
             {text.reset}
           </button>
           <button className="zoom-btn reset settings-trigger" onClick={() => setSettingsOpen(true)}>
