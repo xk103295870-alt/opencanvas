@@ -103,6 +103,7 @@ type CardRow = {
   externalUrl: string | null
   todoItemsJson: string | null
   calendarJson: string | null
+  eventFlowJson: string | null
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -171,6 +172,7 @@ function cardFromRow(row: CardRow): CardData {
   if (row.externalUrl) card.externalUrl = row.externalUrl
   if (row.todoItemsJson) card.todoItems = parseJson(row.todoItemsJson, [])
   if (row.calendarJson) card.calendar = parseJson(row.calendarJson, undefined)
+  if (row.eventFlowJson) card.eventFlow = parseJson(row.eventFlowJson, undefined)
   return card
 }
 
@@ -271,6 +273,7 @@ export class SqliteStore {
         externalUrl TEXT,
         todoItemsJson TEXT,
         calendarJson TEXT,
+        eventFlowJson TEXT,
         sortOrder INTEGER NOT NULL DEFAULT 0,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
@@ -292,7 +295,14 @@ export class SqliteStore {
       );
       CREATE INDEX IF NOT EXISTS idx_assets_workspaceId ON assets(workspaceId);
     `)
+    this.ensureColumn('cards', 'eventFlowJson', 'TEXT')
     this.setMeta('schemaVersion', SCHEMA_VERSION)
+  }
+
+  private ensureColumn(tableName: string, columnName: string, definition: string) {
+    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>
+    if (rows.some((row) => row.name === columnName)) return
+    this.db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run()
   }
 
   private importLegacyJsonIfNeeded() {
@@ -532,10 +542,10 @@ export class SqliteStore {
       .prepare(`
         INSERT INTO cards (
           id, workspaceId, gridId, kind, title, content, x, y, width, height,
-          fileId, fileName, externalUrl, todoItemsJson, calendarJson, sortOrder, createdAt, updatedAt
+          fileId, fileName, externalUrl, todoItemsJson, calendarJson, eventFlowJson, sortOrder, createdAt, updatedAt
         ) VALUES (
           @id, @workspaceId, @gridId, @kind, @title, @content, @x, @y, @width, @height,
-          @fileId, @fileName, @externalUrl, @todoItemsJson, @calendarJson, @sortOrder, @createdAt, @updatedAt
+          @fileId, @fileName, @externalUrl, @todoItemsJson, @calendarJson, @eventFlowJson, @sortOrder, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           workspaceId = excluded.workspaceId,
@@ -552,6 +562,7 @@ export class SqliteStore {
           externalUrl = excluded.externalUrl,
           todoItemsJson = excluded.todoItemsJson,
           calendarJson = excluded.calendarJson,
+          eventFlowJson = excluded.eventFlowJson,
           sortOrder = excluded.sortOrder,
           updatedAt = excluded.updatedAt
       `)
@@ -571,6 +582,7 @@ export class SqliteStore {
         externalUrl: card.externalUrl ?? null,
         todoItemsJson: card.todoItems ? jsonStringify(card.todoItems) : null,
         calendarJson: card.calendar ? jsonStringify(card.calendar) : null,
+        eventFlowJson: card.eventFlow ? jsonStringify(card.eventFlow) : null,
         sortOrder,
         createdAt: now,
         updatedAt: now,

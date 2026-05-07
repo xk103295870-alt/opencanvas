@@ -26,10 +26,12 @@ import {
   TODO_LANES,
   TODO_TAGS,
   createTodoItem,
+  createDefaultEventFlowState,
   isSingletonCardKind,
   normalizeCalendarEvents,
   normalizeCalendarState,
   normalizeCardKind,
+  normalizeEventFlowState,
   normalizeGridsForTodoBoard,
   normalizeTodoLane,
   normalizeTodoTag,
@@ -39,6 +41,8 @@ import {
   type CalendarViewMode,
   type CardData,
   type CardKind,
+  type EventFlowNode,
+  type EventFlowState,
   type ExternalCalendarInput,
   type ExternalTodoInput,
   type GridData,
@@ -86,6 +90,29 @@ type CalendarDragState = {
 type TodoDragState = {
   cardId: string
   itemId: string
+} | null
+
+type EventFlowNodeDragState = {
+  cardId: string
+  nodeId: string
+  pointerOffsetX: number
+  pointerOffsetY: number
+  boundsWidth: number
+  boundsHeight: number
+  canvasLeft: number
+  canvasTop: number
+  zoom: number
+} | null
+
+type EventFlowEdgeDragState = {
+  cardId: string
+  sourceNodeId: string
+  sourceNodeTitle: string
+  pointerX: number
+  pointerY: number
+  canvasLeft: number
+  canvasTop: number
+  zoom: number
 } | null
 
 type StoredAsset = {
@@ -151,7 +178,7 @@ type PersistedAppStateSnapshot = {
 }
 
 type CliBridgeCardPatch = Partial<
-  Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'>
+  Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow'>
 >
 
 type CliBridgeLayoutSyncMeta = {
@@ -202,6 +229,14 @@ type I18nText = {
   newNoteCard: string
   newTodoCard: string
   newCalendarCard: string
+  newEventFlowCard: string
+  eventFlowTitle: string
+  eventFlowAddNode: string
+  eventFlowNext: string
+  eventFlowStart: string
+  eventFlowNewNode: string
+  eventFlowDragHint: string
+  eventFlowDeleteNode: string
   newGridAria: string
   removeGridAria: string
   grids: string
@@ -362,6 +397,7 @@ type CanvasWorkbenchCreateCardPayload = {
   mediaUrl?: string
   todoItems?: ExternalTodoInput[]
   calendar?: ExternalCalendarInput
+  eventFlow?: EventFlowState
 }
 
 type CanvasWorkbenchSetConfigPayload = Partial<CliBridgeConfig>
@@ -396,6 +432,7 @@ type CanvasWorkbenchCommand =
         externalUrl?: string
         todoItems?: TodoItem[]
         calendar?: CalendarState
+        eventFlow?: EventFlowState
       }
     }
   | {
@@ -537,6 +574,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     newNoteCard: '+ 新建便利贴',
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
+    newEventFlowCard: '+ 事件流卡片',
+    eventFlowTitle: '事件流',
+    eventFlowAddNode: '+ 节点',
+    eventFlowNext: '+ 下一步',
+    eventFlowStart: '起点',
+    eventFlowNewNode: '新节点',
+    eventFlowDragHint: '拖动圆点连接节点',
     newGridAria: '新建画布',
     removeGridAria: '删除画布',
     grids: '画布',
@@ -651,6 +695,13 @@ const I18N: Record<LanguageCode, I18nText> = {
     newNoteCard: '+ New note card',
     newTodoCard: '+ New todo card',
     newCalendarCard: '+ New calendar card',
+    newEventFlowCard: '+ Event flow card',
+    eventFlowTitle: 'Event Flow',
+    eventFlowAddNode: '+ Node',
+    eventFlowNext: '+ Next',
+    eventFlowStart: 'Start',
+    eventFlowNewNode: 'New node',
+    eventFlowDragHint: 'Drag the dot to connect nodes',
     newGridAria: 'New grid',
     removeGridAria: 'Remove grid',
     grids: 'GRIDS',
@@ -833,7 +884,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const pad2 = (value: number) => String(value).padStart(2, '0')
 const toDateKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
-const toMonthKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-01`
+const toMonthKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`
 
 const parseDateKey = (value: string): Date => {
   const [yearRaw, monthRaw, dayRaw] = value.split('-')
@@ -854,9 +905,12 @@ const shiftDateKey = (dateKey: string, deltaDays: number) => {
 }
 
 const shiftMonthKey = (monthKey: string, delta: number) => {
-  const date = parseDateKey(monthKey)
-  date.setDate(1)
-  date.setMonth(date.getMonth() + delta)
+  const rawMonth = typeof monthKey === 'string' ? monthKey.trim() : ''
+  const match = /^(\d{4})-(\d{2})/.exec(rawMonth)
+  const fallback = new Date()
+  const year = match ? Number(match[1]) : fallback.getFullYear()
+  const monthIndex = match ? Number(match[2]) - 1 : fallback.getMonth()
+  const date = new Date(year, monthIndex + delta, 1)
   return toMonthKey(date)
 }
 
@@ -879,7 +933,7 @@ const getWeekStart = (date: Date) => {
 }
 
 const buildMonthCells = (monthCursor: string): CalendarDayCell[] => {
-  const cursor = parseDateKey(monthCursor)
+  const cursor = parseDateKey(/^\d{4}-\d{2}$/.test(monthCursor.trim()) ? `${monthCursor.trim()}-01` : monthCursor)
   cursor.setDate(1)
   const firstDay = cursor.getDay()
   const start = new Date(cursor)
@@ -913,7 +967,7 @@ const buildWeekCells = (selectedDate: string): CalendarDayCell[] => {
 }
 
 const formatMonthLabel = (monthCursor: string, language: LanguageCode) => {
-  const date = parseDateKey(monthCursor)
+  const date = parseDateKey(/^\d{4}-\d{2}$/.test(monthCursor.trim()) ? `${monthCursor.trim()}-01` : monthCursor)
   return date.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
     year: 'numeric',
     month: 'long',
@@ -1364,6 +1418,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [todoDraftText, setTodoDraftText] = useState('')
   const [todoDraftTag, setTodoDraftTag] = useState<TodoTag>('event')
   const [todoFilters, setTodoFilters] = useState<Record<string, TodoFilter>>({})
+  const [calendarNavigationLocks, setCalendarNavigationLocks] = useState<Record<string, number>>({})
   const [minimizedCardIds, setMinimizedCardIds] = useState<string[]>([])
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -1400,6 +1455,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const resizeStateRef = useRef<ResizeState>(null)
   const calendarDragStateRef = useRef<CalendarDragState>(null)
   const todoDragStateRef = useRef<TodoDragState>(null)
+  const eventFlowNodeDragRef = useRef<EventFlowNodeDragState>(null)
+  const eventFlowEdgeDragRef = useRef<EventFlowEdgeDragState>(null)
+  const eventFlowConnectHandlerRef = useRef<((sourceNodeId: string, targetNodeId: string) => void) | null>(null)
+  const [eventFlowEdgeDrag, setEventFlowEdgeDrag] = useState<EventFlowEdgeDragState>(null)
 
   const persistTimerRef = useRef<number | null>(null)
   const skipLocalSyncMetaUpdateRef = useRef(false)
@@ -1448,6 +1507,14 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   useEffect(() => {
     gridsRef.current = grids
   }, [grids])
+
+  const commitGrids = useCallback((updater: (current: GridData[]) => GridData[]) => {
+    setGrids((current) => {
+      const next = updater(current)
+      gridsRef.current = next
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     viewportRef.current = viewport
@@ -1923,6 +1990,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             mediaUrl: card.externalUrl,
             todoItems: card.todoItems,
             calendar: card.calendar,
+            eventFlow: card.eventFlow,
           },
           resolveApiBaseUrl(),
         )
@@ -2530,6 +2598,43 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
+      const flowDragState = eventFlowNodeDragRef.current
+      if (flowDragState) {
+        const nextX = clamp((event.clientX - flowDragState.canvasLeft) / flowDragState.zoom - flowDragState.pointerOffsetX, 18, flowDragState.boundsWidth - 232)
+        const nextY = clamp((event.clientY - flowDragState.canvasTop) / flowDragState.zoom - flowDragState.pointerOffsetY, 18, flowDragState.boundsHeight - 132)
+        setGrids((current) =>
+          current.map((grid) => ({
+            ...grid,
+            cards: grid.cards.map((card) => {
+              if (card.id !== flowDragState.cardId || card.kind !== 'eventFlow') return card
+              const eventFlow = normalizeEventFlowState(card.eventFlow)
+              return {
+                ...card,
+                eventFlow: {
+                  ...eventFlow,
+                  nodes: eventFlow.nodes.map((node) =>
+                    node.id === flowDragState.nodeId ? { ...node, x: nextX, y: nextY } : node,
+                  ),
+                },
+              }
+            }),
+          })),
+        )
+        return
+      }
+
+      const edgeDragState = eventFlowEdgeDragRef.current
+      if (edgeDragState) {
+        const nextEdgeDrag: EventFlowEdgeDragState = {
+          ...edgeDragState,
+          pointerX: (event.clientX - edgeDragState.canvasLeft) / edgeDragState.zoom,
+          pointerY: (event.clientY - edgeDragState.canvasTop) / edgeDragState.zoom,
+        }
+        eventFlowEdgeDragRef.current = nextEdgeDrag
+        setEventFlowEdgeDrag(nextEdgeDrag)
+        return
+      }
+
       const resizeState = resizeStateRef.current
       if (resizeState) {
         const world = toWorldPoint(event.clientX, event.clientY)
@@ -2583,6 +2688,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }
 
     const handlePointerUp = (event: PointerEvent) => {
+      finishEventFlowEdgeDragByPointer(event)
+
       const resizeState = resizeStateRef.current
       if (resizeState) {
         const world = toWorldPoint(event.clientX, event.clientY)
@@ -2608,6 +2715,25 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         })
       }
 
+      const flowDragState = eventFlowNodeDragRef.current
+      if (flowDragState) {
+        const targetCard = gridsRef.current.flatMap((grid) => grid.cards).find((card) => card.id === flowDragState.cardId)
+        const targetNode = targetCard?.kind === 'eventFlow' ? normalizeEventFlowState(targetCard.eventFlow).nodes.find((node) => node.id === flowDragState.nodeId) : null
+        if (targetNode) {
+          void persistCliBridgeCardPatch(flowDragState.cardId, {
+            eventFlow: normalizeEventFlowState({
+              ...(targetCard?.kind === 'eventFlow' ? targetCard.eventFlow : undefined),
+              nodes: normalizeEventFlowState(targetCard?.kind === 'eventFlow' ? targetCard.eventFlow : undefined).nodes.map((node) =>
+                node.id === flowDragState.nodeId ? targetNode : node,
+              ),
+            }),
+          })
+        }
+      }
+
+      eventFlowNodeDragRef.current = null
+      eventFlowEdgeDragRef.current = null
+      setEventFlowEdgeDrag(null)
       dragStateRef.current = null
       panStateRef.current = null
       resizeStateRef.current = null
@@ -2746,11 +2872,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           ? todoText.title
           : kind === 'calendar'
             ? calendarText.title
-            : kind === 'hint'
-              ? 'Hints'
-              : kind === 'note'
-                ? text.newNoteCard.replace('+ ', '')
-                : text.unnamedCard
+            : kind === 'eventFlow'
+              ? text.eventFlowTitle
+              : kind === 'hint'
+                ? 'Hints'
+                : kind === 'note'
+                  ? text.newNoteCard.replace('+ ', '')
+                  : text.unnamedCard
 
       const defaultSize = CARD_DEFAULT_SIZES[kind]
 
@@ -2805,7 +2933,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   calendar: calendarState,
                 }
               })()
-            : kind === 'hint'
+            : kind === 'eventFlow'
+              ? {
+                  ...cardBase,
+                  content: '',
+                  eventFlow: normalizeEventFlowState(payload?.eventFlow ?? createDefaultEventFlowState()),
+                }
+              : kind === 'hint'
               ? {
                   ...cardBase,
                   title: title || 'Drag and drop any file',
@@ -2832,6 +2966,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       pushParticleImpulse,
       persistCliBridgeCardCreate,
       updateCliBridgeLayoutSyncMeta,
+      text.eventFlowTitle,
       text.newNoteCard,
       text.notePlaceholder,
       text.unnamedCard,
@@ -2899,6 +3034,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     })
   }
 
+  const addEventFlowCard = () => {
+    const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
+    createCardInternal({
+      kind: 'eventFlow',
+      width: CARD_DEFAULT_SIZES.eventFlow.width,
+      height: CARD_DEFAULT_SIZES.eventFlow.height,
+      x: center.x - CARD_DEFAULT_SIZES.eventFlow.width / 2,
+      y: center.y - CARD_DEFAULT_SIZES.eventFlow.height / 2,
+    })
+  }
+
   const updateCardInternal = useCallback((payload: NonNullable<Extract<CanvasWorkbenchCommand, { type: 'update-card' }>['payload']>) => {
     const cardId = String(payload.cardId || '').trim()
     if (!cardId) {
@@ -2921,6 +3067,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     if (typeof payload.externalUrl === 'string') patch.externalUrl = payload.externalUrl.trim() || undefined
     if (payload.todoItems !== undefined) patch.todoItems = payload.todoItems
     if (payload.calendar !== undefined) patch.calendar = payload.calendar
+    if (payload.eventFlow !== undefined) patch.eventFlow = payload.eventFlow
 
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
@@ -2941,6 +3088,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             ...(typeof payload.height === 'number'
               ? { height: clamp(payload.height, CARD_MIN_HEIGHT, CARD_MAX_HEIGHT) }
               : {}),
+            ...(payload.todoItems !== undefined ? { todoItems: toTodoItems(payload.todoItems) } : {}),
+            ...(payload.calendar !== undefined ? { calendar: normalizeCalendarState(payload.calendar) } : {}),
+            ...(payload.eventFlow !== undefined ? { eventFlow: normalizeEventFlowState(payload.eventFlow) } : {}),
           }
         }),
       })),
@@ -3528,11 +3678,56 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
   }
 
-  const updateCalendarCard = (cardId: string, updater: (state: CalendarState) => CalendarState) => {
-    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
-    if (!targetCard || targetCard.kind !== 'calendar') return
+  const commitCalendarCard = (cardId: string, nextCalendar: CalendarState) => {
+    const now = Date.now()
+    const patch = { calendar: nextCalendar }
+    let changedForPersist = false
 
-    const nextCalendar = withCalendarDefaults(updater(withCalendarDefaults(targetCard.calendar)))
+    const nextGrids = gridsRef.current.map((grid) => {
+      let changed = false
+      const cards = grid.cards.map((card) => {
+        if (card.id !== cardId || card.kind !== 'calendar') return card
+        changed = true
+        changedForPersist = true
+        return { ...card, calendar: nextCalendar }
+      })
+      return changed ? { ...grid, cards } : grid
+    })
+
+    if (!changedForPersist) return
+
+    gridsRef.current = nextGrids
+    cliBridgePendingPatchRef.current[cardId] = { ...(cliBridgePendingPatchRef.current[cardId] ?? {}), ...patch }
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: now })
+    setCalendarNavigationLocks((currentLocks) => ({ ...currentLocks, [cardId]: now }))
+    setGrids(nextGrids)
+
+    void persistCliBridgeCardPatch(cardId, patch).finally(() => {
+      const pendingPatch = cliBridgePendingPatchRef.current[cardId]
+      if (pendingPatch?.calendar === nextCalendar) {
+        delete cliBridgePendingPatchRef.current[cardId]
+      }
+      window.setTimeout(() => {
+        setCalendarNavigationLocks((currentLocks) => {
+          if (currentLocks[cardId] !== now) return currentLocks
+          const { [cardId]: _releasedLock, ...nextLocks } = currentLocks
+          return nextLocks
+        })
+      }, 1200)
+    })
+  }
+
+  const updateCalendarCard = (cardId: string, updater: (state: CalendarState) => CalendarState) => {
+    const targetCard = gridsRef.current.flatMap((grid) => grid.cards).find((card) => card.id === cardId && card.kind === 'calendar')
+    if (!targetCard || targetCard.kind !== 'calendar') return
+    commitCalendarCard(cardId, withCalendarDefaults(updater(withCalendarDefaults(targetCard.calendar))))
+  }
+
+  const updateEventFlowCard = (cardId: string, updater: (state: EventFlowState) => EventFlowState) => {
+    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.kind !== 'eventFlow') return
+
+    const nextEventFlow = normalizeEventFlowState(updater(normalizeEventFlowState(targetCard.eventFlow)))
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
       current.map((grid) =>
@@ -3540,11 +3735,245 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           ? grid
           : {
               ...grid,
-              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, calendar: nextCalendar } : card)),
+              cards: grid.cards.map((card) => (card.id === cardId ? { ...card, eventFlow: nextEventFlow } : card)),
             },
       ),
     )
-    void persistCliBridgeCardPatch(cardId, { calendar: nextCalendar })
+    void persistCliBridgeCardPatch(cardId, { eventFlow: nextEventFlow })
+  }
+
+  const addEventFlowNode = (cardId: string) => {
+    updateEventFlowCard(cardId, (state) => ({
+      ...state,
+      nodes: [
+        ...state.nodes,
+        {
+          id: uid('flow-node'),
+          title: text.eventFlowNewNode,
+          kind: 'step',
+          x: 120 + state.nodes.length * 42,
+          y: 120 + state.nodes.length * 34,
+        },
+      ],
+    }))
+  }
+
+  const addEventFlowNextNode = (cardId: string, sourceNode: EventFlowNode) => {
+    const nextNode: EventFlowNode = {
+      id: uid('flow-node'),
+      title: text.eventFlowNewNode,
+      kind: 'step',
+      x: sourceNode.x + 285,
+      y: sourceNode.y,
+    }
+    updateEventFlowCard(cardId, (state) => ({
+      ...state,
+      nodes: [...state.nodes, nextNode],
+      edges: [
+        ...state.edges,
+        {
+          id: uid('flow-edge'),
+          sourceNodeId: sourceNode.id,
+          targetNodeId: nextNode.id,
+          label: text.eventFlowNext.replace(/^\+\s*/, ''),
+        },
+      ],
+    }))
+  }
+
+  const updateEventFlowNodeTitle = (cardId: string, nodeId: string, title: string) => {
+    updateEventFlowCard(cardId, (state) => ({
+      ...state,
+      nodes: state.nodes.map((node) => (node.id === nodeId ? { ...node, title } : node)),
+    }))
+  }
+
+  const startEventFlowNodeDrag = (event: React.PointerEvent<HTMLElement>, cardId: string, node: EventFlowNode) => {
+    const canvasElement = event.currentTarget.closest('.event-flow-canvas') as HTMLElement | null
+    if (!canvasElement) return
+    const canvasBounds = canvasElement.getBoundingClientRect()
+    const zoom = viewportRef.current.zoom || 1
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    eventFlowNodeDragRef.current = {
+      cardId,
+      nodeId: node.id,
+      pointerOffsetX: (event.clientX - canvasBounds.left) / zoom - node.x,
+      pointerOffsetY: (event.clientY - canvasBounds.top) / zoom - node.y,
+      boundsWidth: canvasBounds.width / zoom,
+      boundsHeight: canvasBounds.height / zoom,
+      canvasLeft: canvasBounds.left,
+      canvasTop: canvasBounds.top,
+      zoom,
+    }
+  }
+
+  const startEventFlowEdgeDrag = (event: React.PointerEvent<HTMLElement>, cardId: string, sourceNode: EventFlowNode) => {
+    const canvasElement = event.currentTarget.closest('.event-flow-canvas') as HTMLElement | null
+    if (!canvasElement) return
+    const canvasBounds = canvasElement.getBoundingClientRect()
+    const zoom = viewportRef.current.zoom || 1
+    event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    } catch {
+      // Some synthetic/browser edge cases do not have an active pointer yet.
+    }
+    const dragState: EventFlowEdgeDragState = {
+      cardId,
+      sourceNodeId: sourceNode.id,
+      sourceNodeTitle: sourceNode.title,
+      pointerX: (event.clientX - canvasBounds.left) / zoom,
+      pointerY: (event.clientY - canvasBounds.top) / zoom,
+      canvasLeft: canvasBounds.left,
+      canvasTop: canvasBounds.top,
+      zoom,
+    }
+    eventFlowEdgeDragRef.current = dragState
+    setEventFlowEdgeDrag(dragState)
+  }
+
+  const finishEventFlowEdgeDrag = (event: React.PointerEvent<HTMLElement>, cardId: string, targetNode: EventFlowNode) => {
+    const dragState = eventFlowEdgeDragRef.current
+    if (!dragState || dragState.cardId !== cardId) return
+    event.stopPropagation()
+    connectEventFlowNodesDirect({
+      cardId,
+      sourceNodeId: dragState.sourceNodeId,
+      sourceNodeTitle: dragState.sourceNodeTitle,
+      targetNodeId: targetNode.id,
+      targetNodeTitle: targetNode.title,
+    })
+    eventFlowEdgeDragRef.current = null
+    setEventFlowEdgeDrag(null)
+  }
+
+  const finishEventFlowEdgeDragByPointer = (event: PointerEvent) => {
+    const dragState = eventFlowEdgeDragRef.current
+    if (!dragState) return
+
+    const elements = document.elementsFromPoint(event.clientX, event.clientY)
+    const targetNodeElement = elements.find((element) => element instanceof HTMLElement && element.dataset.eventFlowNodeId) as HTMLElement | undefined
+    const targetCardId = targetNodeElement?.dataset.eventFlowCardId
+    const targetNodeId = targetNodeElement?.dataset.eventFlowNodeId
+    const targetTitle = targetNodeElement?.dataset.eventFlowNodeTitle
+    if (targetCardId && targetNodeId && targetCardId === dragState.cardId) {
+      connectEventFlowNodesDirect({
+        cardId: dragState.cardId,
+        sourceNodeId: dragState.sourceNodeId,
+        sourceNodeTitle: dragState.sourceNodeTitle,
+        targetNodeId,
+        targetNodeTitle: targetTitle,
+      })
+    }
+  }
+
+  const connectEventFlowNodesDirect = ({
+    cardId,
+    sourceNodeId,
+    sourceNodeTitle,
+    targetNodeId,
+    targetNodeTitle,
+  }: {
+    cardId: string
+    sourceNodeId: string
+    sourceNodeTitle?: string
+    targetNodeId: string
+    targetNodeTitle?: string
+  }) => {
+    if (!sourceNodeId || !targetNodeId || sourceNodeId === targetNodeId) return
+    const label = text.eventFlowNext.replace(/^\+\s*/, '')
+    const edgeId = uid('flow-edge')
+    const sourceTitle = sourceNodeTitle || text.eventFlowStart
+    const targetTitle = targetNodeTitle || text.eventFlowNewNode
+
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    commitGrids((current) =>
+      current.map((grid) => ({
+        ...grid,
+        cards: grid.cards.map((card) => {
+          if (card.id !== cardId || card.kind !== 'eventFlow') return card
+          const existingFlow = normalizeEventFlowState(card.eventFlow)
+          const hasSourceNode = existingFlow.nodes.some((node) => node.id === sourceNodeId)
+          const hasTargetNode = existingFlow.nodes.some((node) => node.id === targetNodeId)
+          const nodes = [
+            ...existingFlow.nodes,
+            ...(hasSourceNode
+              ? []
+              : [{ id: sourceNodeId, title: sourceTitle, kind: 'step' as const, x: 72, y: 150 }]),
+            ...(hasTargetNode
+              ? []
+              : [{ id: targetNodeId, title: targetTitle, kind: 'step' as const, x: 320, y: 150 }]),
+          ]
+          const edges = existingFlow.edges.some((edge) => edge.sourceNodeId === sourceNodeId && edge.targetNodeId === targetNodeId)
+            ? existingFlow.edges
+            : [
+                ...existingFlow.edges,
+                {
+                  id: edgeId,
+                  sourceNodeId,
+                  targetNodeId,
+                  label,
+                },
+              ]
+          const nextEventFlow = normalizeEventFlowState({ ...existingFlow, nodes, edges })
+          void persistCliBridgeCardPatch(cardId, { eventFlow: nextEventFlow })
+          return { ...card, eventFlow: nextEventFlow }
+        }),
+      })),
+    )
+  }
+
+  const connectEventFlowNodes = (cardId: string, sourceNodeId: string, targetNodeId: string) => {
+    if (!sourceNodeId || !targetNodeId || sourceNodeId === targetNodeId) return
+    const applyEdge = (state: EventFlowState) => ({
+      ...state,
+      edges: state.edges.some((edge) => edge.sourceNodeId === sourceNodeId && edge.targetNodeId === targetNodeId)
+        ? state.edges
+        : [
+            ...state.edges,
+            {
+              id: uid('flow-edge'),
+              sourceNodeId,
+              targetNodeId,
+              label: text.eventFlowNext.replace(/^\+\s*/, ''),
+            },
+          ],
+    })
+
+    const canUseActiveGrid = activeGrid.cards.some((card) => card.id === cardId && card.kind === 'eventFlow')
+    if (canUseActiveGrid) {
+      updateEventFlowCard(cardId, applyEdge)
+      return
+    }
+
+    let nextEventFlow: EventFlowState | null = null
+    let didUpdate = false
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    commitGrids((current) =>
+      current.map((grid) => {
+        let gridChanged = false
+        const nextCards = grid.cards.map((card) => {
+          if (card.id !== cardId || card.kind !== 'eventFlow') return card
+          nextEventFlow = normalizeEventFlowState(applyEdge(normalizeEventFlowState(card.eventFlow)))
+          didUpdate = true
+          gridChanged = true
+          return { ...card, eventFlow: nextEventFlow }
+        })
+        return gridChanged ? { ...grid, cards: nextCards } : grid
+      }),
+    )
+    if (!didUpdate) return
+    window.setTimeout(() => {
+      if (nextEventFlow) {
+        void persistCliBridgeCardPatch(cardId, { eventFlow: nextEventFlow })
+      }
+    }, 0)
+  }
+
+  eventFlowConnectHandlerRef.current = (sourceNodeId: string, targetNodeId: string) => {
+    const cardId = eventFlowEdgeDragRef.current?.cardId
+    if (cardId) connectEventFlowNodes(cardId, sourceNodeId, targetNodeId)
   }
 
   const setCalendarViewMode = (cardId: string, mode: CalendarViewMode) => {
@@ -3555,22 +3984,26 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }))
   }
 
-  const navigateCalendar = (cardId: string, delta: number) => {
-    updateCalendarCard(cardId, (calendarState) => {
-      if (calendarState.viewMode === 'week') {
-        const nextSelected = shiftDateKey(calendarState.selectedDate, delta * 7)
-        return {
-          ...calendarState,
-          selectedDate: nextSelected,
-          monthCursor: toMonthKey(parseDateKey(nextSelected)),
-        }
-      }
-
-      return {
-        ...calendarState,
-        monthCursor: shiftMonthKey(calendarState.monthCursor, delta),
-      }
-    })
+  const navigateCalendarFromCard = (card: CardData, delta: number) => {
+    if (card.kind !== 'calendar') return
+    const currentCard = gridsRef.current.flatMap((grid) => grid.cards).find((item) => item.id === card.id && item.kind === 'calendar')
+    const calendarState = withCalendarDefaults(currentCard?.kind === 'calendar' ? currentCard.calendar : card.calendar)
+    const nextCalendar = withCalendarDefaults(
+      calendarState.viewMode === 'week'
+        ? (() => {
+            const nextSelected = shiftDateKey(calendarState.selectedDate, delta * 7)
+            return {
+              ...calendarState,
+              selectedDate: nextSelected,
+              monthCursor: toMonthKey(parseDateKey(nextSelected)),
+            }
+          })()
+        : {
+            ...calendarState,
+            monthCursor: shiftMonthKey(calendarState.monthCursor, delta),
+          },
+    )
+    commitCalendarCard(card.id, nextCalendar)
   }
 
   const selectCalendarDate = (cardId: string, dateKey: string) => {
@@ -3829,6 +4262,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const noteActionLabel = text.newNoteCard.replace(/^\+\s*/, '')
   const todoActionLabel = todoText.newCardButton.replace(/^\+\s*/, '')
   const calendarActionLabel = calendarText.newCardButton.replace(/^\+\s*/, '')
+  const eventFlowActionLabel = text.newEventFlowCard.replace(/^\+\s*/, '')
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -3866,6 +4300,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           <button className="action-btn" onClick={addCalendarCard}>
             <span className="action-icon">◷</span>
             <span>{calendarActionLabel}</span>
+          </button>
+          <button className="action-btn" onClick={addEventFlowCard}>
+            <span className="action-icon">↬</span>
+            <span>{eventFlowActionLabel}</span>
           </button>
         </div>
 
@@ -4022,7 +4460,14 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             const fileUrl = card.fileId ? assetUrls[card.fileId] || card.externalUrl : card.externalUrl
             const isMinimizableCard = card.kind === 'todo' || card.kind === 'calendar'
             const isMinimizedCard = isMinimizableCard && minimizedCardIds.includes(card.id)
-            const cardTypeLabel = card.kind === 'todo' ? todoText.title : card.kind === 'calendar' ? calendarText.title : card.kind
+            const cardTypeLabel =
+              card.kind === 'todo'
+                ? todoText.title
+                : card.kind === 'calendar'
+                  ? calendarText.title
+                  : card.kind === 'eventFlow'
+                    ? text.eventFlowTitle
+                    : card.kind
 
             return (
               <article
@@ -4035,7 +4480,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   transform: `translate(${card.x}px, ${card.y}px)`,
                   width: isMinimizedCard ? '220px' : `${card.width}px`,
                   height: isMinimizedCard ? '54px' : `${card.height}px`,
-                  zIndex: draggingCardId === card.id || resizingCardId === card.id ? 10 : 1,
+                  zIndex: draggingCardId === card.id || resizingCardId === card.id ? 20 : 1 + activeGrid.cards.length - activeGrid.cards.findIndex((item) => item.id === card.id),
                 }}
               >
                 <header
@@ -4287,29 +4732,37 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                 {!isMinimizedCard && card.kind === 'calendar'
                   ? (() => {
                       const calendar = withCalendarDefaults(card.calendar)
+                      const displayedCalendar =
+                        calendarNavigationLocks[card.id] && card.kind === 'calendar'
+                          ? withCalendarDefaults(
+                              gridsRef.current
+                                .flatMap((grid) => grid.cards)
+                                .find((item) => item.id === card.id && item.kind === 'calendar')?.calendar,
+                            )
+                          : calendar
                       const days =
-                        calendar.viewMode === 'month'
-                          ? buildMonthCells(calendar.monthCursor)
-                          : buildWeekCells(calendar.selectedDate)
+                        displayedCalendar.viewMode === 'month'
+                          ? buildMonthCells(displayedCalendar.monthCursor)
+                          : buildWeekCells(displayedCalendar.selectedDate)
 
-                      const eventsByDate = calendar.events.reduce<Record<string, CalendarEvent[]>>((acc, eventItem) => {
+                      const eventsByDate = displayedCalendar.events.reduce<Record<string, CalendarEvent[]>>((acc, eventItem) => {
                         if (!acc[eventItem.date]) acc[eventItem.date] = []
                         acc[eventItem.date].push(eventItem)
                         return acc
                       }, {})
 
-                      const selectedEvents = [...(eventsByDate[calendar.selectedDate] ?? [])].sort((a, b) => {
+                      const selectedEvents = [...(eventsByDate[displayedCalendar.selectedDate] ?? [])].sort((a, b) => {
                         if (a.allDay !== b.allDay) return a.allDay ? -1 : 1
                         return (a.startTime ?? '').localeCompare(b.startTime ?? '')
                       })
 
                       const canSubmitEvent =
-                        calendar.draftAllDay || normalizeTimeRange(calendar.draftStartTime, calendar.draftEndTime) !== null
+                        displayedCalendar.draftAllDay || normalizeTimeRange(displayedCalendar.draftStartTime, displayedCalendar.draftEndTime) !== null
 
                       const periodLabel =
-                        calendar.viewMode === 'month'
-                          ? formatMonthLabel(calendar.monthCursor, settings.language)
-                          : formatWeekLabel(calendar.selectedDate, settings.language)
+                        displayedCalendar.viewMode === 'month'
+                          ? formatMonthLabel(displayedCalendar.monthCursor, settings.language)
+                          : formatWeekLabel(displayedCalendar.selectedDate, settings.language)
 
                       return (
                         <div className="calendar-card-body">
@@ -4319,7 +4772,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                               className="calendar-nav-btn"
                               aria-label={calendarText.prevMonthAria}
                               onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => navigateCalendar(card.id, -1)}
+                              onClick={() => navigateCalendarFromCard(card, -1)}
                             >
                               ‹
                             </button>
@@ -4331,7 +4784,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                               className="calendar-nav-btn"
                               aria-label={calendarText.nextMonthAria}
                               onPointerDown={(event) => event.stopPropagation()}
-                              onClick={() => navigateCalendar(card.id, 1)}
+                              onClick={() => navigateCalendarFromCard(card, 1)}
                             >
                               ›
                             </button>
@@ -4340,7 +4793,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                           <div className="calendar-view-switch">
                             <button
                               type="button"
-                              className={`calendar-view-btn ${calendar.viewMode === 'month' ? 'active' : ''}`}
+                              className={`calendar-view-btn ${displayedCalendar.viewMode === 'month' ? 'active' : ''}`}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={() => setCalendarViewMode(card.id, 'month')}
                             >
@@ -4348,7 +4801,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                             </button>
                             <button
                               type="button"
-                              className={`calendar-view-btn ${calendar.viewMode === 'week' ? 'active' : ''}`}
+                              className={`calendar-view-btn ${displayedCalendar.viewMode === 'week' ? 'active' : ''}`}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={() => setCalendarViewMode(card.id, 'week')}
                             >
@@ -4362,9 +4815,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                             ))}
                           </div>
 
-                          <div className={`calendar-grid ${calendar.viewMode === 'week' ? 'week-mode' : ''}`}>
+                          <div className={`calendar-grid ${displayedCalendar.viewMode === 'week' ? 'week-mode' : ''}`}>
                             {days.map((day, dayIndex) => {
-                              const isSelected = day.dateKey === calendar.selectedDate
+                              const isSelected = day.dateKey === displayedCalendar.selectedDate
                               const isToday = day.dateKey === todayKey
                               const dayEvents = eventsByDate[day.dateKey] ?? []
                               const eventCount = dayEvents.length
@@ -4382,7 +4835,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                   onDrop={(event) => onCalendarDayDrop(event, card.id, day.dateKey)}
                                 >
                                   <span className="calendar-day-top">
-                                    {calendar.viewMode === 'week' ? (
+                                    {displayedCalendar.viewMode === 'week' ? (
                                       <span className="calendar-day-week">{calendarText.weekdays[dayIndex]}</span>
                                     ) : null}
                                     <span className="calendar-day-number">{Number(day.dateKey.slice(8, 10))}</span>
@@ -4390,7 +4843,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
                                   {eventCount > 0 ? <span className="calendar-day-count">{eventCount}</span> : null}
 
-                                  {calendar.viewMode === 'week' ? (
+                                  {displayedCalendar.viewMode === 'week' ? (
                                     <span className="calendar-day-preview">
                                       {dayEvents.slice(0, 2).map((eventItem) => (
                                         <span key={eventItem.id} className="calendar-day-preview-item">
@@ -4417,7 +4870,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                             <div className="calendar-entry-row">
                               <input
                                 className="calendar-entry-input"
-                                value={calendar.draftTitle}
+                                value={displayedCalendar.draftTitle}
                                 onChange={(event) =>
                                   updateCalendarCard(card.id, (state) => ({ ...state, draftTitle: event.target.value }))
                                 }
@@ -4426,7 +4879,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                               <button
                                 type="submit"
                                 className="calendar-add-btn"
-                                disabled={!calendar.draftTitle.trim() || !canSubmitEvent}
+                                disabled={!displayedCalendar.draftTitle.trim() || !canSubmitEvent}
                                 onPointerDown={(event) => event.stopPropagation()}
                               >
                                 {calendarText.addButton}
@@ -4437,7 +4890,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                               <label className="calendar-all-day">
                                 <input
                                   type="checkbox"
-                                  checked={calendar.draftAllDay}
+                                  checked={displayedCalendar.draftAllDay}
                                   onChange={(event) =>
                                     updateCalendarCard(card.id, (state) => ({ ...state, draftAllDay: event.target.checked }))
                                   }
@@ -4445,13 +4898,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                 <span>{calendarText.allDay}</span>
                               </label>
 
-                              {calendar.draftAllDay ? null : (
+                              {displayedCalendar.draftAllDay ? null : (
                                 <div className="calendar-time-range">
                                   <label>
                                     <span>{calendarText.startTime}</span>
                                     <input
                                       type="time"
-                                      value={calendar.draftStartTime}
+                                      value={displayedCalendar.draftStartTime}
                                       onChange={(event) =>
                                         updateCalendarCard(card.id, (state) => ({ ...state, draftStartTime: event.target.value }))
                                       }
@@ -4461,7 +4914,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                     <span>{calendarText.endTime}</span>
                                     <input
                                       type="time"
-                                      value={calendar.draftEndTime}
+                                      value={displayedCalendar.draftEndTime}
                                       onChange={(event) =>
                                         updateCalendarCard(card.id, (state) => ({ ...state, draftEndTime: event.target.value }))
                                       }
@@ -4517,6 +4970,108 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                             ) : (
                               <p className="calendar-empty">{calendarText.emptyHint}</p>
                             )}
+                          </div>
+                        </div>
+                      )
+                    })()
+                  : null}
+
+                {!isMinimizedCard && card.kind === 'eventFlow'
+                  ? (() => {
+                      const flow = normalizeEventFlowState(card.eventFlow)
+                      const nodeMap = new Map(flow.nodes.map((node) => [node.id, node]))
+                      const dragSource = eventFlowEdgeDrag?.cardId === card.id ? nodeMap.get(eventFlowEdgeDrag.sourceNodeId) : null
+
+                      return (
+                        <div className="event-flow-card-body" onPointerDown={(event) => event.stopPropagation()}>
+                          <div className="event-flow-toolbar">
+                            <div>
+                              <span className="event-flow-eyebrow">{text.eventFlowTitle}</span>
+                              <strong>{flow.nodes.length} nodes</strong>
+                              <p>{text.eventFlowDragHint}</p>
+                            </div>
+                            <button
+                              type="button"
+                              className="event-flow-add-btn"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => addEventFlowNode(card.id)}
+                            >
+                              {text.eventFlowAddNode}
+                            </button>
+                          </div>
+
+                          <div className="event-flow-canvas" onPointerDown={(event) => event.stopPropagation()}>
+                            <svg className="event-flow-layer" viewBox={`0 0 ${Math.max(card.width - 24, 320)} ${Math.max(card.height - 124, 240)}`} preserveAspectRatio="none">
+                              <defs>
+                                <marker id={`event-flow-arrow-${card.id}`} markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                                  <path d="M 0 0 L 10 5 L 0 10 z" />
+                                </marker>
+                              </defs>
+                              {flow.edges.map((edge) => {
+                                const sourceNode = nodeMap.get(edge.sourceNodeId)
+                                const targetNode = nodeMap.get(edge.targetNodeId)
+                                if (!sourceNode || !targetNode) return null
+                                const startX = sourceNode.x + 220
+                                const startY = sourceNode.y + 58
+                                const endX = targetNode.x
+                                const endY = targetNode.y + 58
+                                const mid = Math.max(56, Math.abs(endX - startX) / 2)
+                                return (
+                                  <path
+                                    key={edge.id}
+                                    className="event-flow-path"
+                                    d={`M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`}
+                                    markerEnd={`url(#event-flow-arrow-${card.id})`}
+                                  />
+                                )
+                              })}
+                              {dragSource && eventFlowEdgeDrag ? (
+                                <path
+                                  className="event-flow-preview"
+                                  d={`M ${dragSource.x + 220} ${dragSource.y + 58} C ${dragSource.x + 276} ${dragSource.y + 58}, ${eventFlowEdgeDrag.pointerX - 56} ${eventFlowEdgeDrag.pointerY}, ${eventFlowEdgeDrag.pointerX} ${eventFlowEdgeDrag.pointerY}`}
+                                />
+                              ) : null}
+                            </svg>
+
+                            {flow.nodes.map((node) => {
+                              const isTarget = eventFlowEdgeDrag?.cardId === card.id && eventFlowEdgeDrag.sourceNodeId !== node.id
+                              return (
+                                <div
+                                  key={node.id}
+                                  className={`event-flow-node ${node.kind === 'start' ? 'start' : ''} ${isTarget ? 'target' : ''}`}
+                                  style={{ transform: `translate(${node.x}px, ${node.y}px)` }}
+                                  data-event-flow-card-id={card.id}
+                                  data-event-flow-node-id={node.id}
+                                  data-event-flow-node-title={node.title}
+                                  onPointerDown={(event) => startEventFlowNodeDrag(event, card.id, node)}
+                                  onPointerUp={(event) => finishEventFlowEdgeDrag(event, card.id, node)}
+                                >
+                                  <span className="event-flow-node-type">{node.kind === 'start' ? text.eventFlowStart : text.eventFlowNewNode}</span>
+                                  <textarea
+                                    className="event-flow-node-title"
+                                    value={node.title}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onChange={(event) => updateEventFlowNodeTitle(card.id, node.id, event.target.value)}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="event-flow-next-btn"
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={() => addEventFlowNextNode(card.id, node)}
+                                  >
+                                    {text.eventFlowNext}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="event-flow-node-handle"
+                                    aria-label={text.eventFlowDragHint}
+                                    title={text.eventFlowDragHint}
+                                    onPointerDown={(event) => startEventFlowEdgeDrag(event, card.id, node)}
+                                    onDragStart={(event) => event.preventDefault()}
+                                  />
+                                </div>
+                              )
+                            })}
                           </div>
                         </div>
                       )

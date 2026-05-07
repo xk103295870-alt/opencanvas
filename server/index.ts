@@ -9,6 +9,7 @@ import {
   isSingletonCardKind,
   normalizeCalendarState,
   normalizeCardKind,
+  normalizeEventFlowState,
   normalizeTodoItems,
   type CalendarState,
   type CardData,
@@ -32,6 +33,7 @@ type CanvasWorkbenchCreateCardPayload = {
   fileName?: string
   mediaUrl?: string
   todoItems?: Array<string | { text?: string; done?: boolean; status?: string; tag?: string }>
+  eventFlow?: CardData['eventFlow']
   calendar?: {
     monthCursor?: string
     selectedDate?: string
@@ -466,6 +468,8 @@ function inferDefaultTitle(kind: CardKind) {
       return 'Todo list'
     case 'calendar':
       return 'Calendar'
+    case 'eventFlow':
+      return 'Event Flow'
     case 'note':
     default:
       return 'Quick note'
@@ -515,6 +519,7 @@ function normalizeUploadedGrids(input: unknown): GridData[] {
         if (rawCard.externalUrl !== undefined) card.externalUrl = String(rawCard.externalUrl || '').trim() || undefined
         if (kind === 'todo') card.todoItems = normalizeTodoItems(rawCard.todoItems)
         if (kind === 'calendar') card.calendar = normalizeCalendarState(rawCard.calendar)
+        if (kind === 'eventFlow') card.eventFlow = normalizeEventFlowState(rawCard.eventFlow)
 
         cards.push(card)
       })
@@ -1499,6 +1504,9 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   if (kind === 'calendar') {
     card.calendar = normalizeCalendarState(body.calendar)
   }
+  if (kind === 'eventFlow') {
+    card.eventFlow = normalizeEventFlowState(body.eventFlow)
+  }
 
   targetGrid.cards.push(card)
   if (body.activateGrid) ctx.workspace.activeGridId = targetGrid.id
@@ -1525,7 +1533,7 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
   }
 
   const body = req.body as Partial<
-    Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'>
+    Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow'>
   > & {
     mediaUrl?: string
   }
@@ -1556,6 +1564,9 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
     }
     if (body.calendar !== undefined) {
       next.calendar = normalizeCalendarState(body.calendar)
+    }
+    if (body.eventFlow !== undefined) {
+      next.eventFlow = normalizeEventFlowState(body.eventFlow)
     }
     grid.cards[index] = next
     updatedCard = next

@@ -1,4 +1,4 @@
-import type { CardData, CardKind, CalendarState, TodoItem } from './shared/workspaceTypes'
+import type { CardData, CardKind, CalendarState, EventFlowState, TodoItem } from './shared/workspaceTypes'
 
 export type ServerAccount = {
   id: string
@@ -151,12 +151,13 @@ export type ServerCardCreatePayload = {
       endTime?: string
     }>
   }
+  eventFlow?: EventFlowState
 }
 
 export type ServerCardUpdatePayload = Partial<
   Pick<
     ServerWorkspaceCard,
-    'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar'
+    'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow'
   >
 > & {
   todoItems?: TodoItem[]

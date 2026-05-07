@@ -1,5 +1,6 @@
-export type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar'
+export type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar' | 'eventFlow'
 export type CalendarViewMode = 'month' | 'week'
+export type EventFlowNodeKind = 'start' | 'step'
 export type TodoLane = 'todo' | 'doing' | 'done'
 export type TodoTag = 'event' | 'feature' | 'important' | 'plan' | 'bug' | 'idea'
 export type TodoFilter = 'all' | TodoTag
@@ -31,6 +32,27 @@ export type CalendarState = {
   events: CalendarEvent[]
 }
 
+export type EventFlowNode = {
+  id: string
+  title: string
+  x: number
+  y: number
+  kind: EventFlowNodeKind
+}
+
+export type EventFlowEdge = {
+  id: string
+  sourceNodeId: string
+  targetNodeId: string
+  label?: string
+}
+
+export type EventFlowState = {
+  nodes: EventFlowNode[]
+  edges: EventFlowEdge[]
+  draftTitle: string
+}
+
 export type CardData = {
   id: string
   kind: CardKind
@@ -45,6 +67,7 @@ export type CardData = {
   externalUrl?: string
   todoItems?: TodoItem[]
   calendar?: CalendarState
+  eventFlow?: EventFlowState
 }
 
 export type GridData = {
@@ -80,11 +103,18 @@ export type ExternalCalendarInput = Partial<Omit<CalendarState, 'events'>> & {
   events?: ExternalCalendarEventInput[]
 }
 
+export type ExternalEventFlowNodeInput = Partial<EventFlowNode>
+export type ExternalEventFlowEdgeInput = Partial<EventFlowEdge>
+export type ExternalEventFlowInput = Partial<Omit<EventFlowState, 'nodes' | 'edges'>> & {
+  nodes?: ExternalEventFlowNodeInput[]
+  edges?: ExternalEventFlowEdgeInput[]
+}
+
 export const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
 export const TODO_TAGS: TodoTag[] = ['event', 'feature', 'important', 'plan', 'bug', 'idea']
 export const TODO_FILTERS: TodoFilter[] = ['all', ...TODO_TAGS]
 
-export const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar'])
+export const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar', 'eventFlow'])
 
 export const CARD_DEFAULT_SIZES: Record<CardKind, { width: number; height: number }> = {
   note: { width: 340, height: 280 },
@@ -94,6 +124,7 @@ export const CARD_DEFAULT_SIZES: Record<CardKind, { width: number; height: numbe
   pdf: { width: 460, height: 360 },
   todo: { width: 760, height: 430 },
   calendar: { width: 480, height: 560 },
+  eventFlow: { width: 760, height: 480 },
 }
 
 export const INITIAL_VIEWPORT: ViewportState = { x: 0, y: 0, zoom: 1 }
@@ -119,8 +150,10 @@ export const toMonthKeyOrFallback = (value: unknown, fallback: string) =>
   typeof value === 'string' && /^\d{4}-\d{2}$/.test(value.trim()) ? value.trim() : fallback
 
 export const normalizeCardKind = (value: unknown): CardKind => {
-  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  return CARD_KIND_SET.has(raw as CardKind) ? (raw as CardKind) : 'note'
+  const raw = typeof value === 'string' ? value.trim() : ''
+  const normalized = raw.toLowerCase()
+  if (normalized === 'eventflow' || normalized === 'event-flow' || normalized === 'event_flow') return 'eventFlow'
+  return CARD_KIND_SET.has(raw as CardKind) ? (raw as CardKind) : CARD_KIND_SET.has(normalized as CardKind) ? (normalized as CardKind) : 'note'
 }
 
 export const isSingletonCardKind = (kind: CardKind) => kind === 'todo' || kind === 'calendar'
@@ -241,6 +274,80 @@ export const normalizeCalendarState = (calendar?: ExternalCalendarInput | Calend
   }
 }
 
+export const createDefaultEventFlowState = (): EventFlowState => ({
+  draftTitle: '',
+  nodes: [
+    {
+      id: `flow-node-${cryptoRandomId()}`,
+      title: '起点',
+      kind: 'start',
+      x: 72,
+      y: 150,
+    },
+  ],
+  edges: [],
+})
+
+const normalizeEventFlowNodeKind = (value: unknown): EventFlowNodeKind => (value === 'start' ? 'start' : 'step')
+
+export const normalizeEventFlowState = (input?: ExternalEventFlowInput | EventFlowState): EventFlowState => {
+  const fallback = createDefaultEventFlowState()
+  if (!input || typeof input !== 'object') return fallback
+
+  const nodesInput = Array.isArray(input.nodes) ? input.nodes : []
+  const seenNodeIds = new Set<string>()
+  const nodes = nodesInput
+    .map((nodeInput, index) => {
+      if (!nodeInput || typeof nodeInput !== 'object') return null
+      const rawId = String(nodeInput.id ?? '').trim()
+      const id = rawId && !seenNodeIds.has(rawId) ? rawId : `flow-node-${cryptoRandomId()}`
+      seenNodeIds.add(id)
+      const kind = index === 0 ? normalizeEventFlowNodeKind(nodeInput.kind ?? 'start') : normalizeEventFlowNodeKind(nodeInput.kind)
+      return {
+        id,
+        title: String(nodeInput.title ?? (kind === 'start' ? '起点' : '新节点')).trim() || (kind === 'start' ? '起点' : '新节点'),
+        x: Number.isFinite(nodeInput.x) ? Number(nodeInput.x) : 72 + index * 180,
+        y: Number.isFinite(nodeInput.y) ? Number(nodeInput.y) : 150,
+        kind,
+      } satisfies EventFlowNode
+    })
+    .filter((node): node is EventFlowNode => Boolean(node))
+
+  const normalizedNodes = nodes.length ? nodes : fallback.nodes
+  const nodeIds = new Set(normalizedNodes.map((node) => node.id))
+  const seenPairs = new Set<string>()
+  const seenEdgeIds = new Set<string>()
+  const edgesInput = Array.isArray(input.edges) ? input.edges : []
+  const edges = edgesInput
+    .map((edgeInput) => {
+      if (!edgeInput || typeof edgeInput !== 'object') return null
+      const sourceNodeId = String(edgeInput.sourceNodeId ?? '').trim()
+      const targetNodeId = String(edgeInput.targetNodeId ?? '').trim()
+      if (!sourceNodeId || !targetNodeId || sourceNodeId === targetNodeId) return null
+      if (!nodeIds.has(sourceNodeId) || !nodeIds.has(targetNodeId)) return null
+      const pairKey = `${sourceNodeId}->${targetNodeId}`
+      if (seenPairs.has(pairKey)) return null
+      seenPairs.add(pairKey)
+      const rawId = String(edgeInput.id ?? '').trim()
+      const id = rawId && !seenEdgeIds.has(rawId) ? rawId : `flow-edge-${cryptoRandomId()}`
+      seenEdgeIds.add(id)
+      const label = typeof edgeInput.label === 'string' && edgeInput.label.trim() ? edgeInput.label.trim() : undefined
+      return {
+        id,
+        sourceNodeId,
+        targetNodeId,
+        ...(label ? { label } : {}),
+      } satisfies EventFlowEdge
+    })
+    .filter((edge): edge is EventFlowEdge => Boolean(edge))
+
+  return {
+    draftTitle: String(input.draftTitle ?? ''),
+    nodes: normalizedNodes,
+    edges,
+  }
+}
+
 export const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
   if (!Array.isArray(input)) return []
   return input.map((grid) => ({
@@ -257,7 +364,12 @@ export const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
                   ...card,
                   calendar: normalizeCalendarState(card.calendar),
                 }
-              : card,
+              : card.kind === 'eventFlow'
+                ? {
+                    ...card,
+                    eventFlow: normalizeEventFlowState(card.eventFlow),
+                  }
+                : card,
         )
       : [],
   }))
