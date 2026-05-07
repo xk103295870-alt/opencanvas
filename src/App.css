@@ -1196,6 +1196,70 @@
   cursor: crosshair;
 }
 
+.event-flow-node-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-dim);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.event-flow-node:hover .event-flow-node-delete {
+  opacity: 1;
+}
+
+.event-flow-node-delete:hover {
+  border-color: var(--line);
+  color: #d98383;
+  background: var(--icon-bg);
+}
+
+.event-flow-edge-delete {
+  fill: color-mix(in srgb, var(--card-bg-top) 85%, transparent);
+  stroke: color-mix(in srgb, var(--line-strong) 60%, transparent);
+  stroke-width: 1.5;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: auto;
+}
+
+.event-flow-path:hover + .event-flow-edge-delete,
+.event-flow-edge-delete:hover {
+  opacity: 1;
+}
+
+.event-flow-edge-delete-icon {
+  fill: var(--text-dim);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: auto;
+}
+
+.event-flow-path:hover + .event-flow-edge-delete + .event-flow-edge-delete-icon,
+.event-flow-edge-delete:hover + .event-flow-edge-delete-icon,
+.event-flow-edge-delete-icon:hover {
+  opacity: 1;
+}
+
 .event-flow-add-btn:hover,
 .event-flow-next-btn:hover,
 .event-flow-node-handle:hover {

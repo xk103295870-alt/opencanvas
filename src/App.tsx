@@ -3980,6 +3980,21 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }, 0)
   }
 
+  const deleteEventFlowNode = (cardId: string, nodeId: string) => {
+    updateEventFlowCard(cardId, (state) => ({
+      ...state,
+      nodes: state.nodes.filter((node) => node.id !== nodeId),
+      edges: state.edges.filter((edge) => edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId),
+    }))
+  }
+
+  const deleteEventFlowEdge = (cardId: string, edgeId: string) => {
+    updateEventFlowCard(cardId, (state) => ({
+      ...state,
+      edges: state.edges.filter((edge) => edge.id !== edgeId),
+    }))
+  }
+
   eventFlowConnectHandlerRef.current = (sourceNodeId: string, targetNodeId: string) => {
     const cardId = eventFlowEdgeDragRef.current?.cardId
     if (cardId) connectEventFlowNodes(cardId, sourceNodeId, targetNodeId)
@@ -5025,13 +5040,41 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                 const endX = targetNode.x
                                 const endY = targetNode.y + 58
                                 const mid = Math.max(56, Math.abs(endX - startX) / 2)
+                                const midX = (startX + endX) / 2
+                                const midY = (startY + endY) / 2
                                 return (
-                                  <path
-                                    key={edge.id}
-                                    className="event-flow-path"
-                                    d={`M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`}
-                                    markerEnd={`url(#event-flow-arrow-${card.id})`}
-                                  />
+                                  <g key={edge.id}>
+                                    <path
+                                      className="event-flow-path"
+                                      d={`M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`}
+                                      markerEnd={`url(#event-flow-arrow-${card.id})`}
+                                    />
+                                    <circle
+                                      className="event-flow-edge-delete"
+                                      cx={midX}
+                                      cy={midY}
+                                      r={10}
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        deleteEventFlowEdge(card.id, edge.id)
+                                      }}
+                                    />
+                                    <text
+                                      className="event-flow-edge-delete-icon"
+                                      x={midX}
+                                      y={midY}
+                                      textAnchor="middle"
+                                      dominantBaseline="central"
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        deleteEventFlowEdge(card.id, edge.id)
+                                      }}
+                                    >
+                                      ×
+                                    </text>
+                                  </g>
                                 )
                               })}
                               {dragSource && eventFlowEdgeDrag ? (
@@ -5055,6 +5098,19 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                   onPointerDown={(event) => startEventFlowNodeDrag(event, card.id, node)}
                                   onPointerUp={(event) => finishEventFlowEdgeDrag(event, card.id, node)}
                                 >
+                                  <button
+                                    type="button"
+                                    className="event-flow-node-delete"
+                                    aria-label={text.eventFlowDeleteNode}
+                                    title={text.eventFlowDeleteNode}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      deleteEventFlowNode(card.id, node.id)
+                                    }}
+                                  >
+                                    ×
+                                  </button>
                                   <span className="event-flow-node-type">{node.kind === 'start' ? text.eventFlowStart : text.eventFlowNewNode}</span>
                                   <textarea
                                     className="event-flow-node-title"
