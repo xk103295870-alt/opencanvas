@@ -4548,7 +4548,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
           {activeGrid.cards.map((card) => {
             const fileUrl = card.fileId ? assetUrls[card.fileId] || card.externalUrl : card.externalUrl
-            const isMinimizableCard = card.kind === 'todo' || card.kind === 'calendar'
+            const isMinimizableCard = card.kind === 'todo' || card.kind === 'calendar' || card.kind === 'eventFlow'
             const isMinimizedCard = isMinimizableCard && minimizedCardIds.includes(card.id)
             const cardTypeLabel =
               card.kind === 'todo'
