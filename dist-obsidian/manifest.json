@@ -1,0 +1,10 @@
+{
+  "id": "canvas-workbench",
+  "name": "Canvas Workbench",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Built-in todos, schedule management, sticky notes, and related features.",
+  "author": "ke xiao",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
