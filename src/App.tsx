@@ -1466,6 +1466,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [todoDraftTag, setTodoDraftTag] = useState<TodoTag>('event')
   const [todoFilters, setTodoFilters] = useState<Record<string, TodoFilter>>({})
   const [calendarNavigationLocks, setCalendarNavigationLocks] = useState<Record<string, number>>({})
+  const [calendarDraftOpen, setCalendarDraftOpen] = useState(false)
+  const [calendarDraftCardId, setCalendarDraftCardId] = useState<string | null>(null)
   const [minimizedCardIds, setMinimizedCardIds] = useState<string[]>([])
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -4110,6 +4112,23 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     })
   }
 
+  const openCalendarDraft = (cardId: string, dateKey: string) => {
+    selectCalendarDate(cardId, dateKey)
+    setCalendarDraftCardId(cardId)
+    setCalendarDraftOpen(true)
+  }
+
+  const closeCalendarDraft = () => {
+    setCalendarDraftOpen(false)
+    setCalendarDraftCardId(null)
+  }
+
+  const submitCalendarDraft = () => {
+    if (!calendarDraftCardId) return
+    addCalendarEvent(calendarDraftCardId)
+    closeCalendarDraft()
+  }
+
   const updateCalendarEventTitle = (cardId: string, eventId: string, value: string) => {
     updateCalendarCard(cardId, (calendarState) => ({
       ...calendarState,
@@ -4827,9 +4846,6 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                         return (a.startTime ?? '').localeCompare(b.startTime ?? '')
                       })
 
-                      const canSubmitEvent =
-                        displayedCalendar.draftAllDay || normalizeTimeRange(displayedCalendar.draftStartTime, displayedCalendar.draftEndTime) !== null
-
                       const periodLabel =
                         displayedCalendar.viewMode === 'month'
                           ? formatMonthLabel(displayedCalendar.monthCursor, settings.language)
@@ -4906,7 +4922,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                                   type="button"
                                   className={`calendar-day ${day.inMonth ? '' : 'outside'} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''} ${calendarDropTarget === dropKey ? 'drop-target' : ''}`}
                                   onPointerDown={(event) => event.stopPropagation()}
-                                  onClick={() => selectCalendarDate(card.id, day.dateKey)}
+                                  onClick={() => openCalendarDraft(card.id, day.dateKey)}
                                   onDragOver={(event) => onCalendarDayDragOver(event, card.id, day.dateKey)}
                                   onDragLeave={() => onCalendarDayDragLeave(card.id, day.dateKey)}
                                   onDrop={(event) => onCalendarDayDrop(event, card.id, day.dateKey)}
@@ -4938,72 +4954,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                             })}
                           </div>
 
-                          <form
-                            className="calendar-entry"
-                            onSubmit={(event) => {
-                              event.preventDefault()
-                              addCalendarEvent(card.id)
-                            }}
-                          >
-                            <div className="calendar-entry-row">
-                              <input
-                                className="calendar-entry-input"
-                                value={displayedCalendar.draftTitle}
-                                onChange={(event) =>
-                                  updateCalendarCard(card.id, (state) => ({ ...state, draftTitle: event.target.value }))
-                                }
-                                placeholder={calendarText.placeholder}
-                              />
-                              <button
-                                type="submit"
-                                className="calendar-add-btn"
-                                disabled={!displayedCalendar.draftTitle.trim() || !canSubmitEvent}
-                                onPointerDown={(event) => event.stopPropagation()}
-                              >
-                                {calendarText.addButton}
-                              </button>
-                            </div>
-
-                            <div className="calendar-entry-meta">
-                              <label className="calendar-all-day">
-                                <input
-                                  type="checkbox"
-                                  checked={displayedCalendar.draftAllDay}
-                                  onChange={(event) =>
-                                    updateCalendarCard(card.id, (state) => ({ ...state, draftAllDay: event.target.checked }))
-                                  }
-                                />
-                                <span>{calendarText.allDay}</span>
-                              </label>
-
-                              {displayedCalendar.draftAllDay ? null : (
-                                <div className="calendar-time-range">
-                                  <label>
-                                    <span>{calendarText.startTime}</span>
-                                    <input
-                                      type="time"
-                                      value={displayedCalendar.draftStartTime}
-                                      onChange={(event) =>
-                                        updateCalendarCard(card.id, (state) => ({ ...state, draftStartTime: event.target.value }))
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    <span>{calendarText.endTime}</span>
-                                    <input
-                                      type="time"
-                                      value={displayedCalendar.draftEndTime}
-                                      onChange={(event) =>
-                                        updateCalendarCard(card.id, (state) => ({ ...state, draftEndTime: event.target.value }))
-                                      }
-                                    />
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-
-                            {canSubmitEvent ? null : <p className="calendar-time-error">{calendarText.invalidTimeHint}</p>}
-                          </form>
+                          <div className="calendar-selected-header">
+                            <span className="calendar-selected-date">{calendarText.selectedPrefix}{displayedCalendar.selectedDate}</span>
+                            <button
+                              type="button"
+                              className="calendar-add-inline-btn"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={() => openCalendarDraft(card.id, displayedCalendar.selectedDate)}
+                            >
+                              + {calendarText.addButton}
+                            </button>
+                          </div>
 
                           <div className="calendar-event-list">
                             {selectedEvents.length ? (
@@ -5334,6 +5295,101 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           </form>
         </div>
       ) : null}
+
+      {calendarDraftOpen && calendarDraftCardId ? (() => {
+        const draftCard = gridsRef.current.flatMap((g) => g.cards).find((c) => c.id === calendarDraftCardId && c.kind === 'calendar')
+        const draftCalendar = draftCard ? withCalendarDefaults(draftCard.calendar) : null
+        if (!draftCalendar) return null
+        const draftDate = parseDateKey(draftCalendar.selectedDate)
+        const weekdayName = CALENDAR_I18N[settings.language].weekdays[draftDate.getDay()]
+        const canSubmit = draftCalendar.draftTitle.trim() && (draftCalendar.draftAllDay || normalizeTimeRange(draftCalendar.draftStartTime, draftCalendar.draftEndTime))
+        return (
+          <div className="calendar-draft-overlay" onClick={closeCalendarDraft}>
+            <form
+              className="calendar-draft-dialog"
+              onClick={(event) => event.stopPropagation()}
+              onSubmit={(event) => {
+                event.preventDefault()
+                submitCalendarDraft()
+              }}
+            >
+              <header className="calendar-draft-header">
+                <div>
+                  <span>{draftCalendar.selectedDate} {weekdayName}</span>
+                  <h3>{settings.language === 'zh' ? '添加日程' : 'Add Event'}</h3>
+                </div>
+                <button type="button" className="settings-close" onClick={closeCalendarDraft}>
+                  ×
+                </button>
+              </header>
+              <input
+                className="calendar-draft-input"
+                value={draftCalendar.draftTitle}
+                autoFocus
+                placeholder={CALENDAR_I18N[settings.language].placeholder}
+                onChange={(event) =>
+                  updateCalendarCard(calendarDraftCardId, (state) => ({ ...state, draftTitle: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault()
+                    submitCalendarDraft()
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeCalendarDraft()
+                  }
+                }}
+              />
+              <div className="calendar-draft-meta">
+                <label className="calendar-all-day">
+                  <input
+                    type="checkbox"
+                    checked={draftCalendar.draftAllDay}
+                    onChange={(event) =>
+                      updateCalendarCard(calendarDraftCardId, (state) => ({ ...state, draftAllDay: event.target.checked }))
+                    }
+                  />
+                  <span>{CALENDAR_I18N[settings.language].allDay}</span>
+                </label>
+                {draftCalendar.draftAllDay ? null : (
+                  <div className="calendar-time-range">
+                    <label>
+                      <span>{CALENDAR_I18N[settings.language].startTime}</span>
+                      <input
+                        type="time"
+                        value={draftCalendar.draftStartTime}
+                        onChange={(event) =>
+                          updateCalendarCard(calendarDraftCardId, (state) => ({ ...state, draftStartTime: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>{CALENDAR_I18N[settings.language].endTime}</span>
+                      <input
+                        type="time"
+                        value={draftCalendar.draftEndTime}
+                        onChange={(event) =>
+                          updateCalendarCard(calendarDraftCardId, (state) => ({ ...state, draftEndTime: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+              {canSubmit ? null : <p className="calendar-time-error">{CALENDAR_I18N[settings.language].invalidTimeHint}</p>}
+              <div className="calendar-draft-actions">
+                <button type="button" className="calendar-draft-secondary" onClick={closeCalendarDraft}>
+                  {settings.language === 'zh' ? '取消' : 'Cancel'}
+                </button>
+                <button type="submit" className="calendar-draft-primary" disabled={!canSubmit}>
+                  {CALENDAR_I18N[settings.language].addButton}
+                </button>
+              </div>
+            </form>
+          </div>
+        )
+      })() : null}
 
       {settingsOpen ? (
         <div className="settings-overlay" onClick={closeSettings}>

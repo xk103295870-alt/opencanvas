@@ -123,7 +123,7 @@ export const CARD_DEFAULT_SIZES: Record<CardKind, { width: number; height: numbe
   video: { width: 420, height: 300 },
   pdf: { width: 460, height: 360 },
   todo: { width: 760, height: 430 },
-  calendar: { width: 480, height: 560 },
+  calendar: { width: 540, height: 640 },
   eventFlow: { width: 760, height: 480 },
 }
 
