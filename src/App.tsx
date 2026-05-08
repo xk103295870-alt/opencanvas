@@ -53,6 +53,7 @@ import {
   type TodoTag,
   type ViewportState,
 } from './shared/workspaceTypes'
+import { getCardChrome } from './cardChrome'
 import { getHolidays, type HolidayInfo } from './shared/holidays'
 
 type LanguageCode = 'zh' | 'en'
@@ -4560,10 +4561,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                     ? text.eventFlowTitle
                     : card.kind
 
+            const cardChrome = getCardChrome(card.kind)
+
             return (
               <article
                 key={card.id}
-                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} ${isMinimizedCard ? 'minimized' : ''} card-${card.kind}`}
+                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} ${isMinimizedCard ? 'minimized' : ''} ${cardChrome.frameless ? 'frameless' : ''} card-${card.kind}`}
                 onDoubleClick={() => {
                   if (isMinimizedCard) restoreCard(card.id)
                 }}
@@ -4574,8 +4577,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   zIndex: draggingCardId === card.id || resizingCardId === card.id ? 20 : 1 + activeGrid.cards.length - activeGrid.cards.findIndex((item) => item.id === card.id),
                 }}
               >
-                <header
-                  className="card-header"
+                {cardChrome.showHeader ? (
+                  <header
+                    className="card-header"
                   onPointerDown={(event) => {
                     const target = event.target as HTMLElement
                     if (
@@ -4652,7 +4656,20 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   >
                     ×
                   </button>
-                </header>
+                  </header>
+                ) : (
+                  <button
+                    className="card-action card-close image-card-close"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      requestRemoveCard(card.id)
+                    }}
+                    aria-label={text.removeCardAria}
+                  >
+                    ×
+                  </button>
+                )}
 
                 {!isMinimizedCard && card.kind === 'note' ? (
                   <textarea
@@ -5175,7 +5192,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                     ) : (
                       <div className="media-missing">{text.mediaImageUnavailable}</div>
                     )}
-                    <div className="file-meta">{card.fileName}</div>
+                    {cardChrome.showFileMeta ? <div className="file-meta">{card.fileName}</div> : null}
                   </div>
                 ) : null}
 
@@ -5201,7 +5218,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   </div>
                 ) : null}
 
-                {!isMinimizedCard ? (
+                {!isMinimizedCard && cardChrome.showResizeHandle ? (
                   <button
                     type="button"
                     className="card-resize-handle"
