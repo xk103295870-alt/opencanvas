@@ -769,14 +769,10 @@
 }
 
 .card.frameless {
-  border: 0;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
   background: transparent;
   box-shadow: none;
-}
-
-.card.frameless:hover {
-  border-color: transparent;
 }
 
 .card.dragging {
@@ -796,6 +792,24 @@
     0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent),
     0 0 32px color-mix(in srgb, var(--accent) 12%, transparent),
     0 28px 48px var(--card-drag-shadow);
+}
+
+.card.frameless:hover,
+.card.frameless:focus-within {
+  border-color: color-mix(in srgb, var(--line-strong) 54%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--line) 28%, transparent),
+    0 18px 36px color-mix(in srgb, var(--card-shadow) 44%, transparent);
+}
+
+.card.frameless.dragging,
+.card.frameless.resizing,
+:root[data-theme='dark'] .card.frameless.dragging,
+:root[data-theme='dark'] .card.frameless.resizing {
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 24px 44px color-mix(in srgb, var(--card-drag-shadow) 72%, transparent);
 }
 
 .card-header {
@@ -2157,7 +2171,7 @@
 }
 
 .card.frameless .media-image {
-  border-radius: 0;
+  border-radius: 11px;
 }
 
 .image-card-close {
@@ -2165,9 +2179,25 @@
   top: 8px;
   right: 8px;
   z-index: 9;
-  border-color: color-mix(in srgb, var(--line) 72%, transparent);
-  background: color-mix(in srgb, var(--card-header-bg) 84%, transparent);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--card-shadow) 70%, transparent);
+  opacity: 0.42;
+  border-color: color-mix(in srgb, var(--line) 54%, transparent);
+  background: color-mix(in srgb, var(--card-header-bg) 76%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--card-shadow) 46%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    opacity 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.card.frameless:hover .image-card-close,
+.card.frameless:focus-within .image-card-close,
+.image-card-close:hover {
+  opacity: 1;
+  border-color: var(--line-strong);
+  background: var(--icon-bg);
 }
 
 .media-image,

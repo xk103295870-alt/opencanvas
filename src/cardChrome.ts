@@ -5,6 +5,7 @@ export type CardChrome = {
   showFileMeta: boolean
   showResizeHandle: boolean
   frameless: boolean
+  chromeMode: 'standard' | 'hover'
 }
 
 export function getCardChrome(kind: CardKind): CardChrome {
@@ -14,6 +15,7 @@ export function getCardChrome(kind: CardKind): CardChrome {
       showFileMeta: false,
       showResizeHandle: false,
       frameless: true,
+      chromeMode: 'hover',
     }
   }
 
@@ -22,5 +24,6 @@ export function getCardChrome(kind: CardKind): CardChrome {
     showFileMeta: kind === 'video' || kind === 'pdf',
     showResizeHandle: true,
     frameless: false,
+    chromeMode: 'standard',
   }
 }
