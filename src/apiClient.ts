@@ -99,6 +99,30 @@ export type ServerAssetUploadPayload = {
   dataUrl: string
 }
 
+export type ServerImageImportPayload = {
+  id?: string
+  cardId?: string
+  name: string
+  type: string
+  dataUrl: string
+  title?: string
+  gridId?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  activateGrid?: boolean
+}
+
+export type ServerImageImportResponse = {
+  assetId: string
+  assetUrl: string
+  asset: ServerAssetRecord
+  cardId: string
+  gridId: string
+  card: ServerWorkspaceCard
+}
+
 export type ServerAssetUploadResponse = {
   assetId: string
   assetUrl: string
@@ -332,6 +356,14 @@ export async function apiDeleteGrid(apiKey: string, gridId: string, baseUrl?: st
 
 export async function apiCreateAsset(apiKey: string, payload: ServerAssetUploadPayload, baseUrl?: string) {
   return requestJson<ServerAssetUploadResponse>('/api/v1/assets', {
+    method: 'POST',
+    headers: bearerHeaders(apiKey),
+    body: JSON.stringify(payload),
+  }, baseUrl)
+}
+
+export async function apiImportImage(apiKey: string, payload: ServerImageImportPayload, baseUrl?: string) {
+  return requestJson<ServerImageImportResponse>('/api/v1/images/import', {
     method: 'POST',
     headers: bearerHeaders(apiKey),
     body: JSON.stringify(payload),
