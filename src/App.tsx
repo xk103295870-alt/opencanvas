@@ -3430,6 +3430,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     setPendingDeleteCardId(cardId)
   }
 
+  const downloadOriginalImage = (card: CardData) => {
+    const sourceUrl = card.externalUrl || (card.fileId ? assetUrls[card.fileId] : '')
+    if (!sourceUrl) return
+    const anchor = document.createElement('a')
+    anchor.href = sourceUrl
+    anchor.download = card.fileName || card.title || 'image'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+
   const minimizeCard = (cardId: string) => {
     if (editingCardId === cardId) {
       setEditingCardId(null)
@@ -4658,17 +4669,33 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   </button>
                   </header>
                 ) : (
-                  <button
-                    className="card-action card-close image-card-close"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      requestRemoveCard(card.id)
-                    }}
-                    aria-label={text.removeCardAria}
-                  >
-                    ×
-                  </button>
+                  <>
+                    {card.kind === 'image' ? (
+                      <button
+                        className="card-action image-card-download"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          downloadOriginalImage(card)
+                        }}
+                        aria-label={settings.language === 'zh' ? '下载原图' : 'Download original image'}
+                        title={settings.language === 'zh' ? '下载原图' : 'Download original image'}
+                      >
+                        ⤓
+                      </button>
+                    ) : null}
+                    <button
+                      className="card-action card-close image-card-close"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        requestRemoveCard(card.id)
+                      }}
+                      aria-label={text.removeCardAria}
+                    >
+                      ×
+                    </button>
+                  </>
                 )}
 
                 {!isMinimizedCard && card.kind === 'note' ? (

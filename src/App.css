@@ -2220,9 +2220,30 @@
     box-shadow 0.16s ease;
 }
 
+.image-card-download {
+  position: absolute;
+  top: 8px;
+  right: 42px;
+  z-index: 9;
+  opacity: 0.42;
+  border-color: color-mix(in srgb, var(--line) 54%, transparent);
+  background: color-mix(in srgb, var(--card-header-bg) 76%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--card-shadow) 46%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    opacity 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
 .card.frameless:hover .image-card-close,
 .card.frameless:focus-within .image-card-close,
-.image-card-close:hover {
+.image-card-close:hover,
+.card.frameless:hover .image-card-download,
+.card.frameless:focus-within .image-card-download,
+.image-card-download:hover {
   opacity: 1;
   border-color: var(--line-strong);
   background: var(--icon-bg);
