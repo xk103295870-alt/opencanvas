@@ -131,7 +131,10 @@ canvas-workbench grid add "Product Planning"
 canvas-workbench note add "Meeting summary" --title "Meeting" --grid "Product Planning"
 canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "Product Planning"
 canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "Product Planning"
+canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI Zone"
 ```
+
+Image import saves the original local file as a Canvas Workbench asset and creates an image card. Downloading that card returns the original stored file, not a compressed preview.
 
 Notes:
 
@@ -139,7 +142,7 @@ Notes:
 - Todo status values: `todo`, `doing`, `done`.
 - Todo tag values: `event`, `feature`, `important`, `plan`, `bug`, `idea`.
 - Calendar timed events use `--time` and `--end`.
-- CLI-created note/todo/calendar cards default to the canvas center.
+- CLI-created note/todo/calendar/image cards default to the canvas center.
 - Commands also accept `--api-url <url>` and `--api-key <key>` when needed.
 
 ## Claude Skill for CLI / agent writing

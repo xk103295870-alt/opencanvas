@@ -20,6 +20,7 @@ const SCENE_WIDTH = 20_000_000
 const SCENE_HEIGHT = 20_000_000
 const CLI_CARD_DEFAULT_SIZES = {
   note: { width: 340, height: 280 },
+  image: { width: 360, height: 280 },
   todo: { width: 760, height: 430 },
   calendar: { width: 480, height: 560 },
   eventFlow: { width: 760, height: 480 },
@@ -50,6 +51,7 @@ Usage:
   canvas-workbench todo add <text> [--status todo|doing|done] [--tag event|feature|important|plan|bug|idea] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench calendar event add <title> [--date YYYY-MM-DD] [--time HH:MM] [--end HH:MM] [--all-day] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench flow add <title> [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
+  canvas-workbench image add <file> [--title <title>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
 
 Examples:
   canvas-workbench start
@@ -63,6 +65,7 @@ Examples:
   canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "B"
   canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "B"
   canvas-workbench flow add "User onboarding flow" --grid "B"
+  canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI区"
 `)
 }
 
@@ -145,6 +148,15 @@ function normalizeCalendarEventOptions(options) {
   return { date, allDay, startTime, endTime }
 }
 
+function inferImageMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase()
+  if (extension === '.png') return 'image/png'
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg'
+  if (extension === '.webp') return 'image/webp'
+  if (extension === '.gif') return 'image/gif'
+  return null
+}
+
 function apiUrlFor(options) {
   return options.apiUrl || `http://${DEFAULT_API_HOST}:${options.apiPort}`
 }
@@ -166,6 +178,9 @@ function parseArgs(argv) {
   } else if (rawCommand === 'note' && tokens[0] === 'add') {
     tokens.shift()
     command = 'note:add'
+  } else if (rawCommand === 'image' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'image:add'
   } else if (rawCommand === 'todo' && tokens[0] === 'add') {
     tokens.shift()
     command = 'todo:add'
@@ -327,7 +342,7 @@ function parseArgs(argv) {
       continue
     }
 
-    if ((command === 'grid:add' || command === 'note:add' || command === 'todo:add' || command === 'calendar:event:add') && !token.startsWith('-')) {
+    if ((command === 'grid:add' || command === 'note:add' || command === 'image:add' || command === 'todo:add' || command === 'calendar:event:add') && !token.startsWith('-')) {
       options.contentParts.push(token)
       continue
     }
@@ -893,6 +908,54 @@ async function noteAddCommand(options) {
   console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
 }
 
+async function imageAddCommand(options) {
+  const filePathInput = options.contentParts.join(' ').trim()
+  if (!filePathInput) {
+    throw new Error('Image file is required. Example: canvas-workbench image add "./generated.png" --grid "AI区"')
+  }
+
+  const filePath = path.resolve(process.cwd(), filePathInput)
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Image file not found: ${filePath}`)
+  }
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) {
+    throw new Error(`Image path is not a file: ${filePath}`)
+  }
+  const mimeType = inferImageMimeType(filePath)
+  if (!mimeType) {
+    throw new Error('Unsupported image file. Use png, jpg, jpeg, webp, or gif.')
+  }
+
+  const bytes = fs.readFileSync(filePath)
+  const fileName = path.basename(filePath)
+  const apiUrl = apiUrlFor(options)
+  const gridLookup = String(options.gridId || '').trim()
+  const { grid, created } = await ensureGrid(apiUrl, options, gridLookup)
+  if (!grid?.id) throw new Error('Could not find or create target grid')
+
+  const result = await httpJson(`${apiUrl}/api/v1/images/import`, {
+    method: 'POST',
+    apiKey: options.apiKey,
+    body: {
+      name: fileName,
+      type: mimeType,
+      dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`,
+      title: String(options.title || '').trim() || fileName,
+      gridId: grid.id,
+      activateGrid: true,
+      ...centeredCardPosition('image'),
+    },
+  })
+  const data = result?.data || {}
+  console.log('Image imported')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${data.gridId || grid.id}${created ? ' (created)' : ''}`)
+  console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
+  console.log(`  asset: ${data.assetId || data.asset?.id || 'unknown'}`)
+  console.log(`  original: ${filePath}`)
+}
+
 async function flowAddCommand(options) {
   const title = String(options.title || options.contentParts.join(' ') || '').trim()
   if (!title) {
@@ -1154,6 +1217,10 @@ async function main() {
   }
   if (command === 'note:add') {
     await noteAddCommand(options)
+    return
+  }
+  if (command === 'image:add') {
+    await imageAddCommand(options)
     return
   }
   if (command === 'todo:add') {

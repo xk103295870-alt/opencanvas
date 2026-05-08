@@ -129,7 +129,10 @@ canvas-workbench grid add "产品规划"
 canvas-workbench note add "会议总结" --title "会议" --grid "产品规划"
 canvas-workbench todo add "准备首页文案" --status doing --tag plan --grid "产品规划"
 canvas-workbench calendar event add "设计评审" --date 2026-05-01 --time 11:00 --end 12:00 --grid "产品规划"
+canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI区"
 ```
+
+图片导入会把本地原文件保存为 Canvas Workbench 资产，并创建图片卡片。之后从卡片下载时返回保存的原图文件，而不是压缩预览。
 
 说明：
 
@@ -137,7 +140,7 @@ canvas-workbench calendar event add "设计评审" --date 2026-05-01 --time 11:0
 - Todo 状态可用：`todo`、`doing`、`done`。
 - Todo 标签可用：`event`、`feature`、`important`、`plan`、`bug`、`idea`。
 - 日历定时事件使用 `--time` 和 `--end`。
-- CLI 创建的便利贴、待办、日历卡片默认出现在画布中心。
+- CLI 创建的便利贴、待办、日历、图片卡片默认出现在画布中心。
 - 如有需要，命令也支持 `--api-url <url>` 和 `--api-key <key>`。
 
 ## Claude Skill：CLI / 智能体写入
