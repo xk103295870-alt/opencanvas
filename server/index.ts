@@ -52,6 +52,21 @@ type CanvasWorkbenchCreateCardPayload = {
   }
 }
 
+type CanvasWorkbenchImageImportPayload = {
+  id?: string
+  cardId?: string
+  name?: string
+  type?: string
+  dataUrl?: string
+  title?: string
+  gridId?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  activateGrid?: boolean
+}
+
 type CanvasWorkbenchWorkspaceUploadPayload = {
   name?: string
   activeGridId?: string
@@ -156,6 +171,15 @@ function sanitizeMimeType(value: unknown) {
   return 'application/octet-stream'
 }
 
+function sanitizeImageMimeType(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (raw === 'image/png') return raw
+  if (raw === 'image/jpeg') return raw
+  if (raw === 'image/webp') return raw
+  if (raw === 'image/gif') return raw
+  return null
+}
+
 function parseDataUrl(input: unknown) {
   const raw = String(input || '').trim()
   const match = raw.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i)
@@ -180,6 +204,18 @@ function getAssetFilePath(workspaceId: string, assetId: string) {
 
 function toAssetUrl(assetId: string, publicToken: string) {
   return `${API_BASE_URL}/api/v1/assets/${encodeURIComponent(assetId)}?token=${encodeURIComponent(publicToken)}`
+}
+
+function toPublicAsset(record: AssetRecord) {
+  return {
+    id: record.id,
+    name: record.name,
+    type: record.type,
+    size: record.size,
+    assetUrl: toAssetUrl(record.id, record.publicToken),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
 }
 
 function sendSse(res: Response, event: string, data: unknown) {
@@ -1239,15 +1275,90 @@ app.post('/api/v1/assets', requireApiKey('canvas:write'), (req, res) => {
     data: {
       assetId: record.id,
       assetUrl: toAssetUrl(record.id, record.publicToken),
-      asset: {
-        id: record.id,
-        name: record.name,
-        type: record.type,
-        size: record.size,
-        assetUrl: toAssetUrl(record.id, record.publicToken),
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-      },
+      asset: toPublicAsset(record),
+    },
+  })
+})
+
+app.post('/api/v1/images/import', requireApiKey('canvas:write'), (req, res) => {
+  const ctx = ensureCtx(req)
+  if (!ctx.workspace || !ctx.account) {
+    res.status(500).json({ ok: false, message: 'Workspace context missing' })
+    return
+  }
+
+  const body = (req.body || {}) as CanvasWorkbenchImageImportPayload
+  const parsed = parseDataUrl(body.dataUrl)
+  const imageType = sanitizeImageMimeType(body.type || parsed?.mimeType)
+  if (!parsed || !imageType) {
+    res.status(400).json({ ok: false, message: 'Valid image dataUrl is required' })
+    return
+  }
+
+  const targetGrid =
+    (body.gridId ? ctx.workspace.grids.find((grid) => grid.id === body.gridId || grid.name === body.gridId) : null) ||
+    ctx.workspace.grids.find((grid) => grid.id === ctx.workspace.activeGridId) ||
+    ctx.workspace.grids[0]
+
+  if (!targetGrid) {
+    res.status(400).json({ ok: false, message: 'No grid available' })
+    return
+  }
+
+  const assetId = normalizeAssetId(body.id) || `asset-${uid(12)}`
+  const cardId = normalizeCardId(body.cardId) || `image-${uid(14)}`
+  if (targetGrid.cards.some((card) => card.id === cardId)) {
+    res.status(409).json({ ok: false, message: `Card already exists: ${cardId}` })
+    return
+  }
+
+  const now = nowIso()
+  const record: AssetRecord = {
+    id: assetId,
+    accountId: ctx.account.id,
+    workspaceId: ctx.workspace.id,
+    name: normalizeAssetName(body.name),
+    type: imageType,
+    size: parsed.buffer.length,
+    publicToken: uid(24),
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  ensureAssetDir(ctx.workspace.id)
+  fs.writeFileSync(getAssetFilePath(ctx.workspace.id, assetId), parsed.buffer)
+  db.assets.push(record)
+
+  const defaultSize = CARD_DEFAULT_SIZES.image
+  const width = clamp(toFiniteNumber(body.width, defaultSize.width), 220, 1400)
+  const height = clamp(toFiniteNumber(body.height, defaultSize.height), 160, 1200)
+  const card: CardData = {
+    id: cardId,
+    kind: 'image',
+    title: String(body.title || '').trim() || record.name,
+    content: '',
+    x: clamp(toFiniteNumber(body.x, SCENE_CENTER_X - width / 2), -200, SCENE_WIDTH),
+    y: clamp(toFiniteNumber(body.y, SCENE_CENTER_Y - height / 2), -200, SCENE_HEIGHT),
+    width,
+    height,
+    fileId: record.id,
+    fileName: record.name,
+    externalUrl: toAssetUrl(record.id, record.publicToken),
+  }
+  targetGrid.cards.push(card)
+  if (body.activateGrid !== false) ctx.workspace.activeGridId = targetGrid.id
+  commitWorkspaceMutation(ctx.workspace, 'image.import')
+
+  res.json({
+    ok: true,
+    message: 'Image imported',
+    data: {
+      assetId: record.id,
+      assetUrl: toAssetUrl(record.id, record.publicToken),
+      asset: toPublicAsset(record),
+      cardId: card.id,
+      gridId: targetGrid.id,
+      card,
     },
   })
 })

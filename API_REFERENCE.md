@@ -249,6 +249,26 @@ Notes:
 - The server stores the binary asset on disk and returns a public URL with a signed token.
 - Use this for images, videos, and PDFs that need to survive refresh and CLI/API sync.
 
+### `POST /api/v1/images/import`
+
+Imports a local image from a data URL, saves the original image bytes as an asset, and creates an image card in the selected grid.
+
+Request body:
+
+```json
+{
+  "name": "generated.png",
+  "type": "image/png",
+  "dataUrl": "data:image/png;base64,...",
+  "title": "Generated image",
+  "gridId": "AI区"
+}
+```
+
+Response `data` includes `assetId`, `assetUrl`, `asset`, `cardId`, `gridId`, and `card`.
+
+Download the original image from `assetUrl`. The API returns the original stored bytes.
+
 ### `GET /api/v1/assets/:assetId`
 
 Public fetch route for stored assets.
