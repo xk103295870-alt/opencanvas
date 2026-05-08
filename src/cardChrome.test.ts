@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { getCardChrome } from './cardChrome.ts'
 
-test('image cards render as frameless media with only delete control', () => {
+test('image cards render as hover chrome media with body dragging and resize handle', () => {
   assert.deepEqual(getCardChrome('image'), {
     showHeader: false,
     showFileMeta: false,
-    showResizeHandle: false,
+    showResizeHandle: true,
     frameless: true,
     chromeMode: 'hover',
     dragSurface: 'body',
