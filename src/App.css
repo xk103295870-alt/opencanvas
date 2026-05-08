@@ -1996,11 +1996,12 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--app-bg) 86%, transparent);
   color: var(--text-main);
-  padding: 7px 9px;
-  font-size: 12px;
+  padding: 12px 16px;
+  font-size: 16px;
+  line-height: 1.35;
   outline: none;
 }
 
@@ -2100,30 +2101,31 @@
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 12px;
   padding-right: 2px;
 }
 
 .calendar-event-item {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--card-bg-top) 90%, transparent);
-  padding: 6px;
+  padding: 10px 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: start;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 12px;
+  align-items: center;
 }
 
 .calendar-event-drag {
-  width: 18px;
-  height: 24px;
+  width: 28px;
+  height: 36px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-dim);
+  font-size: 18px;
   cursor: grab;
   user-select: none;
 }
@@ -2136,23 +2138,23 @@
 .calendar-event-main {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 
 .calendar-event-time {
-  font-size: 10px;
+  font-size: 14px;
   color: var(--text-dim);
   letter-spacing: 0.02em;
 }
 
 .calendar-event-remove {
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 9px;
   background: transparent;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 18px;
 }
 
 .calendar-event-remove:hover {
