@@ -9,6 +9,7 @@ test('image cards render as frameless media with only delete control', () => {
     showResizeHandle: false,
     frameless: true,
     chromeMode: 'hover',
+    dragSurface: 'body',
   })
 })
 
@@ -19,5 +20,6 @@ test('non-image media cards keep the standard card chrome', () => {
     showResizeHandle: true,
     frameless: false,
     chromeMode: 'standard',
+    dragSurface: 'header',
   })
 })

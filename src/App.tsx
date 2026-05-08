@@ -5186,7 +5186,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                 ) : null}
 
                 {!isMinimizedCard && card.kind === 'image' ? (
-                  <div className="media-block">
+                  <div
+                    className="media-block image-media-block"
+                    onPointerDown={(event) => {
+                      if (cardChrome.dragSurface === 'body') onCardDragStart(event, card)
+                    }}
+                  >
                     {fileUrl ? (
                       <img src={fileUrl} alt={card.fileName ?? card.title} className="media-image" />
                     ) : (
