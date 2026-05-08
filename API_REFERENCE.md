@@ -6,13 +6,13 @@ This document summarizes the current API contract implemented in `server/index.t
 
 - API version: `0.2.0-api`
 - Standard route prefix: `/api/v1`
-- Base URL default: `http://127.0.0.1:8787`
+- Base URL default: `http://127.0.0.1:8799`
 - Legacy `/v1/*` routes are removed.
 
 Environment variables:
 
 - `CANVAS_WORKBENCH_API_HOST` (default `127.0.0.1`)
-- `CANVAS_WORKBENCH_API_PORT` (default `8787`)
+- `CANVAS_WORKBENCH_API_PORT` (default `8799`)
 - `CANVAS_WORKBENCH_API_BASE_URL` (optional override)
 - `CANVAS_WORKBENCH_WEB_ORIGIN` (default `http://127.0.0.1:5173`)
 

@@ -3764,7 +3764,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       window.setTimeout(() => {
         setCalendarNavigationLocks((currentLocks) => {
           if (currentLocks[cardId] !== now) return currentLocks
-          const { [cardId]: _releasedLock, ...nextLocks } = currentLocks
+          const nextLocks = { ...currentLocks }
+          delete nextLocks[cardId]
           return nextLocks
         })
       }, 1200)

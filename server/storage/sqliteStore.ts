@@ -111,7 +111,6 @@ type CardRow = {
 
 type AccountRow = Omit<AccountRecord, 'avatarUrl'> & { avatarUrl: string | null }
 type ApiKeyRow = Omit<ApiKeyRecord, 'scopes' | 'revokedAt'> & { scopesJson: string; revokedAt: string | null }
-type AssetRow = AssetRecord
 
 const SCHEMA_VERSION = '1'
 

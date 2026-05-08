@@ -1,16 +1,13 @@
 import { ItemView, Plugin, addIcon, type WorkspaceLeaf } from 'obsidian'
 import { createRoot, type Root } from 'react-dom/client'
 import App from './App'
+import { startLocalApiFromObsidian as startLocalApiWithLauncher } from './obsidianLocalApiLauncher'
 import './index.css'
 import './obsidian.css'
 
 const VIEW_TYPE_CANVAS_WORKBENCH = 'canvas-workbench-view'
 const CANVAS_WORKBENCH_ICON = 'canvas-workbench-logo'
 const CANVAS_WORKBENCH_ICON_SVG = '<svg viewBox="0 0 256 256" width="100" height="100" preserveAspectRatio="xMidYMid meet"><rect x="18" y="18" width="220" height="220" rx="42" fill="currentColor"/><path d="M62 77H86.5L100.5 163H102.5L116.5 103H140L154 163H156L170 77H194.5L171.5 179H139.5L128.5 128.5H127.5L116.5 179H84.5L62 77Z" fill="var(--background-primary, #050505)"/></svg>'
-
-type StartLocalApiInput = {
-  apiBaseUrl: string
-}
 
 type LocalApiHealthInput = {
   apiBaseUrl: string
@@ -25,17 +22,6 @@ declare const process: {
   execPath: string
 }
 
-const FALLBACK_REPO_ROOT = '/Users/xk/vs开发文件/Canvas-Workbench'
-const FALLBACK_CLI_PATH = `${FALLBACK_REPO_ROOT}/bin/canvas-workbench.mjs`
-
-function portFromApiBaseUrl(apiBaseUrl: string) {
-  try {
-    const url = new URL(apiBaseUrl)
-    return url.port || '8799'
-  } catch {
-    return '8799'
-  }
-}
 
 function spawnDetached(command: string, args: string[], cwd?: string, env?: Record<string, string | undefined>) {
   if (typeof require !== 'function') {
@@ -73,15 +59,8 @@ function spawnDetached(command: string, args: string[], cwd?: string, env?: Reco
   return child.pid
 }
 
-function fileExists(filePath: string) {
-  if (typeof require !== 'function') return false
-  const { existsSync } = require('fs') as { existsSync: (path: string) => boolean }
-  return existsSync(filePath)
-}
-
-function resolveNodeBinary() {
-  const candidates = ['/usr/local/bin/node', '/opt/homebrew/bin/node', '/usr/bin/node', process.execPath]
-  return candidates.find((candidate) => fileExists(candidate)) || process.execPath
+async function startLocalApiFromObsidian(input: { apiBaseUrl: string }) {
+  return startLocalApiWithLauncher(input, spawnDetached)
 }
 
 async function checkLocalApiHealthFromObsidian(input: LocalApiHealthInput) {
@@ -130,45 +109,6 @@ async function checkLocalApiHealthFromObsidian(input: LocalApiHealthInput) {
       resolve({ ok: false, message: error?.message || 'API health check failed' })
     })
   })
-}
-
-async function startLocalApiFromObsidian(input: StartLocalApiInput) {
-  const apiPort = portFromApiBaseUrl(input.apiBaseUrl)
-  const apiBaseUrl = `http://127.0.0.1:${apiPort}`
-  const serverPath = `${FALLBACK_REPO_ROOT}/server/index.ts`
-  const tsxCliPath = `${FALLBACK_REPO_ROOT}/node_modules/tsx/dist/cli.mjs`
-  const env = {
-    CANVAS_WORKBENCH_API_HOST: '127.0.0.1',
-    CANVAS_WORKBENCH_API_PORT: apiPort,
-    CANVAS_WORKBENCH_API_BASE_URL: apiBaseUrl,
-    CANVAS_WORKBENCH_WEB_ORIGIN: 'app://obsidian.md',
-  }
-
-  if (fileExists(serverPath) && fileExists(tsxCliPath)) {
-    const nodeBinary = resolveNodeBinary()
-    const pid = spawnDetached(
-      nodeBinary,
-      [tsxCliPath, '--tsconfig', `${FALLBACK_REPO_ROOT}/tsconfig.node.json`, serverPath],
-      FALLBACK_REPO_ROOT,
-      env,
-    )
-    return { ok: true, pid, message: `Local API start requested on port ${apiPort}.` }
-  }
-
-  const cliArgs = ['start', '--no-open', '--api-port', apiPort]
-
-  try {
-    const pid = spawnDetached('canvas-workbench', cliArgs, undefined, env)
-    return { ok: true, pid, message: `Local API start requested on port ${apiPort}.` }
-  } catch {
-    if (!fileExists(FALLBACK_CLI_PATH)) {
-      return { ok: false, message: 'canvas-workbench command not found and fallback CLI path is unavailable.' }
-    }
-
-    const nodeBinary = resolveNodeBinary()
-    const pid = spawnDetached(nodeBinary, [FALLBACK_CLI_PATH, ...cliArgs], FALLBACK_REPO_ROOT, env)
-    return { ok: true, pid, message: `Local API start requested on port ${apiPort}.` }
-  }
 }
 
 class CanvasWorkbenchView extends ItemView {

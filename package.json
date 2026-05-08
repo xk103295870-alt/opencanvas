@@ -13,6 +13,8 @@
     "cli": "node ./bin/canvas-workbench.mjs",
     "build": "tsc -b && vite build",
     "build:obsidian": "tsc -p tsconfig.obsidian.json && vite build --config vite.obsidian.config.ts",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "check": "npm run lint && npm run test && npm run build && npm run build:obsidian",
     "icons:generate": "node scripts/generate-icons.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

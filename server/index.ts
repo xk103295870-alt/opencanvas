@@ -16,7 +16,7 @@ import {
   type CardKind,
   type GridData,
 } from '../src/shared/workspaceTypes'
-import { SqliteStore, type AccountProvider, type AccountRecord, type ApiDb, type ApiKeyRecord, type AssetRecord, type SessionRecord, type WorkspaceRecord } from './storage/sqliteStore'
+import { SqliteStore, type AccountProvider, type AccountRecord, type ApiKeyRecord, type AssetRecord, type SessionRecord, type WorkspaceRecord } from './storage/sqliteStore'
 
 type CanvasWorkbenchCreateCardPayload = {
   id?: string
@@ -398,23 +398,8 @@ function spawnDetachedCommand(command: string, args: string[], env: NodeJS.Proce
   }
 }
 
-function loadDb(): ApiDb {
-  return store.snapshot()
-}
-
 function saveDb() {
   store.replaceAll(db)
-}
-
-function createEmptyDb(): ApiDb {
-  return {
-    version: 1,
-    accounts: [],
-    sessions: [],
-    apiKeys: [],
-    workspaces: [],
-    assets: [],
-  }
 }
 
 function ensureCtx(req: Request): RequestContext {
