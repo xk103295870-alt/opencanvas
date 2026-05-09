@@ -800,10 +800,10 @@
 .canvas-command-group {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 64px;
-  border-radius: 18px;
-  padding: 7px 10px;
+  gap: 6px;
+  min-height: 52px;
+  border-radius: 16px;
+  padding: 5px 7px;
   position: relative;
   overflow: hidden;
 }
@@ -822,13 +822,13 @@
 .zoom-btn {
   position: relative;
   overflow: hidden;
-  border-radius: 18px;
-  min-width: 82px;
-  min-height: 64px;
-  padding: 0 22px;
+  border-radius: 16px;
+  min-width: 68px;
+  min-height: 52px;
+  padding: 0 16px;
   color: var(--text-soft);
-  font-size: 14px;
-  font-weight: 760;
+  font-size: 12px;
+  font-weight: 720;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
@@ -838,10 +838,10 @@
 }
 
 .canvas-command-group .zoom-btn {
-  min-width: 56px;
-  min-height: 48px;
-  border-radius: 16px;
-  padding: 0 18px;
+  min-width: 44px;
+  min-height: 40px;
+  border-radius: 14px;
+  padding: 0 13px;
   border-color: transparent;
   background: color-mix(in srgb, var(--icon-bg) 68%, white 8%);
   backdrop-filter: none;
@@ -861,26 +861,26 @@
 }
 
 .zoom-btn.reset {
-  min-width: 110px;
-  font-size: 14px;
+  min-width: 82px;
+  font-size: 12px;
 }
 
 .zoom-btn.settings-trigger {
-  min-width: 110px;
+  min-width: 82px;
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
 .local-api-trigger {
-  min-width: 210px;
+  min-width: 170px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .local-api-status-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: var(--text-dim);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 12%, transparent);
@@ -915,12 +915,12 @@
 }
 
 .zoom-label {
-  min-width: 70px;
+  min-width: 56px;
   text-align: center;
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 760;
+  font-size: 12px;
+  font-weight: 720;
 }
 
 .scene {
