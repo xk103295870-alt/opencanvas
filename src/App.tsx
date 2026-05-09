@@ -53,6 +53,13 @@ import {
   type TodoTag,
   type ViewportState,
 } from './shared/workspaceTypes'
+import {
+  centerViewportOnCard,
+  filterNavigatorCards,
+  getNavigatorCardLabel,
+  getNavigatorCardMeta,
+  getNavigatorCardTypeLabel,
+} from './cardNavigator'
 import { getCardChrome } from './cardChrome'
 import { getHolidays, type HolidayInfo } from './shared/holidays'
 
@@ -1450,6 +1457,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [grids, setGrids] = useState<GridData[]>(initialGrids)
   const [activeGridId, setActiveGridId] = useState(initialGrids[0].id)
   const [viewport, setViewport] = useState<ViewportState>(initialViewport)
+  const [cardNavigatorOpen, setCardNavigatorOpen] = useState(false)
+  const [cardNavigatorQuery, setCardNavigatorQuery] = useState('')
+  const [highlightedNavigatorCardId, setHighlightedNavigatorCardId] = useState<string | null>(null)
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null)
   const [resizingCardId, setResizingCardId] = useState<string | null>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -4357,6 +4367,41 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           : text.localApiToolbarIdle
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
   const activeCardCount = activeGrid.cards.length
+  const navigatorCards = useMemo(
+    () => filterNavigatorCards(activeGrid.cards, cardNavigatorQuery),
+    [activeGrid.cards, cardNavigatorQuery],
+  )
+
+  const closeCardNavigator = useCallback(() => {
+    setCardNavigatorOpen(false)
+    setCardNavigatorQuery('')
+  }, [])
+
+  const jumpToNavigatorCard = useCallback((card: CardData) => {
+    setViewport(centerViewportOnCard(canvasRef.current?.getBoundingClientRect(), card, viewportRef.current.zoom))
+    setHighlightedNavigatorCardId(card.id)
+    closeCardNavigator()
+    window.setTimeout(() => {
+      setHighlightedNavigatorCardId((current) => (current === card.id ? null : current))
+    }, 1400)
+  }, [closeCardNavigator])
+
+  const viewAllNavigatorCards = useCallback(() => {
+    setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(activeGrid)))
+    closeCardNavigator()
+  }, [activeGrid, closeCardNavigator])
+
+  useEffect(() => {
+    if (!cardNavigatorOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeCardNavigator()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [cardNavigatorOpen, closeCardNavigator])
+
   const canvasStatusLabel =
     settings.language === 'zh'
       ? `${activeGrid.name} · ${activeCardCount} 张卡片`
@@ -4518,9 +4563,77 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         }}
       >
         <div className="canvas-toolbar">
-          <div className="canvas-status" title={canvasStatusLabel}>
-            <strong>{activeGrid.name}</strong>
-            <span>{settings.language === 'zh' ? `${activeCardCount} 张卡片` : `${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`}</span>
+          <div className="canvas-status-wrap">
+            <button
+              type="button"
+              className={`canvas-status ${cardNavigatorOpen ? 'open' : ''}`}
+              title={canvasStatusLabel}
+              aria-expanded={cardNavigatorOpen}
+              aria-controls="canvas-card-navigator"
+              onClick={(event) => {
+                event.stopPropagation()
+                setCardNavigatorOpen((open) => !open)
+              }}
+            >
+              <strong>{activeGrid.name}</strong>
+              <span>{settings.language === 'zh' ? `${activeCardCount} 张卡片` : `${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`}</span>
+            </button>
+
+            {cardNavigatorOpen ? (
+              <div
+                id="canvas-card-navigator"
+                className="card-navigator-popover"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="card-navigator-head">
+                  <div>
+                    <strong>{activeGrid.name}</strong>
+                    <span>{settings.language === 'zh' ? `${activeCardCount} 张卡片` : `${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`}</span>
+                  </div>
+                </div>
+
+                {activeCardCount > 1 ? (
+                  <input
+                    className="card-navigator-search"
+                    value={cardNavigatorQuery}
+                    onChange={(event) => setCardNavigatorQuery(event.target.value)}
+                    placeholder={settings.language === 'zh' ? '搜索卡片...' : 'Search cards...'}
+                    autoFocus
+                  />
+                ) : null}
+
+                <div className="card-navigator-list">
+                  {activeCardCount === 0 ? (
+                    <p className="card-navigator-empty">{settings.language === 'zh' ? '当前画布暂无卡片' : 'No cards in this grid yet'}</p>
+                  ) : navigatorCards.length === 0 ? (
+                    <p className="card-navigator-empty">{settings.language === 'zh' ? '没有匹配的卡片' : 'No matching cards'}</p>
+                  ) : (
+                    navigatorCards.map((card) => {
+                      const meta = getNavigatorCardMeta(card)
+                      return (
+                        <button
+                          key={card.id}
+                          type="button"
+                          className="card-navigator-row"
+                          onClick={() => jumpToNavigatorCard(card)}
+                        >
+                          <span className={`card-navigator-kind ${card.kind}`}>{getNavigatorCardTypeLabel(card.kind).slice(0, 1)}</span>
+                          <span className="card-navigator-copy">
+                            <strong>{getNavigatorCardLabel(card)}</strong>
+                            {meta ? <small>{meta}</small> : null}
+                          </span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+
+                <button type="button" className="card-navigator-footer" onClick={viewAllNavigatorCards}>
+                  {settings.language === 'zh' ? '⌖ 查看全部卡片' : '⌖ View all cards'}
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="canvas-command-group" aria-label={settings.language === 'zh' ? '缩放控制' : 'Zoom controls'}>
             <button className="zoom-btn" onClick={() => setCenteredZoom(viewport.zoom - 0.1)} aria-label="Zoom out">
@@ -4577,7 +4690,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             return (
               <article
                 key={card.id}
-                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} ${isMinimizedCard ? 'minimized' : ''} ${cardChrome.frameless ? 'frameless' : ''} card-${card.kind}`}
+                className={`card ${draggingCardId === card.id ? 'dragging' : ''} ${resizingCardId === card.id ? 'resizing' : ''} ${isMinimizedCard ? 'minimized' : ''} ${cardChrome.frameless ? 'frameless' : ''} ${highlightedNavigatorCardId === card.id ? 'navigator-highlight' : ''} card-${card.kind}`}
                 onDoubleClick={() => {
                   if (isMinimizedCard) restoreCard(card.id)
                 }}
