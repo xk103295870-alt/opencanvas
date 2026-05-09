@@ -19,7 +19,7 @@ test('starts Local API through the portable canvas-workbench CLI command', async
   assert.deepEqual(calls, [
     {
       command: 'canvas-workbench',
-      args: ['start', '--no-open', '--api-port', '8799'],
+      args: ['start', '--no-open', '--api-only', '--api-port', '8799'],
       cwd: undefined,
       env: {
         CANVAS_WORKBENCH_API_HOST: '127.0.0.1',
@@ -29,6 +29,13 @@ test('starts Local API through the portable canvas-workbench CLI command', async
       },
     },
   ])
+})
+
+test('reports missing CLI when the launcher cannot start a process', async () => {
+  const result = await startLocalApiFromObsidian({ apiBaseUrl: 'http://127.0.0.1:8799' }, () => undefined)
+
+  assert.equal(result.ok, false)
+  assert.match(result.message, /canvas-workbench command not found/i)
 })
 
 test('reports missing CLI instead of falling back to a developer machine path', async () => {

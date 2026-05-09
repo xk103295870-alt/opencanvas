@@ -40,11 +40,11 @@ function usage() {
   console.log(`Canvas Workbench CLI
 
 Usage:
-  canvas-workbench start [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench start [--open] [--no-open] [--api-only] [--port <web-port>] [--api-port <api-port>]
   canvas-workbench stop [--port <web-port>] [--api-port <api-port>]
-  canvas-workbench restart [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench restart [--open] [--no-open] [--api-only] [--port <web-port>] [--api-port <api-port>]
   canvas-workbench status [--port <web-port>] [--api-port <api-port>]
-  canvas-workbench update [--open] [--no-open] [--port <web-port>] [--api-port <api-port>]
+  canvas-workbench update [--open] [--no-open] [--api-only] [--port <web-port>] [--api-port <api-port>]
   canvas-workbench grid list [--api-url <url>] [--api-key <key>]
   canvas-workbench grid add <name> [--api-url <url>] [--api-key <key>]
   canvas-workbench note add <content> [--title <title>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
@@ -198,6 +198,7 @@ function parseArgs(argv) {
     port: DEFAULT_WEB_PORT,
     apiPort: DEFAULT_API_PORT,
     open: true,
+    apiOnly: false,
     apiUrl: null,
     apiKey: process.env.CANVAS_WORKBENCH_API_KEY || '',
     title: '',
@@ -226,6 +227,11 @@ function parseArgs(argv) {
       continue
     }
     if (token === '--no-open') {
+      options.open = false
+      continue
+    }
+    if (token === '--api-only') {
+      options.apiOnly = true
       options.open = false
       continue
     }
@@ -466,6 +472,10 @@ function resolveLocalBin(packageName) {
   return path.resolve(path.dirname(packageJsonPath), relativeBin)
 }
 
+function resolveTsxLoader() {
+  return require.resolve('tsx', { paths: [REPO_ROOT] })
+}
+
 function runSyncCommand(command, args, extraEnv = {}) {
   const result = spawnSync(command, args, {
     cwd: REPO_ROOT,
@@ -503,10 +513,10 @@ function isWorkingTreeClean() {
   return String(result.stdout || '').trim().length === 0
 }
 
-function spawnNodeScript(scriptPath, args, env, logPath) {
+function spawnNodeScript(scriptPath, args, env, logPath, options = {}) {
   const logFd = fs.openSync(logPath, 'a')
   try {
-    const child = spawn(process.execPath, [scriptPath, ...args], {
+    const child = spawn(process.execPath, [...(options.nodeArgs || []), scriptPath, ...args], {
       cwd: REPO_ROOT,
       detached: true,
       env: {
@@ -626,7 +636,7 @@ async function startCommand(options) {
     removeFileIfExists(apiPidFile)
   }
 
-  if (webProcessAlive) {
+  if (!options.apiOnly && webProcessAlive) {
     const webReadyNow = await waitFor(() => httpReady(webUrl), 15000, 300)
     if (!webReadyNow) {
       throw new Error(`Web process is already running but not ready on ${webUrl}`)
@@ -650,8 +660,13 @@ async function startCommand(options) {
     return
   }
 
-  const viteBin = resolveLocalBin('vite')
-  const tsxBin = resolveLocalBin('tsx')
+  if (options.apiOnly && apiAlreadyRunning) {
+    console.log(`Canvas Workbench Local API already running. API: ${apiUrl}`)
+    return
+  }
+
+  const viteBin = options.apiOnly ? null : resolveLocalBin('vite')
+  const tsxLoader = resolveTsxLoader()
 
   const startedPids = []
   const shouldOpen = options.open
@@ -659,8 +674,8 @@ async function startCommand(options) {
   try {
     if (!apiAlreadyRunning) {
       const apiPid = spawnNodeScript(
-        tsxBin,
-        ['--tsconfig', path.join(REPO_ROOT, 'tsconfig.node.json'), path.join(REPO_ROOT, 'server', 'index.ts')],
+        path.join(REPO_ROOT, 'server', 'index.ts'),
+        [],
         {
           CANVAS_WORKBENCH_API_HOST: DEFAULT_API_HOST,
           CANVAS_WORKBENCH_API_PORT: String(options.apiPort),
@@ -668,12 +683,13 @@ async function startCommand(options) {
           CANVAS_WORKBENCH_WEB_ORIGIN: webUrl,
         },
         apiLogFile,
+        { nodeArgs: ['--import', tsxLoader] },
       )
       writePidFile(apiPidFile, apiPid)
       startedPids.push(apiPid)
     }
 
-    if (!webAlreadyRunning) {
+    if (!options.apiOnly && !webAlreadyRunning) {
       const webPid = spawnNodeScript(
         viteBin,
         ['--host', DEFAULT_WEB_HOST, '--port', String(options.port), '--strictPort'],
@@ -686,9 +702,14 @@ async function startCommand(options) {
       startedPids.push(webPid)
     }
 
-    const ready = await waitFor(async () => (await httpReady(webUrl)) && (await apiReady(options.apiPort)), 30000, 300)
+    const ready = await waitFor(async () => options.apiOnly ? apiReady(options.apiPort) : (await httpReady(webUrl)) && (await apiReady(options.apiPort)), 30000, 300)
     if (!ready) {
       throw new Error(`Timed out waiting for Open Canvas to start. Check logs in ${RUNTIME_DIR}`)
+    }
+
+    if (options.apiOnly) {
+      console.log(`Canvas Workbench Local API started. API: ${apiUrl}`)
+      return
     }
 
     console.log(`Open Canvas started. Web: ${webUrl} | API: ${apiUrl}`)
