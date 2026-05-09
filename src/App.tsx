@@ -4661,7 +4661,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           <button className="zoom-btn reset" onClick={() => setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(activeGrid)))}>
             {text.reset}
           </button>
-          <button className="zoom-btn reset settings-trigger" onClick={() => setSettingsOpen(true)}>
+          <button className={`zoom-btn reset settings-trigger ${settingsOpen ? 'open' : ''}`} onClick={() => setSettingsOpen(true)}>
             {text.settings}
           </button>
         </div>
