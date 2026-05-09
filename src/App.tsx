@@ -61,6 +61,7 @@ import {
   getNavigatorCardTypeLabel,
 } from './cardNavigator'
 import { getCardChrome } from './cardChrome'
+import { shouldPollLocalApiInRuntime } from './localApiLiveSync'
 import { getHolidays, type HolidayInfo } from './shared/holidays'
 
 type LanguageCode = 'zh' | 'en'
@@ -2571,7 +2572,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }
 
     void run()
-    if (isObsidianRuntime) return () => {
+    if (!shouldPollLocalApiInRuntime(isObsidianRuntime)) return () => {
       cancelled = true
     }
 
