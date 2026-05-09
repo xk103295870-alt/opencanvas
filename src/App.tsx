@@ -4404,8 +4404,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const canvasStatusLabel =
     settings.language === 'zh'
-      ? `${activeGrid.name} · ${activeCardCount} 张卡片`
-      : `${activeGrid.name} · ${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`
+      ? `卡片导航 · ${activeGrid.name}（${activeCardCount} 张）`
+      : `Card Navigator · ${activeGrid.name} (${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'})`
+  const canvasStatusMeta =
+    settings.language === 'zh'
+      ? `${activeGrid.name}（${activeCardCount} 张）`
+      : `${activeGrid.name} (${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'})`
   const productSubtitle = settings.language === 'zh' ? '本地优先画布工作区' : 'Local-first canvas workspace'
   const noteActionLabel = text.newNoteCard.replace(/^\+\s*/, '')
   const todoActionLabel = todoText.newCardButton.replace(/^\+\s*/, '')
@@ -4575,8 +4579,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                 setCardNavigatorOpen((open) => !open)
               }}
             >
-              <strong>{activeGrid.name}</strong>
-              <span>{settings.language === 'zh' ? `${activeCardCount} 张卡片` : `${activeCardCount} ${activeCardCount === 1 ? 'card' : 'cards'}`}</span>
+              <strong>{settings.language === 'zh' ? '卡片导航' : 'Card Navigator'}</strong>
+              <span>{canvasStatusMeta}</span>
             </button>
 
             {cardNavigatorOpen ? (
