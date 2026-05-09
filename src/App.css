@@ -961,7 +961,7 @@
 }
 
 :root[data-theme='dark'] .canvas-grid::before {
-  opacity: calc(var(--particle-energy) * 0.62);
+  opacity: calc(var(--particle-energy) * 0.42);
 }
 
 .canvas-grid::after {

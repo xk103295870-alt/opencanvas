@@ -2722,7 +2722,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           }),
         )
         const movement = Math.abs(deltaX) + Math.abs(deltaY)
-        pushParticleImpulse(world.x, world.y, 0.18 + movement / 520)
+        pushParticleImpulse(world.x, world.y, 0.08 + movement / 1200)
         return
       }
 
