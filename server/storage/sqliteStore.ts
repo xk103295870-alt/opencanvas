@@ -104,6 +104,7 @@ type CardRow = {
   todoItemsJson: string | null
   calendarJson: string | null
   eventFlowJson: string | null
+  dashboardJson: string | null
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -172,6 +173,7 @@ function cardFromRow(row: CardRow): CardData {
   if (row.todoItemsJson) card.todoItems = parseJson(row.todoItemsJson, [])
   if (row.calendarJson) card.calendar = parseJson(row.calendarJson, undefined)
   if (row.eventFlowJson) card.eventFlow = parseJson(row.eventFlowJson, undefined)
+  if (row.dashboardJson) card.dashboard = parseJson(row.dashboardJson, undefined)
   return card
 }
 
@@ -273,6 +275,7 @@ export class SqliteStore {
         todoItemsJson TEXT,
         calendarJson TEXT,
         eventFlowJson TEXT,
+        dashboardJson TEXT,
         sortOrder INTEGER NOT NULL DEFAULT 0,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
@@ -295,6 +298,7 @@ export class SqliteStore {
       CREATE INDEX IF NOT EXISTS idx_assets_workspaceId ON assets(workspaceId);
     `)
     this.ensureColumn('cards', 'eventFlowJson', 'TEXT')
+    this.ensureColumn('cards', 'dashboardJson', 'TEXT')
     this.setMeta('schemaVersion', SCHEMA_VERSION)
   }
 
@@ -541,10 +545,10 @@ export class SqliteStore {
       .prepare(`
         INSERT INTO cards (
           id, workspaceId, gridId, kind, title, content, x, y, width, height,
-          fileId, fileName, externalUrl, todoItemsJson, calendarJson, eventFlowJson, sortOrder, createdAt, updatedAt
+          fileId, fileName, externalUrl, todoItemsJson, calendarJson, eventFlowJson, dashboardJson, sortOrder, createdAt, updatedAt
         ) VALUES (
           @id, @workspaceId, @gridId, @kind, @title, @content, @x, @y, @width, @height,
-          @fileId, @fileName, @externalUrl, @todoItemsJson, @calendarJson, @eventFlowJson, @sortOrder, @createdAt, @updatedAt
+          @fileId, @fileName, @externalUrl, @todoItemsJson, @calendarJson, @eventFlowJson, @dashboardJson, @sortOrder, @createdAt, @updatedAt
         )
         ON CONFLICT(id) DO UPDATE SET
           workspaceId = excluded.workspaceId,
@@ -562,6 +566,7 @@ export class SqliteStore {
           todoItemsJson = excluded.todoItemsJson,
           calendarJson = excluded.calendarJson,
           eventFlowJson = excluded.eventFlowJson,
+          dashboardJson = excluded.dashboardJson,
           sortOrder = excluded.sortOrder,
           updatedAt = excluded.updatedAt
       `)
@@ -582,6 +587,7 @@ export class SqliteStore {
         todoItemsJson: card.todoItems ? jsonStringify(card.todoItems) : null,
         calendarJson: card.calendar ? jsonStringify(card.calendar) : null,
         eventFlowJson: card.eventFlow ? jsonStringify(card.eventFlow) : null,
+        dashboardJson: card.dashboard ? jsonStringify(card.dashboard) : null,
         sortOrder,
         createdAt: now,
         updatedAt: now,

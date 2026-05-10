@@ -27,14 +27,14 @@ export async function startLocalApiFromObsidian(input: StartLocalApiInput, spawn
     CANVAS_WORKBENCH_API_BASE_URL: apiBaseUrl,
     CANVAS_WORKBENCH_WEB_ORIGIN: 'app://obsidian.md',
   }
-  const cliArgs = ['start', '--no-open', '--api-only', '--api-port', apiPort]
+  const cliArgs = ['restart', '--no-open', '--api-only', '--api-port', apiPort]
 
   try {
     const pid = spawnDetached('canvas-workbench', cliArgs, undefined, env)
     if (!pid) {
       return { ok: false, message: 'canvas-workbench command not found. Install the Canvas Workbench CLI or start Local API manually.' }
     }
-    return { ok: true, pid, message: `Local API start requested on port ${apiPort}.` }
+    return { ok: true, pid, message: `Local API restart requested on port ${apiPort}.` }
   } catch {
     return { ok: false, message: 'canvas-workbench command not found. Install the Canvas Workbench CLI or start Local API manually.' }
   }

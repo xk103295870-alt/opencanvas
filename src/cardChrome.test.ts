@@ -13,6 +13,17 @@ test('image cards render as hover chrome media with body dragging and resize han
   })
 })
 
+test('dashboard cards render frameless with a dedicated drag handle', () => {
+  assert.deepEqual(getCardChrome('dashboard'), {
+    showHeader: false,
+    showFileMeta: false,
+    showResizeHandle: true,
+    frameless: true,
+    chromeMode: 'hover',
+    dragSurface: 'handle',
+  })
+})
+
 test('non-image media cards keep the standard card chrome', () => {
   assert.deepEqual(getCardChrome('video'), {
     showHeader: true,

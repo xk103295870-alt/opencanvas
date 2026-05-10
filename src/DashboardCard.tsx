@@ -93,7 +93,7 @@ export function DashboardCard({ dashboard, title }: DashboardCardProps) {
         <span>{title || '数据看板'}</span>
       </div>
       <div className="dashboard-card-viewport">
-        <div ref={chartRef} className="dashboard-chart" />
+        <div ref={chartRef} className="dashboard-chart" aria-hidden="true" />
       </div>
       {footer ? <div className="dashboard-card-footer">{footer}</div> : null}
     </section>

@@ -2670,6 +2670,18 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }, [applyParticleVisual])
 
   useEffect(() => {
+    const clearPointerInteractionState = () => {
+      eventFlowNodeDragRef.current = null
+      eventFlowEdgeDragRef.current = null
+      setEventFlowEdgeDrag(null)
+      dragStateRef.current = null
+      panStateRef.current = null
+      resizeStateRef.current = null
+      setDraggingCardId(null)
+      setResizingCardId(null)
+      setIsPanning(false)
+    }
+
     const handlePointerMove = (event: PointerEvent) => {
       const flowDragState = eventFlowNodeDragRef.current
       if (flowDragState) {
@@ -2804,23 +2816,23 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         }
       }
 
-      eventFlowNodeDragRef.current = null
-      eventFlowEdgeDragRef.current = null
-      setEventFlowEdgeDrag(null)
-      dragStateRef.current = null
-      panStateRef.current = null
-      resizeStateRef.current = null
-      setDraggingCardId(null)
-      setResizingCardId(null)
-      setIsPanning(false)
+      clearPointerInteractionState()
+    }
+
+    const handlePointerCancel = () => {
+      clearPointerInteractionState()
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
+    window.addEventListener('blur', clearPointerInteractionState)
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+      window.removeEventListener('blur', clearPointerInteractionState)
     }
   }, [persistCliBridgeCardLayout, pushParticleImpulse, toWorldPoint])
 
@@ -5357,7 +5369,15 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   : null}
 
                 {!isMinimizedCard && card.kind === 'dashboard' ? (
-                  <DashboardCard dashboard={card.dashboard} title={card.title} />
+                  <div className="dashboard-drag-surface">
+                    <div
+                      className="dashboard-card-drag-handle"
+                      onPointerDown={(event) => onCardDragStart(event, card)}
+                      aria-label={`拖动${card.title || '数据看板'}`}
+                      title={card.title || '数据看板'}
+                    />
+                    <DashboardCard dashboard={card.dashboard} title={card.title} />
+                  </div>
                 ) : null}
 
                 {!isMinimizedCard && card.kind === 'hint' ? (

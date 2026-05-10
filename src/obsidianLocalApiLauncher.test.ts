@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { startLocalApiFromObsidian } from './obsidianLocalApiLauncher.ts'
 
-test('starts Local API through the portable canvas-workbench CLI command', async () => {
+test('restarts Local API through the portable canvas-workbench CLI command', async () => {
   const calls: Array<{
     command: string
     args: string[]
@@ -16,10 +16,11 @@ test('starts Local API through the portable canvas-workbench CLI command', async
 
   assert.equal(result.ok, true)
   assert.equal(result.pid, 1234)
+  assert.match(result.message, /restart requested/i)
   assert.deepEqual(calls, [
     {
       command: 'canvas-workbench',
-      args: ['start', '--no-open', '--api-only', '--api-port', '8799'],
+      args: ['restart', '--no-open', '--api-only', '--api-port', '8799'],
       cwd: undefined,
       env: {
         CANVAS_WORKBENCH_API_HOST: '127.0.0.1',

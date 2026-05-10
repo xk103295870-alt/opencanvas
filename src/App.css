@@ -1039,6 +1039,47 @@
     0 28px 48px var(--card-drag-shadow);
 }
 
+.card-dashboard {
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: transparent;
+}
+
+.card-dashboard .dashboard-card-frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.dashboard-drag-surface {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-card-drag-handle {
+  position: absolute;
+  top: 8px;
+  left: 14px;
+  right: 78px;
+  height: 28px;
+  z-index: 9;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 999px;
+}
+
+.dashboard-card-drag-handle:active {
+  cursor: grabbing;
+}
+
+.card-dashboard .dashboard-drag-surface .dashboard-card-frame {
+  flex: 1 1 auto;
+}
+
 .card.frameless:hover,
 .card.frameless:focus-within {
   border-color: color-mix(in srgb, var(--line-strong) 54%, transparent);
@@ -1341,6 +1382,8 @@
   width: 100%;
   height: 100%;
   min-height: 180px;
+  pointer-events: none;
+  touch-action: none;
 }
 
 .dashboard-card-state {

@@ -9,6 +9,7 @@ import {
   isSingletonCardKind,
   normalizeCalendarState,
   normalizeCardKind,
+  normalizeDashboardState,
   normalizeEventFlowState,
   normalizeTodoItems,
   type CalendarState,
@@ -34,6 +35,7 @@ type CanvasWorkbenchCreateCardPayload = {
   mediaUrl?: string
   todoItems?: Array<string | { text?: string; done?: boolean; status?: string; tag?: string }>
   eventFlow?: CardData['eventFlow']
+  dashboard?: CardData['dashboard']
   calendar?: {
     monthCursor?: string
     selectedDate?: string
@@ -541,6 +543,7 @@ function normalizeUploadedGrids(input: unknown): GridData[] {
         if (kind === 'todo') card.todoItems = normalizeTodoItems(rawCard.todoItems)
         if (kind === 'calendar') card.calendar = normalizeCalendarState(rawCard.calendar)
         if (kind === 'eventFlow') card.eventFlow = normalizeEventFlowState(rawCard.eventFlow)
+        if (kind === 'dashboard') card.dashboard = normalizeDashboardState(rawCard.dashboard)
 
         cards.push(card)
       })
@@ -1603,6 +1606,9 @@ app.post('/api/v1/cards', requireApiKey('canvas:write'), (req, res) => {
   if (kind === 'eventFlow') {
     card.eventFlow = normalizeEventFlowState(body.eventFlow)
   }
+  if (kind === 'dashboard') {
+    card.dashboard = normalizeDashboardState(body.dashboard)
+  }
 
   targetGrid.cards.push(card)
   if (body.activateGrid) ctx.workspace.activeGridId = targetGrid.id
@@ -1629,7 +1635,7 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
   }
 
   const body = req.body as Partial<
-    Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow'>
+    Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow' | 'dashboard'>
   > & {
     mediaUrl?: string
   }
@@ -1663,6 +1669,9 @@ app.patch('/api/v1/cards/:cardId', requireApiKey('canvas:write'), (req, res) => 
     }
     if (body.eventFlow !== undefined) {
       next.eventFlow = normalizeEventFlowState(body.eventFlow)
+    }
+    if (body.dashboard !== undefined) {
+      next.dashboard = normalizeDashboardState(body.dashboard)
     }
     grid.cards[index] = next
     updatedCard = next
