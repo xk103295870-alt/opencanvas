@@ -41,6 +41,7 @@ import {
   type CalendarViewMode,
   type CardData,
   type CardKind,
+  type DashboardState,
   type EventFlowNode,
   type EventFlowState,
   type ExternalCalendarInput,
@@ -190,7 +191,7 @@ type PersistedAppStateSnapshot = {
 }
 
 type CliBridgeCardPatch = Partial<
-  Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow'>
+  Pick<CardData, 'title' | 'content' | 'x' | 'y' | 'width' | 'height' | 'fileName' | 'externalUrl' | 'todoItems' | 'calendar' | 'eventFlow' | 'dashboard'>
 >
 
 type CliBridgeLayoutSyncMeta = {
@@ -243,6 +244,7 @@ type I18nText = {
   newTodoCard: string
   newCalendarCard: string
   newEventFlowCard: string
+  newDashboardCard: string
   eventFlowTitle: string
   eventFlowAddNode: string
   eventFlowNext: string
@@ -418,6 +420,7 @@ type CanvasWorkbenchCreateCardPayload = {
   todoItems?: ExternalTodoInput[]
   calendar?: ExternalCalendarInput
   eventFlow?: EventFlowState
+  dashboard?: DashboardState
 }
 
 type CanvasWorkbenchSetConfigPayload = Partial<CliBridgeConfig>
@@ -453,6 +456,7 @@ type CanvasWorkbenchCommand =
         todoItems?: TodoItem[]
         calendar?: CalendarState
         eventFlow?: EventFlowState
+        dashboard?: DashboardState
       }
     }
   | {
@@ -596,6 +600,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
     newEventFlowCard: '+ 事件流卡片',
+    newDashboardCard: '+ 数据看板',
     eventFlowTitle: '事件流',
     eventFlowAddNode: '+ 节点',
     eventFlowNext: '+ 下一步',
@@ -725,6 +730,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ New todo card',
     newCalendarCard: '+ New calendar card',
     newEventFlowCard: '+ Event flow card',
+    newDashboardCard: '+ Dashboard card',
     eventFlowTitle: 'Event Flow',
     eventFlowAddNode: '+ Node',
     eventFlowNext: '+ Next',
@@ -3000,13 +3006,19 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   calendar: calendarState,
                 }
               })()
-            : kind === 'eventFlow'
-              ? {
-                  ...cardBase,
-                  content: '',
-                  eventFlow: normalizeEventFlowState(payload?.eventFlow ?? createDefaultEventFlowState()),
-                }
-              : kind === 'hint'
+              : kind === 'eventFlow'
+                ? {
+                    ...cardBase,
+                    content: '',
+                    eventFlow: normalizeEventFlowState(payload?.eventFlow ?? createDefaultEventFlowState()),
+                  }
+                : kind === 'dashboard'
+                  ? {
+                      ...cardBase,
+                      content: '',
+                      dashboard: payload?.dashboard,
+                    }
+                  : kind === 'hint'
               ? {
                   ...cardBase,
                   title: title || 'Drag and drop any file',
@@ -3112,6 +3124,18 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     })
   }
 
+  const addDashboardCard = () => {
+    const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
+    createCardInternal({
+      kind: 'dashboard',
+      title: settings.language === 'zh' ? '数据看板' : 'Dashboard',
+      width: CARD_DEFAULT_SIZES.dashboard.width,
+      height: CARD_DEFAULT_SIZES.dashboard.height,
+      x: center.x - CARD_DEFAULT_SIZES.dashboard.width / 2,
+      y: center.y - CARD_DEFAULT_SIZES.dashboard.height / 2,
+    })
+  }
+
   const updateCardInternal = useCallback((payload: NonNullable<Extract<CanvasWorkbenchCommand, { type: 'update-card' }>['payload']>) => {
     const cardId = String(payload.cardId || '').trim()
     if (!cardId) {
@@ -3135,6 +3159,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     if (payload.todoItems !== undefined) patch.todoItems = payload.todoItems
     if (payload.calendar !== undefined) patch.calendar = payload.calendar
     if (payload.eventFlow !== undefined) patch.eventFlow = payload.eventFlow
+    if (payload.dashboard !== undefined) patch.dashboard = payload.dashboard
 
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
     setGrids((current) =>
@@ -3158,6 +3183,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             ...(payload.todoItems !== undefined ? { todoItems: toTodoItems(payload.todoItems) } : {}),
             ...(payload.calendar !== undefined ? { calendar: normalizeCalendarState(payload.calendar) } : {}),
             ...(payload.eventFlow !== undefined ? { eventFlow: normalizeEventFlowState(payload.eventFlow) } : {}),
+            ...(payload.dashboard !== undefined ? { dashboard: payload.dashboard } : {}),
           }
         }),
       })),
@@ -4417,6 +4443,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const todoActionLabel = todoText.newCardButton.replace(/^\+\s*/, '')
   const calendarActionLabel = calendarText.newCardButton.replace(/^\+\s*/, '')
   const eventFlowActionLabel = text.newEventFlowCard.replace(/^\+\s*/, '')
+  const dashboardActionLabel = text.newDashboardCard.replace(/^\+\s*/, '')
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -4458,6 +4485,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           <button className="action-btn" onClick={addEventFlowCard}>
             <span className="action-icon">↬</span>
             <span>{eventFlowActionLabel}</span>
+          </button>
+          <button className="action-btn" onClick={addDashboardCard}>
+            <span className="action-icon">▣</span>
+            <span>{dashboardActionLabel}</span>
           </button>
         </div>
 
