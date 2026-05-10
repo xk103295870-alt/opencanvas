@@ -1,4 +1,4 @@
-export type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar' | 'eventFlow'
+export type CardKind = 'note' | 'hint' | 'image' | 'video' | 'pdf' | 'todo' | 'calendar' | 'eventFlow' | 'dashboard'
 export type CalendarViewMode = 'month' | 'week'
 export type EventFlowNodeKind = 'start' | 'step'
 export type TodoLane = 'todo' | 'doing' | 'done'
@@ -53,6 +53,14 @@ export type EventFlowState = {
   draftTitle: string
 }
 
+export type DashboardState = {
+  option: unknown
+  sourceData?: unknown
+  prompt?: string
+  generatedBy?: string
+  updatedAt?: string
+}
+
 export type CardData = {
   id: string
   kind: CardKind
@@ -68,6 +76,7 @@ export type CardData = {
   todoItems?: TodoItem[]
   calendar?: CalendarState
   eventFlow?: EventFlowState
+  dashboard?: DashboardState
 }
 
 export type GridData = {
@@ -114,7 +123,7 @@ export const TODO_LANES: TodoLane[] = ['todo', 'doing', 'done']
 export const TODO_TAGS: TodoTag[] = ['event', 'feature', 'important', 'plan', 'bug', 'idea']
 export const TODO_FILTERS: TodoFilter[] = ['all', ...TODO_TAGS]
 
-export const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar', 'eventFlow'])
+export const CARD_KIND_SET = new Set<CardKind>(['note', 'hint', 'image', 'video', 'pdf', 'todo', 'calendar', 'eventFlow', 'dashboard'])
 
 export const CARD_DEFAULT_SIZES: Record<CardKind, { width: number; height: number }> = {
   note: { width: 340, height: 280 },
@@ -125,6 +134,7 @@ export const CARD_DEFAULT_SIZES: Record<CardKind, { width: number; height: numbe
   todo: { width: 760, height: 430 },
   calendar: { width: 540, height: 640 },
   eventFlow: { width: 760, height: 480 },
+  dashboard: { width: 760, height: 480 },
 }
 
 export const INITIAL_VIEWPORT: ViewportState = { x: 0, y: 0, zoom: 1 }
@@ -348,6 +358,18 @@ export const normalizeEventFlowState = (input?: ExternalEventFlowInput | EventFl
   }
 }
 
+export const normalizeDashboardState = (value: unknown): DashboardState | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const raw = value as Record<string, unknown>
+  return {
+    option: raw.option,
+    sourceData: raw.sourceData,
+    prompt: typeof raw.prompt === 'string' ? raw.prompt : undefined,
+    generatedBy: typeof raw.generatedBy === 'string' ? raw.generatedBy : undefined,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
+  }
+}
+
 export const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
   if (!Array.isArray(input)) return []
   return input.map((grid) => ({
@@ -369,7 +391,12 @@ export const normalizeGridsForTodoBoard = (input: GridData[]): GridData[] => {
                     ...card,
                     eventFlow: normalizeEventFlowState(card.eventFlow),
                   }
-                : card,
+                : card.kind === 'dashboard'
+                  ? {
+                      ...card,
+                      dashboard: normalizeDashboardState(card.dashboard),
+                    }
+                  : card,
         )
       : [],
   }))
