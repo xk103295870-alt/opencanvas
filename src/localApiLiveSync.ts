@@ -1,3 +1,4 @@
-export function shouldPollLocalApiInRuntime(_isObsidianRuntime: boolean) {
+export function shouldPollLocalApiInRuntime(isObsidianRuntime: boolean) {
+  void isObsidianRuntime
   return true
 }
