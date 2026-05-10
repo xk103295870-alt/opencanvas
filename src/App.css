@@ -1288,6 +1288,95 @@
   outline-offset: 1px;
 }
 
+
+.dashboard-card-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card-bg-top) 94%, transparent), color-mix(in srgb, var(--card-bg-bottom) 90%, transparent));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 8%, transparent),
+    0 18px 38px color-mix(in srgb, var(--card-shadow) 58%, transparent);
+}
+
+.dashboard-card-header,
+.dashboard-card-footer {
+  min-width: 0;
+  padding: 10px 14px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-color: color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.dashboard-card-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.dashboard-card-footer {
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.dashboard-card-viewport {
+  position: relative;
+  min-height: 0;
+  padding: 12px;
+  background: color-mix(in srgb, var(--app-bg) 36%, transparent);
+}
+
+.dashboard-chart {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+}
+
+.dashboard-card-state {
+  display: flex;
+  min-height: 180px;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 18px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.dashboard-card-state strong {
+  color: var(--text-main);
+  font-size: 15px;
+}
+
+.dashboard-card-state span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dashboard-card-state-error strong {
+  color: #ef7777;
+}
+
+.dashboard-card-overlay {
+  position: absolute;
+  inset: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-bg-top) 92%, transparent);
+}
+
 .event-flow-card-body {
   height: calc(100% - 46px);
   min-height: 0;
