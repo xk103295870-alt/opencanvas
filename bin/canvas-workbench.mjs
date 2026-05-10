@@ -24,6 +24,7 @@ const CLI_CARD_DEFAULT_SIZES = {
   todo: { width: 760, height: 430 },
   calendar: { width: 480, height: 560 },
   eventFlow: { width: 760, height: 480 },
+  dashboard: { width: 760, height: 480 },
 }
 
 function centeredCardPosition(kind) {
@@ -51,6 +52,7 @@ Usage:
   canvas-workbench todo add <text> [--status todo|doing|done] [--tag event|feature|important|plan|bug|idea] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench calendar event add <title> [--date YYYY-MM-DD] [--time HH:MM] [--end HH:MM] [--all-day] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench flow add <title> [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
+  canvas-workbench dashboard add <title> [--option <file>|--stdin] [--data <file>] [--prompt <text>] [--generated-by <name>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
   canvas-workbench image add <file> [--title <title>] [--grid <grid-name-or-id>] [--api-url <url>] [--api-key <key>]
 
 Examples:
@@ -65,6 +67,8 @@ Examples:
   canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "B"
   canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "B"
   canvas-workbench flow add "User onboarding flow" --grid "B"
+  canvas-workbench dashboard add "销售看板" --option ./sales-option.json --grid "AI区"
+  cat sales-option.json | canvas-workbench dashboard add "销售看板" --stdin --grid "AI区"
   canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI区"
 `)
 }
@@ -181,6 +185,9 @@ function parseArgs(argv) {
   } else if (rawCommand === 'image' && tokens[0] === 'add') {
     tokens.shift()
     command = 'image:add'
+  } else if (rawCommand === 'dashboard' && tokens[0] === 'add') {
+    tokens.shift()
+    command = 'dashboard:add'
   } else if (rawCommand === 'todo' && tokens[0] === 'add') {
     tokens.shift()
     command = 'todo:add'
@@ -209,6 +216,11 @@ function parseArgs(argv) {
     startTime: '',
     endTime: '',
     allDay: null,
+    optionPath: '',
+    readOptionFromStdin: false,
+    sourceDataPath: '',
+    prompt: '',
+    generatedBy: '',
     contentParts: [],
   }
 
@@ -347,8 +359,44 @@ function parseArgs(argv) {
       options.allDay = false
       continue
     }
+    if (token === '--option') {
+      options.optionPath = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--option=')) {
+      options.optionPath = token.slice('--option='.length)
+      continue
+    }
+    if (token === '--stdin') {
+      options.readOptionFromStdin = true
+      continue
+    }
+    if (token === '--data') {
+      options.sourceDataPath = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--data=')) {
+      options.sourceDataPath = token.slice('--data='.length)
+      continue
+    }
+    if (token === '--prompt') {
+      options.prompt = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--prompt=')) {
+      options.prompt = token.slice('--prompt='.length)
+      continue
+    }
+    if (token === '--generated-by') {
+      options.generatedBy = String(tokens.shift() || '')
+      continue
+    }
+    if (token.startsWith('--generated-by=')) {
+      options.generatedBy = token.slice('--generated-by='.length)
+      continue
+    }
 
-    if ((command === 'grid:add' || command === 'note:add' || command === 'image:add' || command === 'todo:add' || command === 'calendar:event:add') && !token.startsWith('-')) {
+    if ((command === 'grid:add' || command === 'note:add' || command === 'image:add' || command === 'todo:add' || command === 'calendar:event:add' || command === 'dashboard:add') && !token.startsWith('-')) {
       options.contentParts.push(token)
       continue
     }
@@ -868,6 +916,43 @@ function printGridLine(grid, activeGridId) {
   console.log(`${marker} ${name} ${id} ${cardCount} cards`)
 }
 
+function readTextFile(filePath, label) {
+  const resolved = path.resolve(process.cwd(), filePath)
+  try {
+    return fs.readFileSync(resolved, 'utf8')
+  } catch {
+    throw new Error(`Could not read ${label}: ${resolved}`)
+  }
+}
+
+function parseJsonInput(raw, label) {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new Error(`Invalid JSON in ${label}`)
+  }
+}
+
+async function readStdinText() {
+  let data = ''
+  process.stdin.setEncoding('utf8')
+  for await (const chunk of process.stdin) {
+    data += chunk
+  }
+  return data
+}
+
+function readOptionalSourceData(filePath) {
+  const rawPath = String(filePath || '').trim()
+  if (!rawPath) return undefined
+  const raw = readTextFile(rawPath, '--data')
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
 async function gridListCommand(options) {
   const apiUrl = apiUrlFor(options)
   const workspace = await getWorkspace(apiUrl, options)
@@ -924,6 +1009,57 @@ async function noteAddCommand(options) {
   })
   const data = result?.data || {}
   console.log('Note created')
+  console.log(`  api: ${apiUrl}`)
+  console.log(`  grid: ${data.gridId || grid.id}${created ? ' (created)' : ''}`)
+  console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
+}
+
+async function dashboardAddCommand(options) {
+  const title = String(options.contentParts.join(' ') || '').trim()
+  if (!title) {
+    throw new Error('Dashboard title is required. Example: canvas-workbench dashboard add "销售看板" --option ./sales-option.json')
+  }
+
+  const hasOptionPath = Boolean(String(options.optionPath || '').trim())
+  const hasStdin = Boolean(options.readOptionFromStdin)
+  if (hasOptionPath === hasStdin) {
+    throw new Error('Exactly one of --option or --stdin must be supplied')
+  }
+
+  const optionRaw = hasStdin ? await readStdinText() : readTextFile(options.optionPath, '--option')
+  const option = parseJsonInput(optionRaw, hasStdin ? 'stdin' : '--option')
+  const sourceData = readOptionalSourceData(options.sourceDataPath)
+
+  const apiUrl = apiUrlFor(options)
+  const gridLookup = String(options.gridId || '').trim()
+  const { grid, created } = await ensureGrid(apiUrl, options, gridLookup)
+  if (!grid?.id) throw new Error('Could not find or create target grid')
+
+  const dashboard = {
+    option,
+    updatedAt: new Date().toISOString(),
+  }
+  if (sourceData !== undefined) dashboard.sourceData = sourceData
+  if (String(options.prompt || '').trim()) dashboard.prompt = String(options.prompt).trim()
+  if (String(options.generatedBy || '').trim()) dashboard.generatedBy = String(options.generatedBy).trim()
+
+  const payload = {
+    kind: 'dashboard',
+    title,
+    content: '',
+    gridId: grid.id,
+    activateGrid: true,
+    ...centeredCardPosition('dashboard'),
+    dashboard,
+  }
+
+  const result = await httpJson(`${apiUrl}/api/v1/cards`, {
+    method: 'POST',
+    body: payload,
+    apiKey: options.apiKey,
+  })
+  const data = result?.data || {}
+  console.log('Dashboard created')
   console.log(`  api: ${apiUrl}`)
   console.log(`  grid: ${data.gridId || grid.id}${created ? ' (created)' : ''}`)
   console.log(`  card: ${data.cardId || data.card?.id || 'unknown'}`)
@@ -1238,6 +1374,10 @@ async function main() {
   }
   if (command === 'note:add') {
     await noteAddCommand(options)
+    return
+  }
+  if (command === 'dashboard:add') {
+    await dashboardAddCommand(options)
     return
   }
   if (command === 'image:add') {
