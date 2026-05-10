@@ -61,6 +61,7 @@ import {
   getNavigatorCardTypeLabel,
 } from './cardNavigator'
 import { getCardChrome } from './cardChrome'
+import { DashboardCard } from './DashboardCard'
 import { shouldPollLocalApiInRuntime } from './localApiLiveSync'
 import { getHolidays, type HolidayInfo } from './shared/holidays'
 
@@ -4688,7 +4689,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   ? calendarText.title
                   : card.kind === 'eventFlow'
                     ? text.eventFlowTitle
-                    : card.kind
+                    : card.kind === 'dashboard'
+                      ? getNavigatorCardTypeLabel(card.kind)
+                      : card.kind
 
             const cardChrome = getCardChrome(card.kind)
 
@@ -5321,6 +5324,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                       )
                     })()
                   : null}
+
+                {!isMinimizedCard && card.kind === 'dashboard' ? (
+                  <DashboardCard dashboard={card.dashboard} title={card.title} />
+                ) : null}
 
                 {!isMinimizedCard && card.kind === 'hint' ? (
                   <div className="hint-list">
