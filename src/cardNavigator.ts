@@ -11,6 +11,7 @@ const CARD_KIND_LABELS: Record<CardKind, string> = {
   todo: '待办事项',
   calendar: '日历',
   eventFlow: 'Event Flow',
+  dashboard: '数据看板',
 }
 
 export function getNavigatorCardTypeLabel(kind: CardKind) {
@@ -34,6 +35,13 @@ export function getNavigatorCardMeta(card: CardData) {
   if (card.kind === 'calendar') {
     const count = card.calendar?.events.length ?? 0
     return `${count} ${count === 1 ? 'event' : 'events'}`
+  }
+  if (card.kind === 'dashboard') {
+    const generatedBy = card.dashboard?.generatedBy?.trim()
+    if (generatedBy) return generatedBy
+    const updatedAt = card.dashboard?.updatedAt?.trim()
+    if (updatedAt) return updatedAt
+    return ''
   }
   const content = card.content.trim().replace(/\s+/g, ' ')
   return content ? content.slice(0, 80) : ''

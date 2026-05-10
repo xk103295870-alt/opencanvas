@@ -35,6 +35,7 @@ test('getNavigatorCardTypeLabel returns compact localized labels', () => {
   assert.equal(getNavigatorCardTypeLabel('image'), '图片')
   assert.equal(getNavigatorCardTypeLabel('calendar'), '日历')
   assert.equal(getNavigatorCardTypeLabel('eventFlow'), 'Event Flow')
+  assert.equal(getNavigatorCardTypeLabel('dashboard'), '数据看板')
 })
 
 test('getNavigatorCardMeta returns useful secondary metadata', () => {
@@ -42,6 +43,20 @@ test('getNavigatorCardMeta returns useful secondary metadata', () => {
   assert.equal(getNavigatorCardMeta(card({ kind: 'note', content: '  First line of content  ' })), 'First line of content')
   assert.equal(getNavigatorCardMeta(card({ kind: 'todo', todoItems: [{ id: 'a', text: 'Ship it', status: 'doing' }] })), '1 item')
   assert.equal(getNavigatorCardMeta(card({ kind: 'calendar', calendar: { monthCursor: '2026-05', selectedDate: '2026-05-09', viewMode: 'month', draftTitle: '', draftAllDay: true, draftStartTime: '', draftEndTime: '', events: [{ id: 'e', date: '2026-05-09', title: 'Review', allDay: true }] } })), '1 event')
+  assert.equal(
+    getNavigatorCardMeta(card({
+      kind: 'dashboard',
+      dashboard: { option: {}, generatedBy: 'claude-code', updatedAt: '2026-05-10T00:00:00.000Z' },
+    })),
+    'claude-code',
+  )
+  assert.equal(
+    getNavigatorCardMeta(card({
+      kind: 'dashboard',
+      dashboard: { option: {}, updatedAt: '2026-05-10T00:00:00.000Z' },
+    })),
+    '2026-05-10T00:00:00.000Z',
+  )
 })
 
 test('filterNavigatorCards matches title, file name, content, and card kind label', () => {
