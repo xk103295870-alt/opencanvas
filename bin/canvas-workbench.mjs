@@ -67,9 +67,16 @@ Examples:
   canvas-workbench todo add "Prepare homepage copy" --status doing --tag plan --grid "B"
   canvas-workbench calendar event add "Design review" --date 2026-05-01 --time 11:00 --end 12:00 --grid "B"
   canvas-workbench flow add "User onboarding flow" --grid "B"
-  canvas-workbench dashboard add "销售看板" --option ./sales-option.json --grid "AI区"
-  cat sales-option.json | canvas-workbench dashboard add "销售看板" --stdin --grid "AI区"
+  canvas-workbench dashboard add "销售看板" --option ./sales-option.json --prompt "根据自然语言生成销售趋势图" --generated-by claude-code --grid "AI区"
+  cat sales-option.json | canvas-workbench dashboard add "销售看板" --stdin --prompt "生成渠道占比环形图" --generated-by claude-code --grid "AI区"
   canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI区"
+
+Dashboard requirements for AI / agents:
+  - Canvas Workbench does not require an AI API key for dashboard generation.
+  - External AI/agents should turn natural language into JSON-only ECharts option objects.
+  - Do not include JS functions, formatter callbacks, event handlers, or runtime code in option JSON.
+  - If series exists, it must be an array; keep option JSON under 512 KiB.
+  - Use --prompt to preserve the natural-language request and --generated-by to record the producer.
 `)
 }
 

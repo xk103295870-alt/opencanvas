@@ -11,8 +11,9 @@ test('dashboard cards keep the frameless visual surface without using the standa
   assert.match(appCss, /\.card-dashboard \.dashboard-card-frame\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
 })
 
-test('dashboard chart canvas does not capture card drag or resize pointer gestures', () => {
-  assert.match(appCss, /\.dashboard-chart\s*\{[^}]*pointer-events:\s*none;[^}]*touch-action:\s*none;/s)
+test('dashboard chart keeps pointer events for ECharts tooltip legend and data interactions', () => {
+  assert.match(appCss, /\.dashboard-chart\s*\{[^}]*pointer-events:\s*auto;[^}]*touch-action:\s*manipulation;/s)
+  assert.doesNotMatch(appCss, /\.dashboard-chart\s*\{[^}]*pointer-events:\s*none;/s)
 })
 
 test('dashboard uses a narrow internal drag handle instead of dragging from the whole chart body', () => {
@@ -24,6 +25,10 @@ test('global pointer lifecycle clears stale drag resize and pan state on cancell
   assert.match(appSource, /const clearPointerInteractionState = \(\) => \{\s*eventFlowNodeDragRef\.current = null\s*eventFlowEdgeDragRef\.current = null\s*setEventFlowEdgeDrag\(null\)\s*dragStateRef\.current = null\s*panStateRef\.current = null\s*resizeStateRef\.current = null\s*setDraggingCardId\(null\)\s*setResizingCardId\(null\)\s*setIsPanning\(false\)\s*\}/s)
   assert.match(appSource, /window\.addEventListener\('pointercancel', handlePointerCancel\)/)
   assert.match(appSource, /window\.addEventListener\('blur', clearPointerInteractionState\)/)
+})
+
+test('canvas panning keeps grabbing cursor even when pointer crosses dashboard chart children', () => {
+  assert.match(appCss, /\.canvas\.is-panning,\s*\.canvas\.is-panning \*\s*\{\s*cursor:\s*grabbing !important;\s*\}/s)
 })
 
 test('DashboardCard does not stop pointer propagation before App can start dragging', () => {

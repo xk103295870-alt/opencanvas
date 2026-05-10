@@ -53,7 +53,8 @@ Canvas Workbench 是一个本地优先的 Obsidian 画布工作台，内置代�
 - Web / Obsidian / CLI 共用的本地 SQLite 数据库
 - 顶部工具栏显示本地 API 连接状态
 - 设置里的数据管理工具，支持本地数据库重新加载 / 导入
-- CLI 支持写入便利贴、待办、日历事件和画布
+- CLI 支持写入便利贴、待办、日历事件、事件流、图片和数据看板
+- 数据看板卡片支持由外部 AI / CLI 根据自然语言需求生成 ECharts option JSON 后写入，无需在 Canvas Workbench 内配置 AI API Key
 - 保留 API Key 接口，方便后续扩展 CLI / AI 联动
 
 ## 是否需要启动后端服务？
@@ -129,10 +130,52 @@ canvas-workbench grid add "产品规划"
 canvas-workbench note add "会议总结" --title "会议" --grid "产品规划"
 canvas-workbench todo add "准备首页文案" --status doing --tag plan --grid "产品规划"
 canvas-workbench calendar event add "设计评审" --date 2026-05-01 --time 11:00 --end 12:00 --grid "产品规划"
+canvas-workbench dashboard add "销售数据看板" --option ./sales-option.json --prompt "根据虚拟销售数据生成趋势图和渠道占比" --generated-by claude-code --grid "AI区"
+cat ./sales-option.json | canvas-workbench dashboard add "销售数据看板" --stdin --grid "AI区"
 canvas-workbench image add "./generated.png" --title "Generated concept" --grid "AI区"
 ```
 
-图片导入会把本地原文件保存为 Canvas Workbench 资产，并创建图片卡片。之后从卡片下载时返回保存的原图文件，而不是压缩预览。
+### 数据看板卡片与自然语言生成
+
+数据看板卡片的推荐工作流是“自然语言给外部 AI，AI 生成 ECharts option JSON，CLI 写入 Canvas Workbench”：
+
+```text
+自然语言需求 → 外部 AI / 智能体 → ECharts option JSON → canvas-workbench dashboard add → 数据看板卡片
+```
+
+Canvas Workbench 本身不内置 AI 调用，也不要求配置 AI API Key。自然语言理解、虚拟数据构造、图表类型选择和 option JSON 生成由 Claude Code、ChatGPT、Gemini、Cursor、Codex 等外部 AI / CLI 智能体完成；Canvas Workbench 负责接收 JSON、保存到本地数据库并渲染 ECharts 看板。
+
+给 AI 的数据看板生成要求：
+
+- 输出合法的 ECharts `option` JSON 对象。
+- JSON 必须可序列化，不要使用 JS 函数、formatter callback、事件 handler 或运行时代码。
+- `series` 存在时必须是数组。
+- option 文件建议小于 512 KiB。
+- 图表应适配深色背景，建议使用 `backgroundColor: "transparent"`。
+- 多个看板应该选择不同展示类型，例如折线 / 柱状组合图、环形图、雷达图、热力图、漏斗图。
+- 用 `--prompt` 记录自然语言需求，用 `--generated-by` 记录生成来源。
+
+示例自然语言需求：
+
+```text
+帮我在 AI区 生成 5 个虚拟电商数据看板：
+1. 销售额和订单数趋势，折线 + 柱状组合图
+2. 渠道来源占比，环形图
+3. 门店能力评分，雷达图
+4. 一周各时段活跃度，热力图
+5. 用户转化路径，漏斗图
+要求输出合法 ECharts option JSON，不要使用 JS 函数，适配深色背景，然后通过 canvas-workbench dashboard add 写入。
+```
+
+对应 CLI：
+
+```bash
+canvas-workbench dashboard add "销售趋势组合看板" \
+  --option ./sales-trend-option.json \
+  --prompt "根据虚拟一周销售额和订单数生成组合趋势图" \
+  --generated-by claude-code \
+  --grid "AI区"
+```
 
 说明：
 
@@ -140,7 +183,7 @@ canvas-workbench image add "./generated.png" --title "Generated concept" --grid 
 - Todo 状态可用：`todo`、`doing`、`done`。
 - Todo 标签可用：`event`、`feature`、`important`、`plan`、`bug`、`idea`。
 - 日历定时事件使用 `--time` 和 `--end`。
-- CLI 创建的便利贴、待办、日历、图片卡片默认出现在画布中心。
+- CLI 创建的便利贴、待办、日历、图片、数据看板卡片默认出现在画布中心。
 - 如有需要，命令也支持 `--api-url <url>` 和 `--api-key <key>`。
 
 ## Claude Skill：CLI / 智能体写入

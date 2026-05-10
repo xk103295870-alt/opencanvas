@@ -20,10 +20,14 @@ test('CLI supports API-only start without launching or waiting for Vite web serv
   assert.match(cliSource, /options\.apiOnly\s*\?\s*apiReady\(options\.apiPort\)/)
 })
 
-test('CLI documents dashboard add with option file and stdin support', () => {
+test('CLI documents dashboard add with natural-language prompt metadata and JSON-only ECharts requirements', () => {
   assert.match(cliSource, /canvas-workbench dashboard add <title> \[--option <file>\|--stdin\]/)
-  assert.match(cliSource, /canvas-workbench dashboard add "销售看板" --option/)
-  assert.match(cliSource, /canvas-workbench dashboard add "销售看板" --stdin/)
+  assert.match(cliSource, /--prompt "根据自然语言生成销售趋势图" --generated-by claude-code/)
+  assert.match(cliSource, /Dashboard requirements for AI \/ agents:/)
+  assert.match(cliSource, /does not require an AI API key/)
+  assert.match(cliSource, /turn natural language into JSON-only ECharts option objects/)
+  assert.match(cliSource, /Do not include JS functions, formatter callbacks, event handlers, or runtime code/)
+  assert.match(cliSource, /If series exists, it must be an array; keep option JSON under 512 KiB/)
 })
 
 test('CLI parses dashboard add options', () => {

@@ -316,6 +316,8 @@ Supported kinds:
 - `pdf`
 - `todo`
 - `calendar`
+- `eventFlow`
+- `dashboard`
 
 Kind-specific fields:
 
@@ -325,6 +327,14 @@ Kind-specific fields:
   - allowed `tag`: `event`, `feature`, `important`, `plan`, `bug`, `idea`
   - missing or unknown `tag` defaults to `event`
 - `calendar`: `calendar` object with cursor/selected date/view/events
+- `eventFlow`: `eventFlow` object with nodes and edges
+- `dashboard`: `dashboard` object for ECharts cards:
+  - `dashboard.option` is required for rendering and must be a JSON-compatible ECharts option object.
+  - Do not include JavaScript functions, formatter callbacks, event handlers, or runtime code in the option JSON.
+  - If `series` is present, it must be an array.
+  - Keep option JSON under 512 KiB.
+  - Recommended AI workflow: natural-language request -> external AI/agent creates ECharts option JSON -> `canvas-workbench dashboard add` or `POST /api/v1/cards` writes it into a grid.
+  - Optional metadata: `sourceData`, `prompt`, `generatedBy`, `updatedAt`.
 
 Card policy:
 
@@ -338,6 +348,7 @@ Card writing guidance for agents:
 - `note`: keep `title` short and put the full write-up in `content`.
 - `todo`: keep the fixed card title as the project label and mutate `todoItems` for task rows.
 - `calendar`: keep the fixed card title as the calendar label and mutate `calendar.events` for events.
+- `dashboard`: use it for AI/CLI-generated data visualization cards. External agents should turn natural-language requirements into JSON-only ECharts options, then write them with `dashboard.option`, `dashboard.prompt`, and `dashboard.generatedBy`.
 - Use `append-note` only for incremental note writing.
 
 Server normalization:
