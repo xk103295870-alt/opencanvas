@@ -6,7 +6,7 @@ export type CardChrome = {
   showResizeHandle: boolean
   frameless: boolean
   chromeMode: 'standard' | 'hover'
-  dragSurface: 'header' | 'body' | 'handle'
+  dragSurface: 'header' | 'body' | 'handle' | 'none'
 }
 
 export function getCardChrome(kind: CardKind): CardChrome {
@@ -28,7 +28,7 @@ export function getCardChrome(kind: CardKind): CardChrome {
       showResizeHandle: true,
       frameless: true,
       chromeMode: 'hover',
-      dragSurface: 'body',
+      dragSurface: 'none',
     }
   }
 

@@ -35,7 +35,7 @@ test('getNavigatorCardTypeLabel returns compact localized labels', () => {
   assert.equal(getNavigatorCardTypeLabel('image'), '图片')
   assert.equal(getNavigatorCardTypeLabel('calendar'), '日历')
   assert.equal(getNavigatorCardTypeLabel('eventFlow'), 'Event Flow')
-  assert.equal(getNavigatorCardTypeLabel('dashboard'), '数据看板')
+  assert.equal(getNavigatorCardTypeLabel('dashboard'), '数据卡片')
 })
 
 test('getNavigatorCardMeta returns useful secondary metadata', () => {

@@ -601,7 +601,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ 待办卡片',
     newCalendarCard: '+ 日历卡片',
     newEventFlowCard: '+ 事件流卡片',
-    newDashboardCard: '+ 数据看板',
+    newDashboardCard: '+ 数据卡片',
     eventFlowTitle: '事件流',
     eventFlowAddNode: '+ 节点',
     eventFlowNext: '+ 下一步',
@@ -731,7 +731,7 @@ const I18N: Record<LanguageCode, I18nText> = {
     newTodoCard: '+ New todo card',
     newCalendarCard: '+ New calendar card',
     newEventFlowCard: '+ Event flow card',
-    newDashboardCard: '+ Dashboard card',
+    newDashboardCard: '+ Data card',
     eventFlowTitle: 'Event Flow',
     eventFlowAddNode: '+ Node',
     eventFlowNext: '+ Next',
@@ -3156,7 +3156,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     const center = getViewportCenterWorldPoint(canvasRef.current?.getBoundingClientRect(), viewportRef.current)
     createCardInternal({
       kind: 'dashboard',
-      title: settings.language === 'zh' ? '数据看板' : 'Dashboard',
+      title: settings.language === 'zh' ? '数据卡片' : 'Data Card',
       width: CARD_DEFAULT_SIZES.dashboard.width,
       height: CARD_DEFAULT_SIZES.dashboard.height,
       x: center.x - CARD_DEFAULT_SIZES.dashboard.width / 2,
@@ -5386,19 +5386,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   : null}
 
                 {!isMinimizedCard && card.kind === 'dashboard' ? (
-                  <div
-                    className="dashboard-drag-surface"
-                    onPointerDown={(event) => {
-                      if ((event.target as HTMLElement).closest('.dashboard-inspect-open')) return
-                      onCardDragStart(event, card)
-                    }}
-                  >
-                    <DashboardCard
-                      dashboard={card.dashboard}
-                      title={card.title}
-                      onOpenInspect={() => setInspectedDashboardCardId(card.id)}
-                    />
-                  </div>
+                  <DashboardCard
+                    dashboard={card.dashboard}
+                    title={card.title}
+                    onOpenInspect={() => setInspectedDashboardCardId(card.id)}
+                    onStartDrag={(event) => onCardDragStart(event, card)}
+                  />
                 ) : null}
 
                 {!isMinimizedCard && card.kind === 'hint' ? (

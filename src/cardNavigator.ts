@@ -11,7 +11,7 @@ const CARD_KIND_LABELS: Record<CardKind, string> = {
   todo: '待办事项',
   calendar: '日历',
   eventFlow: 'Event Flow',
-  dashboard: '数据看板',
+  dashboard: '数据卡片',
 }
 
 export function getNavigatorCardTypeLabel(kind: CardKind) {

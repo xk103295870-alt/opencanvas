@@ -62,13 +62,13 @@ export function DashboardInspectModal({ card, onClose }: DashboardInspectModalPr
 
   return (
     <div className="dashboard-inspect-overlay" onClick={onClose}>
-      <section className="dashboard-inspect-modal" onClick={(event) => event.stopPropagation()} aria-label={card.title || '数据看板'}>
+      <section className="dashboard-inspect-modal" onClick={(event) => event.stopPropagation()} aria-label={card.title || '数据卡片'}>
         <header className="dashboard-inspect-modal-header">
           <div>
-            <span>数据看板</span>
-            <strong>{card.title || '数据看板'}</strong>
+            <span>数据卡片</span>
+            <strong>{card.title || '数据卡片'}</strong>
           </div>
-          <button type="button" className="dashboard-inspect-close" aria-label="关闭数据看板查看" onClick={onClose}>
+          <button type="button" className="dashboard-inspect-close" aria-label="关闭数据卡片查看" onClick={onClose}>
             关闭
           </button>
         </header>

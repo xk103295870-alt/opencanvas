@@ -52,8 +52,8 @@ canvas-workbench note add "记录内容" --title "标题" --grid "产品规划"
 canvas-workbench todo add "任务内容" --status doing --tag feature --grid "产品规划"
 canvas-workbench calendar event add "会议标题" --date 2026-05-01 --time 10:00 --end 11:00 --grid "产品规划"
 canvas-workbench flow add "事件流标题" --grid "产品规划"
-canvas-workbench dashboard add "销售数据看板" --option ./sales-option.json --prompt "根据虚拟销售数据生成趋势图" --generated-by claude-code --grid "AI区"
-cat ./sales-option.json | canvas-workbench dashboard add "销售数据看板" --stdin --grid "AI区"
+canvas-workbench dashboard add "销售数据卡片" --option ./sales-option.json --prompt "根据虚拟销售数据生成趋势图" --generated-by claude-code --grid "AI区"
+cat ./sales-option.json | canvas-workbench dashboard add "销售数据卡片" --stdin --grid "AI区"
 ```
 
 All write commands can accept:
@@ -210,7 +210,7 @@ Behavior:
 
 ## Dashboards / ECharts data cards
 
-Use dashboard cards for AI-generated data visualizations. The intended workflow is natural language → external AI/agent → JSON-only ECharts option → `canvas-workbench dashboard add` → Canvas Workbench dashboard card.
+Use data cards for AI-generated data visualizations. The intended workflow is natural language → external AI/agent → JSON-only ECharts option → `canvas-workbench dashboard add` → Canvas Workbench data card.
 
 Canvas Workbench does not need an AI API key for this. The external agent is responsible for understanding the natural-language request, inventing or transforming data, choosing chart types, and producing valid ECharts option JSON. Canvas Workbench only stores and renders the option.
 
@@ -234,14 +234,14 @@ Option requirements:
 Example natural-language request an agent should be able to satisfy:
 
 ```text
-帮我在 AI区 生成 5 个虚拟电商数据看板：销售趋势组合图、渠道占比环形图、门店能力雷达图、时段活跃热力图、转化路径漏斗图。输出合法 ECharts option JSON，不要使用 JS 函数，适配深色背景，并用 canvas-workbench dashboard add 写入。
+帮我在 AI区 生成 5 个虚拟电商数据卡片：销售趋势组合图、渠道占比环形图、门店能力雷达图、时段活跃热力图、转化路径漏斗图。输出合法 ECharts option JSON，不要使用 JS 函数，适配深色背景，并用 canvas-workbench dashboard add 写入。
 ```
 
 Behavior:
 
 - Creates a `dashboard` card.
-- Default dashboard card size is `760 x 480`.
-- CLI-created dashboard cards default to the canvas center.
+- Default data card size is `760 x 480`.
+- CLI-created data cards default to the canvas center.
 - The dashboard is persisted in SQLite and live UIs should refresh through Local API events.
 - If Local API is offline and the command fails with `fetch failed`, ask the user to connect/start Local API first.
 
