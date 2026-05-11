@@ -5,45 +5,61 @@ import { test } from 'node:test'
 const appCss = readFileSync(new URL('./App.css', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const dashboardCardSource = readFileSync(new URL('./DashboardCard.tsx', import.meta.url), 'utf8')
+const dashboardInspectModalSource = readFileSync(new URL('./DashboardInspectModal.tsx', import.meta.url), 'utf8')
 
 test('dashboard cards keep the frameless visual surface without using the standard card header', () => {
   assert.match(appCss, /\.card-dashboard\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
   assert.match(appCss, /\.card-dashboard \.dashboard-card-frame\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
 })
 
-test('dashboard chart enables pointer events only in inspect mode for ECharts tooltip legend and data interactions', () => {
-  assert.match(appCss, /\.dashboard-card-frame\.is-inspecting \.dashboard-chart\s*\{[^}]*pointer-events:\s*auto;[^}]*touch-action:\s*manipulation;/s)
+test('dashboard chart keeps pointer-heavy ECharts interactions out of the canvas preview card', () => {
   assert.match(appCss, /\.dashboard-card-frame\.is-previewing \.dashboard-chart\s*\{[^}]*pointer-events:\s*none;/s)
+  assert.doesNotMatch(appCss, /\.dashboard-card-frame\.is-inspecting \.dashboard-chart/)
 })
 
-test('dashboard uses a narrow internal drag handle instead of dragging from the whole chart body', () => {
-  assert.match(appSource, /<div\s+className="dashboard-card-drag-handle"\s+onPointerDown=\{\(event\) => onCardDragStart\(event, card\)\}\s+aria-label=\{`拖动\$\{card\.title \|\| '数据看板'\}`\}\s+title=\{card\.title \|\| '数据看板'\}\s*\/?>/s)
-  assert.doesNotMatch(appSource, /className="dashboard-drag-surface"\s+onPointerDown=\{\(event\) => \{\s*if \(cardChrome\.dragSurface === 'body'\) onCardDragStart\(event, card\)\s*\}\}/s)
+test('dashboard preview cards drag like photo cards from the body without chart interaction capture', () => {
+  assert.match(appSource, /<div\s+className="dashboard-drag-surface"\s+onPointerDown=\{\(event\) => \{\s*if \(\(event\.target as HTMLElement\)\.closest\('\.dashboard-inspect-open'\)\) return\s*onCardDragStart\(event, card\)\s*\}\}/s)
+  assert.doesNotMatch(appSource, /className="dashboard-card-drag-handle"/)
+  assert.match(appCss, /\.dashboard-drag-surface\s*\{[^}]*cursor:\s*grab;[^}]*touch-action:\s*none;/s)
+  assert.match(appCss, /\.dashboard-card-frame\.is-previewing\s*\{[^}]*pointer-events:\s*none;/s)
+  assert.match(appCss, /\.dashboard-inspect-open\s*\{[^}]*pointer-events:\s*auto;/s)
+  assert.match(appCss, /\.card-dashboard \.card-resize-handle\s*\{[^}]*pointer-events:\s*auto;/s)
 })
 
-test('dashboard cards render preview mode by default and opt into inspect mode intentionally', () => {
+test('dashboard cards open full ECharts interaction in a centered popup viewer', () => {
   assert.match(appSource, /const \[inspectedDashboardCardId, setInspectedDashboardCardId\] = useState<string \| null>\(null\)/)
-  assert.match(appSource, /isInspecting=\{inspectedDashboardCardId === card\.id\}/)
-  assert.match(appSource, /onEnterInspect=\{\(\) => setInspectedDashboardCardId\(card\.id\)\}/)
-  assert.match(appSource, /onExitInspect=\{\(\) => setInspectedDashboardCardId\(\(current\) => current === card\.id \? null : current\)\}/)
-  assert.match(dashboardCardSource, /isInspecting = false/)
-  assert.match(dashboardCardSource, /dashboard-preview-trigger/)
-  assert.match(dashboardCardSource, /点击查看 \/ 交互/)
-  assert.match(dashboardCardSource, /dashboard-inspect-exit/)
-  assert.match(dashboardCardSource, /退出查看/)
+  assert.match(appSource, /const inspectedDashboardCard = activeGrid\?\.cards\.find\(\(card\) => card\.id === inspectedDashboardCardId && card\.kind === 'dashboard'\)/)
+  assert.match(appSource, /onOpenInspect=\{\(\) => setInspectedDashboardCardId\(card\.id\)\}/)
+  assert.match(appSource, /<DashboardInspectModal\s+card=\{inspectedDashboardCard\}\s+onClose=\{\(\) => setInspectedDashboardCardId\(null\)\}\s+\/?>/s)
+  assert.match(dashboardCardSource, /dashboard-inspect-open/)
+  assert.match(dashboardCardSource, /查看 \/ 交互/)
+  assert.doesNotMatch(dashboardCardSource, /dashboard-preview-trigger/)
+  assert.doesNotMatch(dashboardCardSource, /dashboard-inspect-exit/)
 })
 
 test('dashboard preview mode does not continuously claim chart pointer interactions', () => {
   assert.match(appCss, /\.dashboard-card-frame\.is-previewing \.dashboard-chart\s*\{[^}]*pointer-events:\s*none;/s)
-  assert.match(appCss, /\.dashboard-card-frame\.is-inspecting \.dashboard-chart\s*\{[^}]*pointer-events:\s*auto;[^}]*touch-action:\s*manipulation;/s)
-  assert.match(appCss, /\.dashboard-preview-trigger\s*\{[^}]*pointer-events:\s*auto;/s)
+  assert.doesNotMatch(appCss, /\.dashboard-card-frame\.is-inspecting \.dashboard-chart/)
+  assert.doesNotMatch(appCss, /\.dashboard-preview-trigger/)
 })
 
-test('dashboard inspect mode exits on Escape or blank canvas pointer down', () => {
+test('dashboard popup modal owns full ECharts chart pointer interactions', () => {
+  assert.match(dashboardInspectModalSource, /echarts\.init\(container, undefined, \{ renderer: 'canvas' \}\)/)
+  assert.match(appCss, /\.dashboard-inspect-chart\s*\{[^}]*pointer-events:\s*auto;[^}]*touch-action:\s*manipulation;/s)
+  assert.match(appCss, /\.dashboard-inspect-overlay\s*\{/)
+  assert.match(appCss, /\.dashboard-inspect-modal\s*\{/)
+})
+
+test('dashboard popup viewer closes through Escape close button and overlay click', () => {
   assert.match(appSource, /if \(event\.key === 'Escape'\) setInspectedDashboardCardId\(null\)/)
   assert.match(appSource, /window\.addEventListener\('keydown', handleDashboardInspectKeyDown\)/)
   assert.match(appSource, /window\.removeEventListener\('keydown', handleDashboardInspectKeyDown\)/)
-  assert.match(appSource, /if \(target\.closest\('\.card'\)\) return\s*setInspectedDashboardCardId\(null\)/s)
+  assert.match(dashboardInspectModalSource, /className="dashboard-inspect-overlay"/)
+  assert.match(dashboardInspectModalSource, /onClick=\{onClose\}/)
+  assert.match(dashboardInspectModalSource, /className="dashboard-inspect-modal"/)
+  assert.match(dashboardInspectModalSource, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/)
+  assert.match(dashboardInspectModalSource, /className="dashboard-inspect-close"/)
+  assert.match(dashboardInspectModalSource, /aria-label="关闭数据看板查看"/)
 })
 
 test('global pointer lifecycle clears stale drag resize and pan state on cancellation or blur', () => {

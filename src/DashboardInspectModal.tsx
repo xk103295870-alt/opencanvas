@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as echarts from 'echarts'
-import type { DashboardState } from './shared/workspaceTypes'
 import { validateDashboardOption } from './dashboardOption'
+import type { CardData } from './shared/workspaceTypes'
 
-type DashboardCardProps = {
-  dashboard?: DashboardState
-  title: string
-  onOpenInspect?: () => void
+type DashboardInspectModalProps = {
+  card: CardData
+  onClose: () => void
 }
 
 function shortErrorMessage(error: unknown) {
@@ -14,15 +13,15 @@ function shortErrorMessage(error: unknown) {
   return '请检查 option JSON'
 }
 
-export function DashboardCard({ dashboard, title, onOpenInspect }: DashboardCardProps) {
+export function DashboardInspectModal({ card, onClose }: DashboardInspectModalProps) {
   const chartRef = useRef<HTMLDivElement | null>(null)
   const instanceRef = useRef<echarts.ECharts | null>(null)
+  const dashboard = card.dashboard
 
   const validation = useMemo(() => validateDashboardOption(dashboard?.option), [dashboard?.option])
   const generatedBy = dashboard?.generatedBy?.trim()
   const updatedAt = dashboard?.updatedAt?.trim()
   const footer = generatedBy && updatedAt ? `${generatedBy} · ${updatedAt}` : generatedBy || updatedAt || ''
-  const frameClassName = 'dashboard-card-frame is-previewing'
 
   useEffect(() => {
     const container = chartRef.current
@@ -61,52 +60,37 @@ export function DashboardCard({ dashboard, title, onOpenInspect }: DashboardCard
     }
   }, [validation])
 
-  if (!dashboard?.option) {
-    return (
-      <section className={frameClassName} aria-label={title || '数据看板'}>
-        <div className="dashboard-card-header">
-          <span>{title || '数据看板'}</span>
-          <button type="button" className="dashboard-inspect-open" onClick={onOpenInspect}>
-            查看 / 交互
-          </button>
-        </div>
-        <div className="dashboard-card-state">
-          <strong>等待图表配置</strong>
-          <span>请通过 CLI 写入 ECharts option</span>
-        </div>
-      </section>
-    )
-  }
-
-  if (!validation.ok) {
-    return (
-      <section className={frameClassName} aria-label={title || '数据看板'}>
-        <div className="dashboard-card-header">
-          <span>{title || '数据看板'}</span>
-          <button type="button" className="dashboard-inspect-open" onClick={onOpenInspect}>
-            查看 / 交互
-          </button>
-        </div>
-        <div className="dashboard-card-state dashboard-card-state-error">
-          <strong>{validation.message}</strong>
-          <span>{validation.detail || '请检查 option JSON'}</span>
-        </div>
-      </section>
-    )
-  }
-
   return (
-    <section className={frameClassName} aria-label={title || '数据看板'}>
-      <div className="dashboard-card-header">
-        <span>{title || '数据看板'}</span>
-        <button type="button" className="dashboard-inspect-open" onClick={onOpenInspect}>
-          查看 / 交互
-        </button>
-      </div>
-      <div className="dashboard-card-viewport">
-        <div ref={chartRef} className="dashboard-chart" aria-hidden="true" />
-      </div>
-      {footer ? <div className="dashboard-card-footer">{footer}</div> : null}
-    </section>
+    <div className="dashboard-inspect-overlay" onClick={onClose}>
+      <section className="dashboard-inspect-modal" onClick={(event) => event.stopPropagation()} aria-label={card.title || '数据看板'}>
+        <header className="dashboard-inspect-modal-header">
+          <div>
+            <span>数据看板</span>
+            <strong>{card.title || '数据看板'}</strong>
+          </div>
+          <button type="button" className="dashboard-inspect-close" aria-label="关闭数据看板查看" onClick={onClose}>
+            关闭
+          </button>
+        </header>
+
+        <div className="dashboard-inspect-modal-body">
+          {!dashboard?.option ? (
+            <div className="dashboard-card-state">
+              <strong>等待图表配置</strong>
+              <span>请通过 CLI 写入 ECharts option</span>
+            </div>
+          ) : !validation.ok ? (
+            <div className="dashboard-card-state dashboard-card-state-error">
+              <strong>{validation.message}</strong>
+              <span>{validation.detail || '请检查 option JSON'}</span>
+            </div>
+          ) : (
+            <div ref={chartRef} className="dashboard-inspect-chart" aria-hidden="true" />
+          )}
+        </div>
+
+        {footer ? <footer className="dashboard-inspect-modal-footer">{footer}</footer> : null}
+      </section>
+    </div>
   )
 }

@@ -63,6 +63,7 @@ import {
 } from './cardNavigator'
 import { getCardChrome } from './cardChrome'
 import { DashboardCard } from './DashboardCard'
+import { DashboardInspectModal } from './DashboardInspectModal'
 import { shouldPollLocalApiInRuntime } from './localApiLiveSync'
 import { getHolidays, type HolidayInfo } from './shared/holidays'
 
@@ -1553,6 +1554,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const particleFrameRef = useRef<number | null>(null)
 
   const activeGrid = useMemo(() => grids.find((grid) => grid.id === activeGridId) ?? grids[0], [activeGridId, grids])
+  const inspectedDashboardCard = activeGrid?.cards.find((card) => card.id === inspectedDashboardCardId && card.kind === 'dashboard')
 
   const text = I18N[settings.language]
   const todoText = TODO_I18N[settings.language]
@@ -5384,19 +5386,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                   : null}
 
                 {!isMinimizedCard && card.kind === 'dashboard' ? (
-                  <div className="dashboard-drag-surface">
-                    <div
-                      className="dashboard-card-drag-handle"
-                      onPointerDown={(event) => onCardDragStart(event, card)}
-                      aria-label={`拖动${card.title || '数据看板'}`}
-                      title={card.title || '数据看板'}
-                    />
+                  <div
+                    className="dashboard-drag-surface"
+                    onPointerDown={(event) => {
+                      if ((event.target as HTMLElement).closest('.dashboard-inspect-open')) return
+                      onCardDragStart(event, card)
+                    }}
+                  >
                     <DashboardCard
                       dashboard={card.dashboard}
                       title={card.title}
-                      isInspecting={inspectedDashboardCardId === card.id}
-                      onEnterInspect={() => setInspectedDashboardCardId(card.id)}
-                      onExitInspect={() => setInspectedDashboardCardId((current) => current === card.id ? null : current)}
+                      onOpenInspect={() => setInspectedDashboardCardId(card.id)}
                     />
                   </div>
                 ) : null}
@@ -5461,6 +5461,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           })}
         </div>
       </section>
+
+      {inspectedDashboardCard ? (
+        <DashboardInspectModal card={inspectedDashboardCard} onClose={() => setInspectedDashboardCardId(null)} />
+      ) : null}
 
       {pendingDeleteCardId ? (
         <div className="confirm-overlay" onClick={cancelDeleteCard}>

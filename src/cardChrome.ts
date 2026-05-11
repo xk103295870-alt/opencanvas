@@ -28,7 +28,7 @@ export function getCardChrome(kind: CardKind): CardChrome {
       showResizeHandle: true,
       frameless: true,
       chromeMode: 'hover',
-      dragSurface: 'handle',
+      dragSurface: 'body',
     }
   }
 
