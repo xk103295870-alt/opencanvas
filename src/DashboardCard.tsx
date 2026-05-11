@@ -6,6 +6,9 @@ import { validateDashboardOption } from './dashboardOption'
 type DashboardCardProps = {
   dashboard?: DashboardState
   title: string
+  isInspecting?: boolean
+  onEnterInspect?: () => void
+  onExitInspect?: () => void
 }
 
 function shortErrorMessage(error: unknown) {
@@ -13,7 +16,7 @@ function shortErrorMessage(error: unknown) {
   return '请检查 option JSON'
 }
 
-export function DashboardCard({ dashboard, title }: DashboardCardProps) {
+export function DashboardCard({ dashboard, title, isInspecting = false, onEnterInspect, onExitInspect }: DashboardCardProps) {
   const chartRef = useRef<HTMLDivElement | null>(null)
   const instanceRef = useRef<echarts.ECharts | null>(null)
 
@@ -21,6 +24,7 @@ export function DashboardCard({ dashboard, title }: DashboardCardProps) {
   const generatedBy = dashboard?.generatedBy?.trim()
   const updatedAt = dashboard?.updatedAt?.trim()
   const footer = generatedBy && updatedAt ? `${generatedBy} · ${updatedAt}` : generatedBy || updatedAt || ''
+  const frameClassName = `dashboard-card-frame ${isInspecting ? 'is-inspecting' : 'is-previewing'}`
 
   useEffect(() => {
     const container = chartRef.current
@@ -61,7 +65,7 @@ export function DashboardCard({ dashboard, title }: DashboardCardProps) {
 
   if (!dashboard?.option) {
     return (
-      <section className="dashboard-card-frame" aria-label={title || '数据看板'}>
+      <section className={frameClassName} aria-label={title || '数据看板'}>
         <div className="dashboard-card-header">
           <span>{title || '数据看板'}</span>
         </div>
@@ -75,7 +79,7 @@ export function DashboardCard({ dashboard, title }: DashboardCardProps) {
 
   if (!validation.ok) {
     return (
-      <section className="dashboard-card-frame" aria-label={title || '数据看板'}>
+      <section className={frameClassName} aria-label={title || '数据看板'}>
         <div className="dashboard-card-header">
           <span>{title || '数据看板'}</span>
         </div>
@@ -88,12 +92,22 @@ export function DashboardCard({ dashboard, title }: DashboardCardProps) {
   }
 
   return (
-    <section className="dashboard-card-frame" aria-label={title || '数据看板'}>
+    <section className={frameClassName} aria-label={title || '数据看板'}>
       <div className="dashboard-card-header">
         <span>{title || '数据看板'}</span>
+        {isInspecting ? (
+          <button type="button" className="dashboard-inspect-exit" onClick={onExitInspect}>
+            退出查看
+          </button>
+        ) : null}
       </div>
       <div className="dashboard-card-viewport">
         <div ref={chartRef} className="dashboard-chart" aria-hidden="true" />
+        {!isInspecting ? (
+          <button type="button" className="dashboard-preview-trigger" onClick={onEnterInspect}>
+            点击查看 / 交互
+          </button>
+        ) : null}
       </div>
       {footer ? <div className="dashboard-card-footer">{footer}</div> : null}
     </section>

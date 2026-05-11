@@ -1084,7 +1084,9 @@ const mergeRemoteGridsWithLocalMediaCards = (remoteGrids: GridData[], localGrids
 
 const withCalendarDefaults = normalizeCalendarState
 
-const initialViewport: ViewportState = INITIAL_VIEWPORT
+const DEFAULT_CANVAS_ZOOM = 0.45
+
+const initialViewport: ViewportState = { ...INITIAL_VIEWPORT, zoom: DEFAULT_CANVAS_ZOOM }
 
 const createCenteredViewport = (
   bounds?: { width: number; height: number } | null,
@@ -1096,9 +1098,9 @@ const createCenteredViewport = (
   const ty = target?.y ?? SCENE_HEIGHT / 2
 
   return {
-    zoom: 1,
-    x: width / 2 - tx,
-    y: height / 2 - ty,
+    zoom: DEFAULT_CANVAS_ZOOM,
+    x: width / 2 - tx * DEFAULT_CANVAS_ZOOM,
+    y: height / 2 - ty * DEFAULT_CANVAS_ZOOM,
   }
 }
 
@@ -1471,6 +1473,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null)
   const [resizingCardId, setResizingCardId] = useState<string | null>(null)
   const [isPanning, setIsPanning] = useState(false)
+  const [inspectedDashboardCardId, setInspectedDashboardCardId] = useState<string | null>(null)
   const [isFileOver, setIsFileOver] = useState(false)
   const [assetUrls, setAssetUrls] = useState<Record<string, string>>({})
   const [hydrated, setHydrated] = useState(false)
@@ -2836,6 +2839,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }
   }, [persistCliBridgeCardLayout, pushParticleImpulse, toWorldPoint])
 
+  useEffect(() => {
+    const handleDashboardInspectKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInspectedDashboardCardId(null)
+    }
+
+    window.addEventListener('keydown', handleDashboardInspectKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleDashboardInspectKeyDown)
+    }
+  }, [])
+
   const closeSettings = () => {
     setSettingsOpen(false)
   }
@@ -3563,6 +3577,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
     const target = event.target as HTMLElement
     if (target.closest('.card')) return
+    setInspectedDashboardCardId(null)
 
     const currentViewport = viewportRef.current
     panStateRef.current = {
@@ -5376,7 +5391,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                       aria-label={`拖动${card.title || '数据看板'}`}
                       title={card.title || '数据看板'}
                     />
-                    <DashboardCard dashboard={card.dashboard} title={card.title} />
+                    <DashboardCard
+                      dashboard={card.dashboard}
+                      title={card.title}
+                      isInspecting={inspectedDashboardCardId === card.id}
+                      onEnterInspect={() => setInspectedDashboardCardId(card.id)}
+                      onExitInspect={() => setInspectedDashboardCardId((current) => current === card.id ? null : current)}
+                    />
                   </div>
                 ) : null}
 
