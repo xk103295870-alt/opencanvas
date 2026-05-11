@@ -7,6 +7,13 @@ const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const dashboardCardSource = readFileSync(new URL('./DashboardCard.tsx', import.meta.url), 'utf8')
 const dashboardInspectModalSource = readFileSync(new URL('./DashboardInspectModal.tsx', import.meta.url), 'utf8')
 
+test('sidebar and canvas keep a visible divider with room for the collapse handle', () => {
+  assert.match(appCss, /\.app-shell\s*\{[^}]*grid-template-columns:\s*292px minmax\(0, 1fr\);/s)
+  assert.match(appCss, /\.sidebar\s*\{[^}]*border-right:\s*1px solid var\(--line\);[^}]*box-shadow:\s*12px 0 28px/s)
+  assert.match(appCss, /\.canvas\s*\{[^}]*border-left:\s*1px solid/s)
+  assert.match(appCss, /\.sidebar-toggle-inside\s*\{[^}]*right:\s*-17px;/s)
+})
+
 test('dashboard cards keep the frameless visual surface without using the standard card header', () => {
   assert.match(appCss, /\.card-dashboard\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
   assert.match(appCss, /\.card-dashboard \.dashboard-card-frame\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
@@ -93,4 +100,42 @@ test('canvas starts and resets at a 45 percent zoom level to reduce oversized hi
 
 test('DashboardCard does not stop pointer propagation before App can start dragging', () => {
   assert.doesNotMatch(dashboardCardSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/)
+})
+
+test('canvas pointer mode defaults to V card mode and can switch with keyboard H and V', () => {
+  assert.match(appSource, /type PointerMode = 'card' \| 'canvas'/)
+  assert.match(appSource, /const \[pointerMode, setPointerMode\] = useState<PointerMode>\('card'\)/)
+  assert.match(appSource, /if \(isEditableKeyboardTarget\(event\.target\)\) return/)
+  assert.match(appSource, /if \(event\.key\.toLowerCase\(\) === 'h'\) setPointerMode\('canvas'\)/)
+  assert.match(appSource, /if \(event\.key\.toLowerCase\(\) === 'v'\) setPointerMode\('card'\)/)
+})
+
+test('canvas pointer mode switch renders bottom centered H and V controls with hover tips', () => {
+  assert.match(appSource, /data-pointer-mode=\{pointerMode\}/)
+  assert.match(appSource, /className="canvas-pointer-mode-switch"/)
+  assert.match(appSource, /aria-label=\{settings\.language === 'zh' \? '鼠标模式' : 'Pointer mode'\}/)
+  assert.match(appSource, /className=\{`pointer-mode-btn \$\{pointerMode === 'canvas' \? 'active' : ''\}`\}/)
+  assert.match(appSource, /className=\{`pointer-mode-btn \$\{pointerMode === 'card' \? 'active' : ''\}`\}/)
+  assert.match(appSource, />H<\/span>/)
+  assert.match(appSource, />V<\/span>/)
+  assert.match(appSource, /className="pointer-mode-tip"/)
+  assert.match(appCss, /\.canvas-pointer-mode-switch\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*18px;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);/s)
+  assert.match(appCss, /\.pointer-mode-btn:hover \.pointer-mode-tip,\s*\.pointer-mode-btn:focus-visible \.pointer-mode-tip\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translate\(-50%, -6px\);/s)
+})
+
+test('H canvas mode only drags the canvas while V mode disables background canvas dragging', () => {
+  assert.match(appSource, /if \(pointerMode !== 'canvas'\) return/)
+  assert.match(appSource, /if \(event\.button !== 0\) return/)
+  assert.match(appSource, /event\.stopPropagation\(\)/)
+  assert.match(appSource, /event\.currentTarget\.setPointerCapture\(event\.pointerId\)/)
+  assert.match(appSource, /onPointerDownCapture=\{onCanvasPointerDown\}/)
+  assert.doesNotMatch(appSource, /pointerMode === 'canvas' && event\.button === 1/)
+  assert.doesNotMatch(appSource, /onAuxClick=\{onCanvasAuxClick\}/)
+  assert.match(appSource, /className=\{`canvas canvas-workbench-stage /)
+  assert.match(appCss, /\.canvas\s*\{[^}]*cursor:\s*default;/s)
+  assert.match(appCss, /\.canvas-workbench-stage\[data-pointer-mode='canvas'\],\s*\.canvas-workbench-stage\[data-pointer-mode='canvas'\] \.scene,\s*\.canvas-workbench-stage\[data-pointer-mode='canvas'\] \.canvas-grid\s*\{\s*cursor:\s*grab;\s*\}/s)
+  assert.match(appCss, /\.canvas-workbench-stage\[data-pointer-mode='canvas'\] \.scene\s*\{[^}]*pointer-events:\s*none;/s)
+  assert.match(appCss, /\.canvas-workbench-stage\[data-pointer-mode='canvas'\]\.is-panning,\s*\.canvas-workbench-stage\[data-pointer-mode='canvas'\]\.is-panning \*\s*\{\s*cursor:\s*grabbing !important;\s*\}/s)
+  assert.doesNotMatch(appCss, /\.canvas-workbench-stage\[data-pointer-mode='canvas'\]\.is-panning,\s*\.canvas-workbench-stage\[data-pointer-mode='canvas'\]\.is-panning \*\s*\{\s*cursor:\s*default !important;/s)
+  assert.doesNotMatch(appCss, /\.canvas-workbench-stage\[data-pointer-mode='canvas'\] \.card\s*\{[^}]*cursor:\s*grab;/s)
 })

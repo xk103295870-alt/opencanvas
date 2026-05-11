@@ -69,6 +69,7 @@ import { getHolidays, type HolidayInfo } from './shared/holidays'
 
 type LanguageCode = 'zh' | 'en'
 type ThemeMode = 'system' | 'light' | 'dark'
+type PointerMode = 'card' | 'canvas'
 type SyncStatus = 'idle' | 'syncing' | 'ok' | 'error'
 type LocalApiStatus = 'idle' | 'checking' | 'online' | 'offline'
 
@@ -969,6 +970,11 @@ const normalizeTimeRange = (start: string, end: string): [string, string] | null
 const formatLocalDateTime = (timestamp: number, language: LanguageCode) =>
   new Date(timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
 
+const isEditableKeyboardTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'))
+}
+
 const getWeekStart = (date: Date) => {
   const output = new Date(date)
   output.setDate(date.getDate() - date.getDay())
@@ -1471,6 +1477,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [cardNavigatorOpen, setCardNavigatorOpen] = useState(false)
   const [cardNavigatorQuery, setCardNavigatorQuery] = useState('')
   const [highlightedNavigatorCardId, setHighlightedNavigatorCardId] = useState<string | null>(null)
+  const [pointerMode, setPointerMode] = useState<PointerMode>('card')
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null)
   const [resizingCardId, setResizingCardId] = useState<string | null>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -3575,10 +3582,34 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }
 
   const onCanvasPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (pointerMode !== 'canvas') return
     if (event.button !== 0) return
+    if ((event.target as HTMLElement).closest('.canvas-pointer-mode-switch, .canvas-toolbar')) return
 
-    const target = event.target as HTMLElement
-    if (target.closest('.card')) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setInspectedDashboardCardId(null)
+
+    const currentViewport = viewportRef.current
+    panStateRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: currentViewport.x,
+      startY: currentViewport.y,
+    }
+
+    setIsPanning(true)
+  }
+
+  const onAppShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (pointerMode !== 'canvas') return
+    if (event.button !== 0) return
+    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar')) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
     setInspectedDashboardCardId(null)
 
     const currentViewport = viewportRef.current
@@ -4449,6 +4480,17 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   }, [activeGrid, closeCardNavigator])
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return
+      if (event.key.toLowerCase() === 'h') setPointerMode('canvas')
+      if (event.key.toLowerCase() === 'v') setPointerMode('card')
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
     if (!cardNavigatorOpen) return
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4473,9 +4515,19 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const calendarActionLabel = calendarText.newCardButton.replace(/^\+\s*/, '')
   const eventFlowActionLabel = text.newEventFlowCard.replace(/^\+\s*/, '')
   const dashboardActionLabel = text.newDashboardCard.replace(/^\+\s*/, '')
+  const canvasModeTip = settings.language === 'zh'
+    ? '画布模式：拖动画布、缩放画布，避免卡片内容接管鼠标。'
+    : 'Canvas mode: drag and zoom the canvas without card content taking the pointer.'
+  const cardModeTip = settings.language === 'zh'
+    ? '卡片模式：操作卡片内部内容、按钮、编辑和查看。'
+    : 'Card mode: edit card content, buttons, details, and viewers.'
 
   return (
-    <main className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <main
+      className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isPanning ? 'is-panning' : ''}`}
+      data-pointer-mode={pointerMode}
+      onPointerDownCapture={onAppShellPointerDown}
+    >
       <aside className="sidebar" aria-hidden={sidebarCollapsed}>
         <button
           type="button"
@@ -4607,9 +4659,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
       <section
         ref={canvasRef}
-        className={`canvas ${isPanning ? 'is-panning' : ''} ${isFileOver ? 'is-file-over' : ''}`}
+        className={`canvas canvas-workbench-stage ${isPanning ? 'is-panning' : ''} ${isFileOver ? 'is-file-over' : ''}`}
+        data-pointer-mode={pointerMode}
         data-drop-label={text.dropFilesLabel}
-        onPointerDown={onCanvasPointerDown}
+        onPointerDownCapture={onCanvasPointerDown}
         onWheel={onCanvasWheel}
         onDragOver={(event) => {
           if (!isFileDrag(event.dataTransfer)) return
@@ -4725,6 +4778,29 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           </button>
           <button className={`zoom-btn reset settings-trigger ${settingsOpen ? 'open' : ''}`} onClick={() => setSettingsOpen(true)}>
             {text.settings}
+          </button>
+        </div>
+
+        <div className="canvas-pointer-mode-switch" aria-label={settings.language === 'zh' ? '鼠标模式' : 'Pointer mode'}>
+          <button
+            type="button"
+            className={`pointer-mode-btn ${pointerMode === 'canvas' ? 'active' : ''}`}
+            onClick={() => setPointerMode('canvas')}
+            aria-pressed={pointerMode === 'canvas'}
+          >
+            <span>H</span>
+            <small>{settings.language === 'zh' ? '画布' : 'Canvas'}</small>
+            <span className="pointer-mode-tip">{canvasModeTip}</span>
+          </button>
+          <button
+            type="button"
+            className={`pointer-mode-btn ${pointerMode === 'card' ? 'active' : ''}`}
+            onClick={() => setPointerMode('card')}
+            aria-pressed={pointerMode === 'card'}
+          >
+            <span>V</span>
+            <small>{settings.language === 'zh' ? '卡片' : 'Card'}</small>
+            <span className="pointer-mode-tip">{cardModeTip}</span>
           </button>
         </div>
 

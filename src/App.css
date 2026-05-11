@@ -2,12 +2,21 @@
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: 292px 1fr;
+  grid-template-columns: 292px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
   background:
     radial-gradient(circle at 86% -10%, var(--app-glow), transparent 45%),
     var(--app-bg);
+}
+
+.app-shell[data-pointer-mode='canvas'] {
+  cursor: grab;
+}
+
+.app-shell[data-pointer-mode='canvas'].is-panning,
+.app-shell[data-pointer-mode='canvas'].is-panning * {
+  cursor: grabbing !important;
 }
 
 .app-shell::before {
@@ -57,7 +66,7 @@
 .sidebar-toggle-inside {
   position: absolute;
   top: 50%;
-  right: -18px;
+  right: -17px;
   transform: translateY(-50%);
 }
 
@@ -76,6 +85,7 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  box-shadow: 12px 0 28px color-mix(in srgb, var(--card-shadow) 18%, transparent);
 }
 
 .sidebar,
@@ -405,7 +415,8 @@
 .canvas {
   position: relative;
   overflow: hidden;
-  cursor: grab;
+  cursor: default;
+  border-left: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   background-color: var(--canvas-base);
   --particle-energy: 0;
   --particle-origin-x: 50%;
@@ -847,6 +858,122 @@
   background: color-mix(in srgb, var(--icon-bg) 68%, white 8%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.canvas-workbench-stage[data-pointer-mode='canvas'],
+.canvas-workbench-stage[data-pointer-mode='canvas'] .scene,
+.canvas-workbench-stage[data-pointer-mode='canvas'] .canvas-grid {
+  cursor: grab;
+}
+
+.canvas-workbench-stage[data-pointer-mode='canvas'] .scene {
+  pointer-events: none;
+}
+
+.canvas-workbench-stage[data-pointer-mode='canvas'].is-panning,
+.canvas-workbench-stage[data-pointer-mode='canvas'].is-panning * {
+  cursor: grabbing !important;
+}
+
+.canvas-pointer-mode-switch {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 34;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 16px;
+  pointer-events: auto;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--app-bg) 88%, white 8%), color-mix(in srgb, var(--app-bg) 74%, transparent)),
+    color-mix(in srgb, var(--app-bg) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, white 18%);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  box-shadow:
+    0 26px 70px color-mix(in srgb, var(--card-shadow) 36%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 46%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--line) 42%, transparent);
+}
+
+.pointer-mode-btn {
+  position: relative;
+  min-width: 62px;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--icon-bg) 68%, white 8%);
+  color: var(--text-soft);
+  font-family: inherit;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
+}
+
+.pointer-mode-btn > span:first-child {
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.pointer-mode-btn small {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pointer-mode-btn:hover,
+.pointer-mode-btn:focus-visible,
+.pointer-mode-btn.active {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line-strong));
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--accent) 16%, var(--icon-bg));
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.pointer-mode-btn.active small {
+  color: var(--accent);
+}
+
+.pointer-mode-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  width: max-content;
+  max-width: 280px;
+  transform: translate(-50%, 0);
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--app-bg) 92%, black 12%);
+  border: 1px solid color-mix(in srgb, var(--line-strong) 78%, transparent);
+  color: var(--text-main);
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--card-shadow) 40%, transparent);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.pointer-mode-btn:hover .pointer-mode-tip,
+.pointer-mode-btn:focus-visible .pointer-mode-tip {
+  opacity: 1;
+  transform: translate(-50%, -6px);
 }
 
 .zoom-btn:hover,
@@ -3343,6 +3470,7 @@
 
 :root[data-theme='light'] .sidebar-toggle,
 :root[data-theme='light'] .canvas-command-group,
+:root[data-theme='light'] .canvas-pointer-mode-switch,
 :root[data-theme='light'] .zoom-btn {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36)),
