@@ -3605,7 +3605,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const onAppShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (pointerMode !== 'canvas') return
     if (event.button !== 0) return
-    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar')) return
+    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .settings-overlay, .settings-dialog')) return
 
     event.preventDefault()
     event.stopPropagation()
