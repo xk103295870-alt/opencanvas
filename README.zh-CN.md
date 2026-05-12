@@ -194,7 +194,7 @@ canvas-workbench dashboard add "销售趋势组合看板" \
 - 推荐存放位置：`工作室产品文档/Canvas Workbench/canvas-workbench-cli.skill`
 - Markdown 说明文档：`工作室产品文档/Canvas Workbench/Canvas Workbench CLI Skill.md`
 
-当智能体需要写入便利贴、待办、日历事件、项目记录时，可以使用这个 Skill。使用 Skill / CLI 写入前，需要先确保 Local API 在线。
+当智能体需要写入便利贴、待办、日历事件、事件流、图片或 AI 生成的 ECharts 数据卡片时，可以使用这个 Skill。打包 Skill 已包含“自然语言 → 外部 AI / 智能体 → JSON-only ECharts option → `canvas-workbench dashboard add`”工作流说明。使用 Skill / CLI 写入前，需要先确保 Local API 在线。
 
 ## 开发命令
 
