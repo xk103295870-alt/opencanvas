@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLayoutEffect } from 'react'
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import './App.css'
 import {
   apiCreateAsset,
@@ -4310,12 +4310,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     setCalendarDropTarget(null)
   }
 
-  const setCenteredZoom = (nextZoomValue: number) => {
+  const setCenteredZoom = (nextZoomValue: number, clientX?: number, clientY?: number) => {
     const bounds = canvasRef.current?.getBoundingClientRect()
     if (!bounds) return
 
-    const centerX = bounds.width / 2
-    const centerY = bounds.height / 2
+    const centerX = typeof clientX === 'number' ? clientX - bounds.left : bounds.width / 2
+    const centerY = typeof clientY === 'number' ? clientY - bounds.top : bounds.height / 2
     const currentViewport = viewportRef.current
 
     const worldX = (centerX - currentViewport.x) / currentViewport.zoom
@@ -4330,7 +4330,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     })
   }
 
-  const onCanvasWheel = (event: WheelEvent<HTMLElement>) => {
+  const onCanvasWheel = (event: ReactWheelEvent<HTMLElement>) => {
     event.preventDefault()
 
     const bounds = canvasRef.current?.getBoundingClientRect()
@@ -4353,6 +4353,19 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       x: localX - worldX * nextZoom,
       y: localY - worldY * nextZoom,
     })
+  }
+
+  const onAppShellWheel = (event: ReactWheelEvent<HTMLElement>) => {
+    if (pointerMode !== 'canvas') return
+    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .settings-overlay, .settings-dialog')) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const currentViewport = viewportRef.current
+    const scale = Math.exp(-event.deltaY * 0.0015)
+    const nextZoom = clamp(currentViewport.zoom * scale, ZOOM_MIN, ZOOM_MAX)
+    setCenteredZoom(nextZoom, event.clientX, event.clientY)
   }
 
   const onCanvasDrop = async (event: ReactDragEvent<HTMLElement>) => {
@@ -4527,6 +4540,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isPanning ? 'is-panning' : ''}`}
       data-pointer-mode={pointerMode}
       onPointerDownCapture={onAppShellPointerDown}
+      onWheel={onAppShellWheel}
     >
       <aside className="sidebar" aria-hidden={sidebarCollapsed}>
         <button

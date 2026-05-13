@@ -123,6 +123,11 @@ test('canvas pointer mode switch renders bottom centered H and V controls with h
   assert.match(appCss, /\.pointer-mode-btn:hover \.pointer-mode-tip,\s*\.pointer-mode-btn:focus-visible \.pointer-mode-tip\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*translate\(-50%, -6px\);/s)
 })
 
+test('H canvas mode supports whole app-shell wheel zoom while V mode ignores shell wheel zoom', () => {
+  assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{\s*if \(pointerMode !== 'canvas'\) return\s*if \(\(event\.target as HTMLElement\)\.closest\('\.sidebar, \.sidebar-toggle, \.canvas-pointer-mode-switch, \.canvas-toolbar, \.settings-overlay, \.settings-dialog'\)\) return/s)
+  assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)[\s\S]*setCenteredZoom\(nextZoom, event\.clientX, event\.clientY\)[\s\S]*\}/)
+  assert.match(appSource, /onWheel=\{onAppShellWheel\}/)
+})
 test('H canvas mode only drags the canvas while V mode disables background canvas dragging', () => {
   assert.match(appSource, /if \(pointerMode !== 'canvas'\) return/)
   assert.match(appSource, /if \(event\.button !== 0\) return/)
