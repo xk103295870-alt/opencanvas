@@ -2877,12 +2877,33 @@
     box-shadow 0.16s ease;
 }
 
+.image-card-rename {
+  position: absolute;
+  top: 8px;
+  right: 76px;
+  z-index: 9;
+  opacity: 0.42;
+  border-color: color-mix(in srgb, var(--line) 54%, transparent);
+  background: color-mix(in srgb, var(--card-header-bg) 76%, transparent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--card-shadow) 46%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    opacity 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
 .card.frameless:hover .image-card-close,
 .card.frameless:focus-within .image-card-close,
 .image-card-close:hover,
 .card.frameless:hover .image-card-download,
 .card.frameless:focus-within .image-card-download,
-.image-card-download:hover {
+.image-card-download:hover,
+.card.frameless:hover .image-card-rename,
+.card.frameless:focus-within .image-card-rename,
+.image-card-rename:hover {
   opacity: 1;
   border-color: var(--line-strong);
   background: var(--icon-bg);
@@ -2912,6 +2933,102 @@
   justify-content: center;
   color: var(--text-dim);
   font-size: 13px;
+}
+
+.image-rename-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--canvas-base) 32%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.image-rename-dialog {
+  width: min(420px, 92vw);
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg-bottom) 100%);
+  box-shadow: 0 28px 58px rgba(0, 0, 0, 0.38);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.image-rename-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.image-rename-header span {
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.image-rename-header h3 {
+  margin: 3px 0 0;
+  font-size: 17px;
+}
+
+.image-rename-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.image-rename-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+}
+
+.image-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.image-rename-secondary,
+.image-rename-primary {
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 700;
+}
+
+.image-rename-secondary {
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  color: var(--text);
+}
+
+.image-rename-primary {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  background: color-mix(in srgb, var(--accent) 20%, var(--icon-bg));
+  color: var(--text-main);
+}
+
+.image-rename-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .confirm-overlay,

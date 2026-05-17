@@ -14,6 +14,27 @@ test('sidebar and canvas keep a visible divider with room for the collapse handl
   assert.match(appCss, /\.sidebar-toggle-inside\s*\{[^}]*right:\s*-17px;/s)
 })
 
+test('media cards use one cross-device fallback message when local assets cannot render', () => {
+  assert.match(appSource, /mediaImageUnavailable: '此类型暂不支持跨端显示。'/)
+  assert.match(appSource, /mediaVideoUnavailable: '此类型暂不支持跨端显示。'/)
+  assert.match(appSource, /mediaPdfUnavailable: '此类型暂不支持跨端显示。'/)
+  assert.doesNotMatch(appSource, /mediaImageUnavailable: '图片不可用'/)
+  assert.doesNotMatch(appSource, /mediaVideoUnavailable: '视频不可用'/)
+  assert.doesNotMatch(appSource, /mediaPdfUnavailable: 'PDF 不可用'/)
+})
+
+test('image cards expose a floating rename button that opens a rename dialog', () => {
+  assert.match(appSource, /const \[renamingImageCardId, setRenamingImageCardId\] = useState<string \| null>\(null\)/)
+  assert.match(appSource, /const \[imageCardTitleDraft, setImageCardTitleDraft\] = useState\(''\)/)
+  assert.match(appSource, /const openImageCardRenameDialog = \(card: CardData\) => \{[\s\S]*if \(card\.kind !== 'image'\) return[\s\S]*setRenamingImageCardId\(card\.id\)[\s\S]*setImageCardTitleDraft\(card\.title\)[\s\S]*\}/)
+  assert.match(appSource, /const submitImageCardRename = \(\) => \{[\s\S]*const nextTitle = imageCardTitleDraft\.trim\(\)[\s\S]*if \(!renamingImageCardId \|\| !nextTitle\) return[\s\S]*updateCardTitle\(renamingImageCardId, nextTitle\)[\s\S]*closeImageCardRenameDialog\(\)[\s\S]*\}/)
+  assert.match(appSource, /card\.kind === 'image' \? \([\s\S]*className="card-action image-card-rename"[\s\S]*openImageCardRenameDialog\(card\)[\s\S]*✎/)
+  assert.match(appSource, /renamingImageCard \? \([\s\S]*className="image-rename-overlay"[\s\S]*className="image-rename-dialog"[\s\S]*重命名图片卡片[\s\S]*value=\{imageCardTitleDraft\}[\s\S]*autoFocus[\s\S]*submitImageCardRename\(\)[\s\S]*closeImageCardRenameDialog\(\)/)
+  assert.match(appCss, /\.image-card-rename\s*\{[^}]*position:\s*absolute;[^}]*top:\s*8px;[^}]*right:\s*76px;/s)
+  assert.match(appCss, /\.image-rename-overlay\s*\{/)
+  assert.match(appCss, /\.image-rename-dialog\s*\{/)
+})
+
 test('dashboard cards keep the frameless visual surface without using the standard card header', () => {
   assert.match(appCss, /\.card-dashboard\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
   assert.match(appCss, /\.card-dashboard \.dashboard-card-frame\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
@@ -128,6 +149,26 @@ test('H canvas mode supports whole app-shell wheel zoom while V mode ignores she
   assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)[\s\S]*setCenteredZoom\(nextZoom, event\.clientX, event\.clientY\)[\s\S]*\}/)
   assert.match(appSource, /onWheel=\{onAppShellWheel\}/)
 })
+
+test('sidebar grid items avoid nested button markup for React DOM validity', () => {
+  assert.doesNotMatch(appSource, /<button\s+key=\{grid\.id\}[\s\S]*className=\{`grid-item/)
+  assert.match(appSource, /<div\s+key=\{grid\.id\}[\s\S]*role="button"[\s\S]*tabIndex=\{0\}[\s\S]*className=\{`grid-item/)
+  assert.match(appSource, /onKeyDown=\{\(event\) => \{[\s\S]*if \(event\.key === 'Enter' \|\| event\.key === ' '\)[\s\S]*activateGrid\(grid\.id\)/)
+  assert.match(appSource, /className="grid-remove-btn"/)
+})
+
+test('card navigator stays navigation-only without rename controls', () => {
+  assert.match(appSource, /<button\s+key=\{card\.id\}[\s\S]*type="button"[\s\S]*className="card-navigator-row"[\s\S]*onClick=\{\(\) => jumpToNavigatorCard\(card\)\}/)
+  assert.match(appSource, /className="card-navigator-copy"[\s\S]*<strong>\{getNavigatorCardLabel\(card\)\}<\/strong>[\s\S]*\{meta \? <small>\{meta\}<\/small> : null\}/)
+  assert.doesNotMatch(appSource, /card-navigator-rename-btn/)
+  assert.doesNotMatch(appSource, /card-navigator-title-input/)
+  assert.doesNotMatch(appSource, /card-navigator-edit-shell/)
+  assert.doesNotMatch(appSource, /className="card-navigator-copy"[\s\S]{0,240}onDoubleClick/)
+  assert.doesNotMatch(appCss, /\.card-navigator-rename-btn/)
+  assert.doesNotMatch(appCss, /\.card-navigator-title-input/)
+  assert.doesNotMatch(appCss, /\.card-navigator-edit-shell/)
+})
+
 test('H canvas mode only drags the canvas while V mode disables background canvas dragging', () => {
   assert.match(appSource, /if \(pointerMode !== 'canvas'\) return/)
   assert.match(appSource, /if \(event\.button !== 0\) return/)

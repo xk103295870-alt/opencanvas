@@ -618,9 +618,9 @@ const I18N: Record<LanguageCode, I18nText> = {
     resizeCardAria: '缩放卡片',
     removeCardAria: '删除卡片',
     notePlaceholder: '可用 Markdown 书写...',
-    mediaImageUnavailable: '图片不可用',
-    mediaVideoUnavailable: '视频不可用',
-    mediaPdfUnavailable: 'PDF 不可用',
+    mediaImageUnavailable: '此类型暂不支持跨端显示。',
+    mediaVideoUnavailable: '此类型暂不支持跨端显示。',
+    mediaPdfUnavailable: '此类型暂不支持跨端显示。',
     hintItems: ['Markdown', '链接', '图片', '视频', 'PDF', '代码', '任务', '表格'],
     dropFilesLabel: '拖放文件以创建卡片',
     accountTitle: '账号',
@@ -748,9 +748,9 @@ const I18N: Record<LanguageCode, I18nText> = {
     resizeCardAria: 'Resize card',
     removeCardAria: 'Remove card',
     notePlaceholder: 'Write with markdown...',
-    mediaImageUnavailable: 'Image unavailable',
-    mediaVideoUnavailable: 'Video unavailable',
-    mediaPdfUnavailable: 'PDF unavailable',
+    mediaImageUnavailable: 'This media type is not supported for cross-device display yet.',
+    mediaVideoUnavailable: 'This media type is not supported for cross-device display yet.',
+    mediaPdfUnavailable: 'This media type is not supported for cross-device display yet.',
     hintItems: ['Markdown', 'Links', 'Images', 'Videos', 'PDFs', 'Code', 'Tasks', 'Tables'],
     dropFilesLabel: 'Drop files to create cards',
     accountTitle: 'Account',
@@ -1516,6 +1516,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [cardTitleDraft, setCardTitleDraft] = useState('')
+  const [renamingImageCardId, setRenamingImageCardId] = useState<string | null>(null)
+  const [imageCardTitleDraft, setImageCardTitleDraft] = useState('')
 
   const [calendarDropTarget, setCalendarDropTarget] = useState<string | null>(null)
   const [todoDropTarget, setTodoDropTarget] = useState<{ cardId: string; lane: TodoLane; itemId: string | null } | null>(null)
@@ -1562,6 +1564,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const activeGrid = useMemo(() => grids.find((grid) => grid.id === activeGridId) ?? grids[0], [activeGridId, grids])
   const inspectedDashboardCard = activeGrid?.cards.find((card) => card.id === inspectedDashboardCardId && card.kind === 'dashboard')
+  const renamingImageCard = activeGrid?.cards.find((card) => card.id === renamingImageCardId && card.kind === 'image')
 
   const text = I18N[settings.language]
   const todoText = TODO_I18N[settings.language]
@@ -2906,6 +2909,20 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     [activeGridId, grids, persistCliBridgeGridUpdate, updateCliBridgeLayoutSyncMeta],
   )
 
+  const updateCardTitle = (cardId: string, title: string) => {
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids((current) =>
+      current.map((grid) => {
+        if (grid.id !== activeGridId) return grid
+        return {
+          ...grid,
+          cards: grid.cards.map((card) => (card.id === cardId ? { ...card, title } : card)),
+        }
+      }),
+    )
+    void persistCliBridgeCardPatch(cardId, { title })
+  }
+
   const beginEditCardTitle = (card: CardData) => {
     setEditingCardId(card.id)
     setCardTitleDraft(card.title)
@@ -2914,18 +2931,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const commitCardTitle = () => {
     if (!editingCardId) return
 
-    const nextTitle = cardTitleDraft.trim() || text.unnamedCard
-    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
-    setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-        return {
-          ...grid,
-          cards: grid.cards.map((card) => (card.id === editingCardId ? { ...card, title: nextTitle } : card)),
-        }
-      }),
-    )
-    void persistCliBridgeCardPatch(editingCardId, { title: nextTitle })
+    const nextTitle = cardTitleDraft.trim()
+    if (!nextTitle) {
+      cancelCardTitle()
+      return
+    }
+    updateCardTitle(editingCardId, nextTitle)
     setEditingCardId(null)
     setCardTitleDraft('')
   }
@@ -2933,6 +2944,24 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const cancelCardTitle = () => {
     setEditingCardId(null)
     setCardTitleDraft('')
+  }
+
+  const openImageCardRenameDialog = (card: CardData) => {
+    if (card.kind !== 'image') return
+    setRenamingImageCardId(card.id)
+    setImageCardTitleDraft(card.title)
+  }
+
+  const closeImageCardRenameDialog = () => {
+    setRenamingImageCardId(null)
+    setImageCardTitleDraft('')
+  }
+
+  const submitImageCardRename = () => {
+    const nextTitle = imageCardTitleDraft.trim()
+    if (!renamingImageCardId || !nextTitle) return
+    updateCardTitle(renamingImageCardId, nextTitle)
+    closeImageCardRenameDialog()
   }
 
   const createGridInternal = useCallback(
@@ -4597,12 +4626,21 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
           <div className="grid-list">
             {grids.map((grid, index) => (
-              <button
+              <div
                 key={grid.id}
+                role="button"
+                tabIndex={0}
                 className={`grid-item ${grid.id === activeGridId ? 'active' : ''}`}
                 onClick={() => {
                   activateGrid(grid.id)
                   if (editingGridId && editingGridId !== grid.id) cancelGridName()
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    activateGrid(grid.id)
+                    if (editingGridId && editingGridId !== grid.id) cancelGridName()
+                  }
                 }}
               >
                 {editingGridId === grid.id ? (
@@ -4653,7 +4691,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                     </button>
                   ) : null}
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         </section>
@@ -4953,6 +4991,20 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
                         title={settings.language === 'zh' ? '下载原图' : 'Download original image'}
                       >
                         ⤓
+                      </button>
+                    ) : null}
+                    {card.kind === 'image' ? (
+                      <button
+                        className="card-action image-card-rename"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openImageCardRenameDialog(card)
+                        }}
+                        aria-label={settings.language === 'zh' ? '重命名图片卡片' : 'Rename image card'}
+                        title={settings.language === 'zh' ? '重命名图片卡片' : 'Rename image card'}
+                      >
+                        ✎
                       </button>
                     ) : null}
                     <button
@@ -5547,6 +5599,54 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
       {inspectedDashboardCard ? (
         <DashboardInspectModal card={inspectedDashboardCard} onClose={() => setInspectedDashboardCardId(null)} />
+      ) : null}
+
+      {renamingImageCard ? (
+        <div className="image-rename-overlay" onClick={closeImageCardRenameDialog}>
+          <form
+            className="image-rename-dialog"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitImageCardRename()
+            }}
+          >
+            <header className="image-rename-header">
+              <div>
+                <span>{renamingImageCard.fileName || (settings.language === 'zh' ? '图片卡片' : 'Image card')}</span>
+                <h3>{settings.language === 'zh' ? '重命名图片卡片' : 'Rename image card'}</h3>
+              </div>
+              <button type="button" className="settings-close" onClick={closeImageCardRenameDialog}>
+                ×
+              </button>
+            </header>
+            <input
+              className="image-rename-input"
+              value={imageCardTitleDraft}
+              autoFocus
+              placeholder={settings.language === 'zh' ? '输入新的图片卡片名称' : 'Enter a new image card name'}
+              onChange={(event) => setImageCardTitleDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  submitImageCardRename()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  closeImageCardRenameDialog()
+                }
+              }}
+            />
+            <div className="image-rename-actions">
+              <button type="button" className="image-rename-secondary" onClick={closeImageCardRenameDialog}>
+                {settings.language === 'zh' ? '取消' : 'Cancel'}
+              </button>
+              <button type="submit" className="image-rename-primary" disabled={!imageCardTitleDraft.trim()}>
+                {settings.language === 'zh' ? '保存' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {pendingDeleteCardId ? (
