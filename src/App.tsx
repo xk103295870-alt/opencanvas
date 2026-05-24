@@ -3884,7 +3884,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const onAppShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (pointerMode !== 'canvas') return
     if (event.button !== 0) return
-    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .settings-overlay, .settings-dialog')) return
+    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .image-rename-overlay, .image-rename-dialog, .trash-overlay, .trash-dialog, .confirm-overlay, .confirm-dialog, .todo-draft-overlay, .todo-draft-dialog, .calendar-draft-overlay, .calendar-draft-dialog, .settings-overlay, .settings-dialog')) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -4656,7 +4656,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const onAppShellWheel = (event: ReactWheelEvent<HTMLElement>) => {
     if (pointerMode !== 'canvas') return
-    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .settings-overlay, .settings-dialog')) return
+    if ((event.target as HTMLElement).closest('.sidebar, .sidebar-toggle, .canvas-pointer-mode-switch, .canvas-toolbar, .image-rename-overlay, .image-rename-dialog, .trash-overlay, .trash-dialog, .confirm-overlay, .confirm-dialog, .todo-draft-overlay, .todo-draft-dialog, .calendar-draft-overlay, .calendar-draft-dialog, .settings-overlay, .settings-dialog')) return
 
     event.preventDefault()
     event.stopPropagation()

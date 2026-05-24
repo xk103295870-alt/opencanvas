@@ -232,9 +232,14 @@ test('canvas pointer mode switch renders bottom centered H and V controls with h
 })
 
 test('H canvas mode supports whole app-shell wheel zoom while V mode ignores shell wheel zoom', () => {
-  assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{\s*if \(pointerMode !== 'canvas'\) return\s*if \(\(event\.target as HTMLElement\)\.closest\('\.sidebar, \.sidebar-toggle, \.canvas-pointer-mode-switch, \.canvas-toolbar, \.settings-overlay, \.settings-dialog'\)\) return/s)
+  assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{\s*if \(pointerMode !== 'canvas'\) return\s*if \(\(event\.target as HTMLElement\)\.closest\('[^']*\.settings-overlay[^']*\.settings-dialog[^']*'\)\) return/s)
   assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{[\s\S]*event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)[\s\S]*setCenteredZoom\(nextZoom, event\.clientX, event\.clientY\)[\s\S]*\}/)
   assert.match(appSource, /onWheel=\{onAppShellWheel\}/)
+})
+
+test('H canvas mode does not capture recycle bin modal interactions', () => {
+  assert.match(appSource, /const onAppShellPointerDown = \(event: ReactPointerEvent<HTMLElement>\) => \{\s*if \(pointerMode !== 'canvas'\) return\s*if \(event\.button !== 0\) return\s*if \(\(event\.target as HTMLElement\)\.closest\('[^']*\.trash-overlay[^']*\.trash-dialog[^']*'\)\) return/s)
+  assert.match(appSource, /const onAppShellWheel = \(event: ReactWheelEvent<HTMLElement>\) => \{\s*if \(pointerMode !== 'canvas'\) return\s*if \(\(event\.target as HTMLElement\)\.closest\('[^']*\.trash-overlay[^']*\.trash-dialog[^']*'\)\) return/s)
 })
 
 test('sidebar grid items avoid nested button markup for React DOM validity', () => {
