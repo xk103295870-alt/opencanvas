@@ -184,11 +184,27 @@ type SyncMeta = {
   lastSyncAt: number | null
 }
 
+const TRASH_CARD_RETENTION_MS = 10 * 24 * 60 * 60 * 1000
+
+type TrashedCard = {
+  id: string
+  card: CardData
+  gridId: string
+  gridName: string
+  deletedAt: number
+  expiresAt: number
+}
+
+type PersistedAppStateWithTrash = PersistedAppState & {
+  trashCards?: TrashedCard[]
+}
+
 type PersistedAppStateSnapshot = {
   version: number
   grids: GridData[]
   activeGridId: string
   viewport: ViewportState
+  trashCards: TrashedCard[]
   savedAt: number
 }
 
@@ -1354,7 +1370,7 @@ const getPersistedState = async () => {
   })
 }
 
-const putPersistedState = async (state: PersistedAppState) => {
+const putPersistedState = async (state: PersistedAppStateWithTrash) => {
   const db = await openDatabase()
 
   return new Promise<void>((resolve, reject) => {
@@ -1373,6 +1389,26 @@ const putPersistedState = async (state: PersistedAppState) => {
   })
 }
 
+const normalizeTrashCards = (input: unknown[]): TrashedCard[] =>
+  input
+    .filter((item): item is TrashedCard => {
+      if (!item || typeof item !== 'object') return false
+      const raw = item as Partial<TrashedCard>
+      return (
+        typeof raw.id === 'string' &&
+        raw.card !== undefined &&
+        typeof raw.gridId === 'string' &&
+        typeof raw.gridName === 'string' &&
+        Number.isFinite(Number(raw.deletedAt)) &&
+        Number.isFinite(Number(raw.expiresAt))
+      )
+    })
+    .map((item) => ({
+      ...item,
+      deletedAt: Number(item.deletedAt),
+      expiresAt: Number(item.expiresAt),
+    }))
+
 const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnapshot | null => {
   if (!input || typeof input !== 'object') return null
 
@@ -1382,6 +1418,7 @@ const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnaps
   const activeGridId = typeof raw.activeGridId === 'string' ? raw.activeGridId.trim() : ''
   const viewport = raw.viewport && typeof raw.viewport === 'object' ? (raw.viewport as ViewportState) : null
   const savedAt = Number(raw.savedAt)
+  const normalizedTrashCards = Array.isArray(raw.trashCards) ? normalizeTrashCards(raw.trashCards) : []
 
   if (!Number.isFinite(version) || version < 1 || !grids || !activeGridId || !viewport) {
     return null
@@ -1392,6 +1429,7 @@ const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnaps
     grids,
     activeGridId,
     viewport,
+    trashCards: normalizedTrashCards,
     savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
   }
 }
@@ -1475,6 +1513,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [activeGridId, setActiveGridId] = useState(initialGrids[0].id)
   const [viewport, setViewport] = useState<ViewportState>(initialViewport)
   const [cardNavigatorOpen, setCardNavigatorOpen] = useState(false)
+  const [trashOpen, setTrashOpen] = useState(false)
   const [cardNavigatorQuery, setCardNavigatorQuery] = useState('')
   const [highlightedNavigatorCardId, setHighlightedNavigatorCardId] = useState<string | null>(null)
   const [pointerMode, setPointerMode] = useState<PointerMode>('card')
@@ -1516,6 +1555,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [cardTitleDraft, setCardTitleDraft] = useState('')
+  const [trashCards, setTrashCards] = useState<TrashedCard[]>([])
   const [renamingImageCardId, setRenamingImageCardId] = useState<string | null>(null)
   const [imageCardTitleDraft, setImageCardTitleDraft] = useState('')
 
@@ -1691,7 +1731,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           const targetGrid = normalizedGrids.find((g) => g.id === targetGridId) ?? normalizedGrids[0]
           setGrids(normalizedGrids)
           setActiveGridId(targetGridId)
+          const persistedTrashCards =
+            'trashCards' in persistedState && Array.isArray(persistedState.trashCards)
+              ? normalizeTrashCards(persistedState.trashCards)
+              : []
           setViewport(persistedState.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(targetGrid)))
+          setTrashCards(persistedTrashCards)
         }
 
         const urls: Record<string, string> = {}
@@ -1728,11 +1773,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }
 
     persistTimerRef.current = window.setTimeout(() => {
-      const state: PersistedAppState = {
+      const state: PersistedAppStateWithTrash = {
         version: 1,
         grids,
         activeGridId,
         viewport,
+        trashCards,
       }
 
       putPersistedState(state)
@@ -1754,7 +1800,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         window.clearTimeout(persistTimerRef.current)
       }
     }
-  }, [activeGridId, grids, hydrated, viewport])
+  }, [activeGridId, grids, hydrated, trashCards, viewport])
 
   const updateSettings = useCallback((partial: Partial<AppSettings>) => {
     setSettings((current) => {
@@ -1785,9 +1831,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     })
   }, [])
 
-  const persistLocalStateSnapshot = useCallback((state: PersistedAppState) => {
+  const persistLocalStateSnapshot = useCallback((state: PersistedAppStateWithTrash) => {
     const snapshot: PersistedAppStateSnapshot = {
       ...state,
+      trashCards: state.trashCards ?? [],
       savedAt: Date.now(),
     }
     writeJson(PERSISTED_APP_STATE_SHADOW_KEY, snapshot)
@@ -1808,8 +1855,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       grids,
       activeGridId,
       viewport,
+      trashCards,
     })
-  }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, viewport])
+  }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, trashCards, viewport])
 
   const resolveApiBaseUrl = useCallback(() => {
     const configured = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
@@ -3481,37 +3529,24 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     }
   }, [handleCanvasWorkbenchCommand])
 
-  const removeCardById = (cardId: string) => {
-    const targetCard = activeGrid.cards.find((card) => card.id === cardId)
+  const shouldDeleteTrashedAsset = (fileId: string, trashId: string) => {
+    const activeUses = gridsRef.current.some((grid) =>
+      grid.cards.some((card) => card.fileId === fileId),
+    )
+    const trashUses = trashCards.some((item) => item.id !== trashId && item.card.fileId === fileId)
+    return !activeUses && !trashUses
+  }
 
-    if (editingCardId === cardId) {
-      setEditingCardId(null)
-      setCardTitleDraft('')
-    }
+  const permanentlyDeleteTrashedCard = (trashId: string) => {
+    const target = trashCards.find((item) => item.id === trashId)
+    if (!target) return
 
-    setMinimizedCardIds((current) => current.filter((id) => id !== cardId))
-    setPendingDeleteCardId((current) => (current === cardId ? null : current))
-    clearCliBridgePatchTimer(cardId)
+    setTrashCards((current) => current.filter((item) => item.id !== trashId))
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
-    setGrids((current) =>
-      current.map((grid) => {
-        if (grid.id !== activeGridId) return grid
-        return { ...grid, cards: grid.cards.filter((card) => card.id !== cardId) }
-      }),
-    )
+    void persistCliBridgeCardDelete(trashId)
 
-    if (targetCard) {
-      void persistCliBridgeCardDelete(cardId)
-    }
-
-    if (!targetCard?.fileId) return
-
-    const fileId = targetCard.fileId
-    const stillUsed = grids.some((grid) =>
-      grid.cards.some((card) => card.id !== cardId && card.fileId === fileId),
-    )
-
-    if (stillUsed) return
+    const fileId = target.card.fileId
+    if (!fileId || !shouldDeleteTrashedAsset(fileId, trashId)) return
 
     setAssetUrls((current) => {
       const next = { ...current }
@@ -3526,6 +3561,81 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       console.error('Failed to remove asset:', error)
     })
     void persistCliBridgeAssetDelete(fileId)
+  }
+
+  const requestPermanentlyDeleteTrashedCard = (item: TrashedCard) => {
+    const label = getTrashCardLabel(item)
+    const confirmed = window.confirm(
+      settings.language === 'zh'
+        ? `永久删除「${label}」？此操作无法恢复。`
+        : `Permanently delete "${label}"? This cannot be undone.`,
+    )
+    if (!confirmed) return
+    permanentlyDeleteTrashedCard(item.id)
+  }
+
+  const restoreTrashedCard = (trashId: string) => {
+    const target = trashCards.find((item) => item.id === trashId)
+    if (!target) return
+
+    const restoreGridId = grids.some((grid) => grid.id === target.gridId) ? target.gridId : activeGridId
+    const hasIdConflict = grids.some((grid) => grid.cards.some((card) => card.id === target.card.id))
+    const restoredCard: CardData = hasIdConflict
+      ? { ...target.card, id: uid('card'), x: target.card.x + 24, y: target.card.y + 24 }
+      : target.card
+
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids((current) =>
+      current.map((grid) => {
+        if (grid.id !== restoreGridId) return grid
+        return { ...grid, cards: [...grid.cards, restoredCard] }
+      }),
+    )
+    setTrashCards((current) => current.filter((item) => item.id !== trashId))
+    void persistCliBridgeCardCreate(restoreGridId, restoredCard, false)
+  }
+
+  const purgeExpiredTrashCards = () => {
+    const now = Date.now()
+    trashCards.filter((item) => item.expiresAt <= now).forEach((item) => permanentlyDeleteTrashedCard(item.id))
+  }
+
+  useEffect(() => {
+    if (!trashCards.length) return
+    purgeExpiredTrashCards()
+  }, [trashCards])
+
+  const moveCardToTrash = (cardId: string) => {
+    const sourceGrid = activeGrid
+    const targetCard = sourceGrid.cards.find((card) => card.id === cardId)
+    if (!targetCard) return
+
+    if (editingCardId === cardId) {
+      setEditingCardId(null)
+      setCardTitleDraft('')
+    }
+
+    const now = Date.now()
+    const trashedCard: TrashedCard = {
+      id: cardId,
+      card: targetCard,
+      gridId: sourceGrid.id,
+      gridName: sourceGrid.name,
+      deletedAt: now,
+      expiresAt: now + TRASH_CARD_RETENTION_MS,
+    }
+
+    setMinimizedCardIds((current) => current.filter((id) => id !== cardId))
+    setPendingDeleteCardId((current) => (current === cardId ? null : current))
+    clearCliBridgePatchTimer(cardId)
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setTrashCards((current) => [trashedCard, ...current.filter((item) => item.id !== cardId)])
+    setGrids((current) =>
+      current.map((grid) => {
+        if (grid.id !== sourceGrid.id) return grid
+        return { ...grid, cards: grid.cards.filter((card) => card.id !== cardId) }
+      }),
+    )
   }
 
   const requestRemoveCard = (cardId: string) => {
@@ -3557,7 +3667,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
 
   const confirmDeleteCard = () => {
     if (!pendingDeleteCardId) return
-    removeCardById(pendingDeleteCardId)
+    moveCardToTrash(pendingDeleteCardId)
   }
 
   const cancelDeleteCard = () => {
@@ -4497,6 +4607,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
           : text.localApiToolbarIdle
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
   const activeCardCount = activeGrid.cards.length
+  const trashCardCount = trashCards.length
   const navigatorCards = useMemo(
     () => filterNavigatorCards(activeGrid.cards, cardNavigatorQuery),
     [activeGrid.cards, cardNavigatorQuery],
@@ -4520,6 +4631,18 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     setViewport(createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(activeGrid)))
     closeCardNavigator()
   }, [activeGrid, closeCardNavigator])
+
+  const getTrashCardLabel = (item: TrashedCard) =>
+    item.card.title || item.card.fileName || getNavigatorCardTypeLabel(item.card.kind)
+
+  const getTrashRemainingLabel = (item: TrashedCard) => {
+    const remainingMs = Math.max(0, item.expiresAt - Date.now())
+    const remainingDays = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)))
+    return settings.language === 'zh' ? `剩余 ${remainingDays} 天` : `${remainingDays} day${remainingDays === 1 ? '' : 's'} left`
+  }
+
+  const formatTrashDeletedAt = (item: TrashedCard) =>
+    new Date(item.deletedAt).toLocaleString(settings.language === 'zh' ? 'zh-CN' : 'en-US')
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4615,6 +4738,12 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             <span>{dashboardActionLabel}</span>
           </button>
         </div>
+
+        <button type="button" className="trash-entry-btn" onClick={() => setTrashOpen(true)}>
+          <span className="trash-entry-icon">♻</span>
+          <span>{settings.language === 'zh' ? '回收站' : 'Recycle Bin'}</span>
+          {trashCardCount ? <span className="trash-count-badge">{trashCardCount}</span> : null}
+        </button>
 
         <section className="grid-panel">
           <header className="grid-panel-header">
@@ -5649,14 +5778,58 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         </div>
       ) : null}
 
+      {trashOpen ? (
+        <div className="trash-overlay" onClick={() => setTrashOpen(false)}>
+          <section className="trash-dialog" onClick={(event) => event.stopPropagation()}>
+            <header className="trash-dialog-header">
+              <div>
+                <span>{settings.language === 'zh' ? '保留 10 天' : 'Kept for 10 days'}</span>
+                <h3>{settings.language === 'zh' ? '回收站' : 'Recycle Bin'}</h3>
+              </div>
+              <button type="button" className="settings-close" onClick={() => setTrashOpen(false)}>
+                ×
+              </button>
+            </header>
+
+            {trashCards.length === 0 ? (
+              <div className="trash-empty">
+                {settings.language === 'zh' ? '暂无已删除卡片。' : 'No deleted cards.'}
+              </div>
+            ) : (
+              <div className="trash-list">
+                {trashCards.map((item) => (
+                  <article key={item.id} className="trash-item" aria-label={getTrashCardLabel(item)}>
+                    <div className="trash-item-main">
+                      <span className={`trash-kind ${item.card.kind}`}>{getNavigatorCardTypeLabel(item.card.kind).slice(0, 1)}</span>
+                      <div className="trash-item-copy">
+                        <strong>{getTrashCardLabel(item)}</strong>
+                        <small>{item.gridName} · {formatTrashDeletedAt(item)} · {getTrashRemainingLabel(item)}</small>
+                      </div>
+                    </div>
+                    <div className="trash-item-actions">
+                      <button type="button" className="trash-restore-btn" onClick={() => restoreTrashedCard(item.id)}>
+                        {settings.language === 'zh' ? '恢复' : 'Restore'}
+                      </button>
+                      <button type="button" className="trash-delete-btn" onClick={() => requestPermanentlyDeleteTrashedCard(item)}>
+                        {settings.language === 'zh' ? '永久删除' : 'Delete forever'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
       {pendingDeleteCardId ? (
         <div className="confirm-overlay" onClick={cancelDeleteCard}>
           <section className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
             <h3>{settings.language === 'zh' ? '删除卡片？' : 'Delete card?'}</h3>
             <p>
               {settings.language === 'zh'
-                ? '删除后数据会丢失，无法从当前画布恢复。'
-                : 'Data will be lost after deletion and cannot be restored from this canvas.'}
+                ? '删除后会进入回收站，10 天内可以恢复，也可以在回收站永久删除。'
+                : 'Deleted cards move to the recycle bin for 10 days. You can restore them or permanently delete them there.'}
             </p>
             <div className="confirm-actions">
               <button type="button" className="confirm-secondary" onClick={cancelDeleteCard}>

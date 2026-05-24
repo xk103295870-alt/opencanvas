@@ -35,6 +35,53 @@ test('image cards expose a floating rename button that opens a rename dialog', (
   assert.match(appCss, /\.image-rename-dialog\s*\{/)
 })
 
+test('card recycle bin has persisted trash card state with a 10 day retention window', () => {
+  assert.match(appSource, /const TRASH_CARD_RETENTION_MS = 10 \* 24 \* 60 \* 60 \* 1000/)
+  assert.match(appSource, /type TrashedCard = \{\s*id: string\s*card: CardData\s*gridId: string\s*gridName: string\s*deletedAt: number\s*expiresAt: number\s*\}/s)
+  assert.match(appSource, /type PersistedAppStateSnapshot = \{[\s\S]*trashCards: TrashedCard\[\][\s\S]*\}/)
+  assert.match(appSource, /const \[trashCards, setTrashCards\] = useState<TrashedCard\[\]>\(\[\]\)/)
+  assert.match(appSource, /const normalizedTrashCards = Array\.isArray\(raw\.trashCards\) \? normalizeTrashCards\(raw\.trashCards\) : \[\]/)
+  assert.match(appSource, /trashCards: normalizedTrashCards/)
+  assert.match(appSource, /persistLocalStateSnapshot\(\{[\s\S]*trashCards,[\s\S]*\}\)/)
+})
+
+test('card deletion moves cards into the recycle bin before permanent cleanup', () => {
+  assert.match(appSource, /const moveCardToTrash = \(cardId: string\) => \{[\s\S]*const now = Date\.now\(\)[\s\S]*const trashedCard: TrashedCard = \{[\s\S]*deletedAt: now,[\s\S]*expiresAt: now \+ TRASH_CARD_RETENTION_MS[\s\S]*\}/)
+  assert.match(appSource, /setTrashCards\(\(current\) => \[trashedCard, \.\.\.current\.filter\(\(item\) => item\.id !== cardId\)\]\)/)
+  assert.match(appSource, /cards: grid\.cards\.filter\(\(card\) => card\.id !== cardId\)/)
+  assert.match(appSource, /const permanentlyDeleteTrashedCard = \(trashId: string\) => \{[\s\S]*setTrashCards\(\(current\) => current\.filter\(\(item\) => item\.id !== trashId\)\)[\s\S]*persistCliBridgeCardDelete\(trashId\)/)
+  assert.match(appSource, /const shouldDeleteTrashedAsset = \(fileId: string, trashId: string\) => \{[\s\S]*activeUses[\s\S]*trashUses[\s\S]*return !activeUses && !trashUses[\s\S]*\}/)
+  assert.match(appSource, /const confirmDeleteCard = \(\) => \{\s*if \(!pendingDeleteCardId\) return\s*moveCardToTrash\(pendingDeleteCardId\)\s*\}/s)
+  assert.doesNotMatch(appSource, /const confirmDeleteCard = \(\) => \{\s*if \(!pendingDeleteCardId\) return\s*removeCardById\(pendingDeleteCardId\)\s*\}/s)
+})
+
+test('card recycle bin can restore cards and purge expired items', () => {
+  assert.match(appSource, /const restoreTrashedCard = \(trashId: string\) => \{[\s\S]*const target = trashCards\.find\(\(item\) => item\.id === trashId\)[\s\S]*const restoreGridId = grids\.some\(\(grid\) => grid\.id === target\.gridId\) \? target\.gridId : activeGridId/)
+  assert.match(appSource, /const restoredCard: CardData = hasIdConflict\s*\? \{ \.\.\.target\.card, id: uid\('card'\), x: target\.card\.x \+ 24, y: target\.card\.y \+ 24 \}\s*: target\.card/s)
+  assert.match(appSource, /cards: \[\.\.\.grid\.cards, restoredCard\]/)
+  assert.match(appSource, /setTrashCards\(\(current\) => current\.filter\(\(item\) => item\.id !== trashId\)\)/)
+  assert.match(appSource, /const purgeExpiredTrashCards = \(\) => \{[\s\S]*const now = Date\.now\(\)[\s\S]*trashCards\.filter\(\(item\) => item\.expiresAt <= now\)\.forEach\(\(item\) => permanentlyDeleteTrashedCard\(item\.id\)\)[\s\S]*\}/)
+  assert.match(appSource, /useEffect\(\(\) => \{\s*if \(!trashCards\.length\) return\s*purgeExpiredTrashCards\(\)\s*\}, \[trashCards\]\)/s)
+})
+
+test('card recycle bin renders a sidebar entry and modal restore controls', () => {
+  assert.match(appSource, /const \[trashOpen, setTrashOpen\] = useState\(false\)/)
+  assert.match(appSource, /const trashCardCount = trashCards\.length/)
+  assert.match(appSource, /className="trash-entry-btn"[\s\S]*onClick=\{\(\) => setTrashOpen\(true\)\}[\s\S]*回收站[\s\S]*className="trash-count-badge"/)
+  assert.match(appSource, /trashOpen \? \([\s\S]*className="trash-overlay"[\s\S]*className="trash-dialog"[\s\S]*className="trash-list"/)
+  assert.match(appSource, /trashCards\.map\(\(item\) => \([\s\S]*className="trash-item"[\s\S]*getTrashCardLabel\(item\)[\s\S]*getNavigatorCardTypeLabel\(item\.card\.kind\)[\s\S]*getTrashRemainingLabel\(item\)[\s\S]*restoreTrashedCard\(item\.id\)[\s\S]*requestPermanentlyDeleteTrashedCard\(item\)/)
+  assert.match(appSource, /trashCards\.length === 0 \? \([\s\S]*className="trash-empty"/)
+  assert.match(appCss, /\.trash-entry-btn\s*\{/)
+  assert.match(appCss, /\.trash-overlay\s*\{/)
+  assert.match(appCss, /\.trash-dialog\s*\{/)
+  assert.match(appCss, /\.trash-item\s*\{/)
+})
+
+test('card recycle bin confirms before permanent deletion', () => {
+  assert.match(appSource, /const requestPermanentlyDeleteTrashedCard = \(item: TrashedCard\) => \{[\s\S]*window\.confirm\([\s\S]*永久删除[\s\S]*permanentlyDeleteTrashedCard\(item\.id\)[\s\S]*\}/)
+  assert.doesNotMatch(appSource, /className="trash-delete-btn" onClick=\{\(\) => permanentlyDeleteTrashedCard\(item\.id\)\}/)
+})
+
 test('dashboard cards keep the frameless visual surface without using the standard card header', () => {
   assert.match(appCss, /\.card-dashboard\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
   assert.match(appCss, /\.card-dashboard \.dashboard-card-frame\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
