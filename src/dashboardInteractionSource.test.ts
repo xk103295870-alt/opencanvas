@@ -45,6 +45,34 @@ test('card recycle bin has persisted trash card state with a 10 day retention wi
   assert.match(appSource, /persistLocalStateSnapshot\(\{[\s\S]*trashCards,[\s\S]*\}\)/)
 })
 
+test('todo item recycle bin has persisted trash item state with a 10 day retention window', () => {
+  assert.match(appSource, /type TrashedTodoItem = \{\s*id: string\s*item: TodoItem\s*cardId: string\s*cardTitle: string\s*gridId: string\s*gridName: string\s*deletedAt: number\s*expiresAt: number\s*\}/s)
+  assert.match(appSource, /type PersistedAppStateWithTrash = PersistedAppState & \{\s*trashCards\?: TrashedCard\[\]\s*trashTodoItems\?: TrashedTodoItem\[\]\s*\}/s)
+  assert.match(appSource, /type PersistedAppStateSnapshot = \{[\s\S]*trashCards: TrashedCard\[\][\s\S]*trashTodoItems: TrashedTodoItem\[\][\s\S]*\}/)
+  assert.match(appSource, /const \[trashTodoItems, setTrashTodoItems\] = useState<TrashedTodoItem\[\]>\(\[\]\)/)
+  assert.match(appSource, /const normalizedTrashTodoItems = Array\.isArray\(raw\.trashTodoItems\) \? normalizeTrashTodoItems\(raw\.trashTodoItems\) : \[\]/)
+  assert.match(appSource, /trashTodoItems: normalizedTrashTodoItems/)
+  assert.match(appSource, /persistLocalStateSnapshot\(\{[\s\S]*trashCards,[\s\S]*trashTodoItems,[\s\S]*\}\)/)
+})
+
+test('todo item deletion moves a single item into the todo recycle bin', () => {
+  assert.match(appSource, /const moveTodoItemToTrash = \(cardId: string, todoId: string\) => \{[\s\S]*const targetCard = activeGrid\.cards\.find\(\(card\) => card\.id === cardId\)[\s\S]*const targetItem = \(targetCard\.todoItems \?\? \[\]\)\.find\(\(item\) => item\.id === todoId\)[\s\S]*const now = Date\.now\(\)[\s\S]*const trashedTodoItem: TrashedTodoItem = \{[\s\S]*item: targetItem,[\s\S]*cardId: targetCard\.id,[\s\S]*cardTitle: targetCard\.title,[\s\S]*gridId: activeGrid\.id,[\s\S]*gridName: activeGrid\.name,[\s\S]*expiresAt: now \+ TRASH_CARD_RETENTION_MS[\s\S]*\}/)
+  assert.match(appSource, /setTrashTodoItems\(\(current\) => \[trashedTodoItem, \.\.\.current\.filter\(\(item\) => item\.id !== todoId\)\]\)/)
+  assert.match(appSource, /const nextTodoItems = \(targetCard\.todoItems \?\? \[\]\)\.filter\(\(item\) => item\.id !== todoId\)/)
+  assert.match(appSource, /const removeTodoItem = \(cardId: string, todoId: string\) => \{[\s\S]*moveTodoItemToTrash\(cardId, todoId\)[\s\S]*\}/)
+  assert.doesNotMatch(appSource, /const removeTodoItem = \(cardId: string, todoId: string\) => \{[\s\S]*const nextTodoItems = \(targetCard\.todoItems \?\? \[\]\)\.filter\(\(item\) => item\.id !== todoId\)[\s\S]*persistCliBridgeCardPatch\(cardId, \{ todoItems: nextTodoItems \}\)[\s\S]*\}/)
+})
+
+test('todo item recycle bin can restore purge and permanently delete todo items', () => {
+  assert.match(appSource, /const permanentlyDeleteTrashedTodoItem = \(trashId: string\) => \{\s*setTrashTodoItems\(\(current\) => current\.filter\(\(item\) => item\.id !== trashId\)\)\s*\}/s)
+  assert.match(appSource, /const requestPermanentlyDeleteTrashedTodoItem = \(item: TrashedTodoItem\) => \{[\s\S]*window\.confirm\([\s\S]*永久删除这条代办[\s\S]*permanentlyDeleteTrashedTodoItem\(item\.id\)[\s\S]*\}/)
+  assert.match(appSource, /const restoreTrashedTodoItem = \(trashId: string\) => \{[\s\S]*const target = trashTodoItems\.find\(\(item\) => item\.id === trashId\)[\s\S]*const destination = resolveTodoRestoreDestination\(target\)[\s\S]*const restoredTodoItem: TodoItem = hasItemConflict\s*\? \{ \.\.\.target\.item, id: uid\('todo'\) \}\s*: target\.item[\s\S]*persistCliBridgeCardPatch\(destination\.cardId, \{ todoItems: nextTodoItems \}\)[\s\S]*setTrashTodoItems\(\(current\) => current\.filter\(\(item\) => item\.id !== trashId\)\)/)
+  assert.match(appSource, /const resolveTodoRestoreDestination = \(target: TrashedTodoItem\) => \{[\s\S]*const originalCard = gridsRef\.current[\s\S]*card\.id === target\.cardId && card\.kind === 'todo'[\s\S]*return \{ gridId: originalGrid\.id, cardId: originalCard\.id, todoItems: originalCard\.todoItems \?\? \[\] \}[\s\S]*const fallbackGrid = gridsRef\.current\.find\(\(grid\) => grid\.id === target\.gridId\) \?\? activeGrid[\s\S]*const fallbackTodoCard = fallbackGrid\.cards\.find\(\(card\) => card\.kind === 'todo'\)[\s\S]*const fallbackCard: CardData = \{[\s\S]*kind: 'todo'[\s\S]*todoItems: \[\][\s\S]*\}/)
+  assert.match(appSource, /cards: grid\.cards\.some\(\(card\) => card\.id === destination\.cardId\)[\s\S]*grid\.cards\.map\(\(card\) =>[\s\S]*card\.id === destination\.cardId \? \{ \.\.\.card, todoItems: nextTodoItems \} : card[\s\S]*destination\.fallbackCard\s*\? \[\.\.\.grid\.cards, \{ \.\.\.destination\.fallbackCard, todoItems: nextTodoItems \}\]/)
+  assert.match(appSource, /const purgeExpiredTrashTodoItems = \(\) => \{[\s\S]*const now = Date\.now\(\)[\s\S]*trashTodoItems\.filter\(\(item\) => item\.expiresAt <= now\)\.forEach\(\(item\) => permanentlyDeleteTrashedTodoItem\(item\.id\)\)[\s\S]*\}/)
+  assert.match(appSource, /useEffect\(\(\) => \{\s*if \(!trashTodoItems\.length\) return\s*purgeExpiredTrashTodoItems\(\)\s*\}, \[trashTodoItems\]\)/s)
+})
+
 test('card deletion moves cards into the recycle bin before permanent cleanup', () => {
   assert.match(appSource, /const moveCardToTrash = \(cardId: string\) => \{[\s\S]*const now = Date\.now\(\)[\s\S]*const trashedCard: TrashedCard = \{[\s\S]*deletedAt: now,[\s\S]*expiresAt: now \+ TRASH_CARD_RETENTION_MS[\s\S]*\}/)
   assert.match(appSource, /setTrashCards\(\(current\) => \[trashedCard, \.\.\.current\.filter\(\(item\) => item\.id !== cardId\)\]\)/)
@@ -75,6 +103,18 @@ test('card recycle bin renders a sidebar entry and modal restore controls', () =
   assert.match(appCss, /\.trash-overlay\s*\{/)
   assert.match(appCss, /\.trash-dialog\s*\{/)
   assert.match(appCss, /\.trash-item\s*\{/)
+})
+
+test('recycle bin separates deleted cards and deleted todo items in one panel', () => {
+  assert.match(appSource, /const trashTodoItemCount = trashTodoItems\.length/)
+  assert.match(appSource, /const trashTotalCount = trashCardCount \+ trashTodoItemCount/)
+  assert.match(appSource, /\{trashTotalCount \? <span className="trash-count-badge">\{trashTotalCount\}<\/span> : null\}/)
+  assert.match(appSource, /className="trash-section"[\s\S]*已删除卡片[\s\S]*trashCards\.length === 0 \? \([\s\S]*暂无已删除卡片/)
+  assert.match(appSource, /className="trash-section"[\s\S]*已删除代办[\s\S]*trashTodoItems\.length === 0 \? \([\s\S]*暂无已删除代办/)
+  assert.match(appSource, /trashTodoItems\.map\(\(item\) => \([\s\S]*className="trash-todo-item"[\s\S]*item\.item\.text[\s\S]*item\.cardTitle[\s\S]*item\.gridName[\s\S]*getTrashTodoRemainingLabel\(item\)[\s\S]*restoreTrashedTodoItem\(item\.id\)[\s\S]*requestPermanentlyDeleteTrashedTodoItem\(item\)/)
+  assert.match(appCss, /\.trash-section\s*\{/)
+  assert.match(appCss, /\.trash-section-title\s*\{/)
+  assert.match(appCss, /\.trash-todo-item\s*\{/)
 })
 
 test('card recycle bin confirms before permanent deletion', () => {

@@ -195,8 +195,20 @@ type TrashedCard = {
   expiresAt: number
 }
 
+type TrashedTodoItem = {
+  id: string
+  item: TodoItem
+  cardId: string
+  cardTitle: string
+  gridId: string
+  gridName: string
+  deletedAt: number
+  expiresAt: number
+}
+
 type PersistedAppStateWithTrash = PersistedAppState & {
   trashCards?: TrashedCard[]
+  trashTodoItems?: TrashedTodoItem[]
 }
 
 type PersistedAppStateSnapshot = {
@@ -205,6 +217,7 @@ type PersistedAppStateSnapshot = {
   activeGridId: string
   viewport: ViewportState
   trashCards: TrashedCard[]
+  trashTodoItems: TrashedTodoItem[]
   savedAt: number
 }
 
@@ -1409,6 +1422,28 @@ const normalizeTrashCards = (input: unknown[]): TrashedCard[] =>
       expiresAt: Number(item.expiresAt),
     }))
 
+const normalizeTrashTodoItems = (input: unknown[]): TrashedTodoItem[] =>
+  input
+    .filter((item): item is TrashedTodoItem => {
+      if (!item || typeof item !== 'object') return false
+      const raw = item as Partial<TrashedTodoItem>
+      return (
+        typeof raw.id === 'string' &&
+        raw.item !== undefined &&
+        typeof raw.cardId === 'string' &&
+        typeof raw.cardTitle === 'string' &&
+        typeof raw.gridId === 'string' &&
+        typeof raw.gridName === 'string' &&
+        Number.isFinite(Number(raw.deletedAt)) &&
+        Number.isFinite(Number(raw.expiresAt))
+      )
+    })
+    .map((item) => ({
+      ...item,
+      deletedAt: Number(item.deletedAt),
+      expiresAt: Number(item.expiresAt),
+    }))
+
 const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnapshot | null => {
   if (!input || typeof input !== 'object') return null
 
@@ -1419,6 +1454,7 @@ const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnaps
   const viewport = raw.viewport && typeof raw.viewport === 'object' ? (raw.viewport as ViewportState) : null
   const savedAt = Number(raw.savedAt)
   const normalizedTrashCards = Array.isArray(raw.trashCards) ? normalizeTrashCards(raw.trashCards) : []
+  const normalizedTrashTodoItems = Array.isArray(raw.trashTodoItems) ? normalizeTrashTodoItems(raw.trashTodoItems) : []
 
   if (!Number.isFinite(version) || version < 1 || !grids || !activeGridId || !viewport) {
     return null
@@ -1430,6 +1466,7 @@ const normalizePersistedStateSnapshot = (input: unknown): PersistedAppStateSnaps
     activeGridId,
     viewport,
     trashCards: normalizedTrashCards,
+    trashTodoItems: normalizedTrashTodoItems,
     savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
   }
 }
@@ -1556,6 +1593,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [cardTitleDraft, setCardTitleDraft] = useState('')
   const [trashCards, setTrashCards] = useState<TrashedCard[]>([])
+  const [trashTodoItems, setTrashTodoItems] = useState<TrashedTodoItem[]>([])
   const [renamingImageCardId, setRenamingImageCardId] = useState<string | null>(null)
   const [imageCardTitleDraft, setImageCardTitleDraft] = useState('')
 
@@ -1735,8 +1773,13 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
             'trashCards' in persistedState && Array.isArray(persistedState.trashCards)
               ? normalizeTrashCards(persistedState.trashCards)
               : []
+          const persistedTrashTodoItems =
+            'trashTodoItems' in persistedState && Array.isArray(persistedState.trashTodoItems)
+              ? normalizeTrashTodoItems(persistedState.trashTodoItems)
+              : []
           setViewport(persistedState.viewport ?? createCenteredViewport(canvasRef.current?.getBoundingClientRect(), getCardsCenter(targetGrid)))
           setTrashCards(persistedTrashCards)
+          setTrashTodoItems(persistedTrashTodoItems)
         }
 
         const urls: Record<string, string> = {}
@@ -1779,6 +1822,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         activeGridId,
         viewport,
         trashCards,
+        trashTodoItems,
       }
 
       putPersistedState(state)
@@ -1800,7 +1844,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         window.clearTimeout(persistTimerRef.current)
       }
     }
-  }, [activeGridId, grids, hydrated, trashCards, viewport])
+  }, [activeGridId, grids, hydrated, trashCards, trashTodoItems, viewport])
 
   const updateSettings = useCallback((partial: Partial<AppSettings>) => {
     setSettings((current) => {
@@ -1835,6 +1879,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     const snapshot: PersistedAppStateSnapshot = {
       ...state,
       trashCards: state.trashCards ?? [],
+      trashTodoItems: state.trashTodoItems ?? [],
       savedAt: Date.now(),
     }
     writeJson(PERSISTED_APP_STATE_SHADOW_KEY, snapshot)
@@ -1856,8 +1901,9 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       activeGridId,
       viewport,
       trashCards,
+      trashTodoItems,
     })
-  }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, trashCards, viewport])
+  }, [activeGridId, grids, hydrated, persistLocalStateSnapshot, trashCards, trashTodoItems, viewport])
 
   const resolveApiBaseUrl = useCallback(() => {
     const configured = (serverAuth?.apiBaseUrl || getApiBaseUrl()).trim()
@@ -3574,6 +3620,90 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     permanentlyDeleteTrashedCard(item.id)
   }
 
+  const permanentlyDeleteTrashedTodoItem = (trashId: string) => {
+    setTrashTodoItems((current) => current.filter((item) => item.id !== trashId))
+  }
+
+  const requestPermanentlyDeleteTrashedTodoItem = (item: TrashedTodoItem) => {
+    const confirmed = window.confirm(
+      settings.language === 'zh'
+        ? `永久删除这条代办「${item.item.text}」？此操作无法恢复。`
+        : `Permanently delete this todo item "${item.item.text}"? This cannot be undone.`,
+    )
+    if (!confirmed) return
+    permanentlyDeleteTrashedTodoItem(item.id)
+  }
+
+  const resolveTodoRestoreDestination = (target: TrashedTodoItem) => {
+    const originalGrid = gridsRef.current.find((grid) =>
+      grid.cards.some((card) => card.id === target.cardId && card.kind === 'todo'),
+    )
+    const originalCard = gridsRef.current
+      .find((grid) => grid.id === originalGrid?.id)
+      ?.cards.find((card) => card.id === target.cardId && card.kind === 'todo')
+    if (originalGrid && originalCard && originalCard.kind === 'todo') {
+      return { gridId: originalGrid.id, cardId: originalCard.id, todoItems: originalCard.todoItems ?? [] }
+    }
+
+    const fallbackGrid = gridsRef.current.find((grid) => grid.id === target.gridId) ?? activeGrid
+    const fallbackTodoCard = fallbackGrid.cards.find((card) => card.kind === 'todo')
+    if (fallbackTodoCard && fallbackTodoCard.kind === 'todo') {
+      return { gridId: fallbackGrid.id, cardId: fallbackTodoCard.id, todoItems: fallbackTodoCard.todoItems ?? [] }
+    }
+
+    const fallbackCard: CardData = {
+      id: uid('card'),
+      kind: 'todo',
+      title: settings.language === 'zh' ? '恢复的代办' : 'Restored Todos',
+      content: '',
+      x: 120,
+      y: 120,
+      width: CARD_DEFAULT_SIZES.todo.width,
+      height: CARD_DEFAULT_SIZES.todo.height,
+      todoItems: [],
+    }
+
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    void persistCliBridgeCardCreate(fallbackGrid.id, fallbackCard, false)
+
+    return { gridId: fallbackGrid.id, cardId: fallbackCard.id, todoItems: [], fallbackCard }
+  }
+
+  const restoreTrashedTodoItem = (trashId: string) => {
+    const target = trashTodoItems.find((item) => item.id === trashId)
+    if (!target) return
+
+    const destination = resolveTodoRestoreDestination(target) as {
+      gridId: string
+      cardId: string
+      todoItems: TodoItem[]
+      fallbackCard?: CardData
+    }
+    const hasItemConflict = destination.todoItems.some((item) => item.id === target.item.id)
+    const restoredTodoItem: TodoItem = hasItemConflict ? { ...target.item, id: uid('todo') } : target.item
+    const nextTodoItems = [...destination.todoItems, restoredTodoItem]
+
+    updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setGrids((current) =>
+      current.map((grid) =>
+        grid.id !== destination.gridId
+          ? grid
+          : {
+              ...grid,
+              cards: grid.cards.some((card) => card.id === destination.cardId)
+                ? grid.cards.map((card) =>
+                    card.id === destination.cardId ? { ...card, todoItems: nextTodoItems } : card,
+                  )
+                : destination.fallbackCard
+                  ? [...grid.cards, { ...destination.fallbackCard, todoItems: nextTodoItems }]
+                  : grid.cards,
+            },
+      ),
+    )
+    void persistCliBridgeCardPatch(destination.cardId, { todoItems: nextTodoItems })
+    setTrashTodoItems((current) => current.filter((item) => item.id !== trashId))
+  }
+
   const restoreTrashedCard = (trashId: string) => {
     const target = trashCards.find((item) => item.id === trashId)
     if (!target) return
@@ -3600,10 +3730,20 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     trashCards.filter((item) => item.expiresAt <= now).forEach((item) => permanentlyDeleteTrashedCard(item.id))
   }
 
+  const purgeExpiredTrashTodoItems = () => {
+    const now = Date.now()
+    trashTodoItems.filter((item) => item.expiresAt <= now).forEach((item) => permanentlyDeleteTrashedTodoItem(item.id))
+  }
+
   useEffect(() => {
     if (!trashCards.length) return
     purgeExpiredTrashCards()
   }, [trashCards])
+
+  useEffect(() => {
+    if (!trashTodoItems.length) return
+    purgeExpiredTrashTodoItems()
+  }, [trashTodoItems])
 
   const moveCardToTrash = (cardId: string) => {
     const sourceGrid = activeGrid
@@ -3915,7 +4055,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     setTodoDropTarget(null)
   }
 
-  const removeTodoItem = (cardId: string, todoId: string) => {
+  const moveTodoItemToTrash = (cardId: string, todoId: string) => {
     if (todoDragStateRef.current?.cardId === cardId && todoDragStateRef.current?.itemId === todoId) {
       todoDragStateRef.current = null
     }
@@ -3926,8 +4066,24 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     const targetCard = activeGrid.cards.find((card) => card.id === cardId)
     if (!targetCard || targetCard.kind !== 'todo') return
 
+    const targetItem = (targetCard.todoItems ?? []).find((item) => item.id === todoId)
+    if (!targetItem) return
+
+    const now = Date.now()
+    const trashedTodoItem: TrashedTodoItem = {
+      id: todoId,
+      item: targetItem,
+      cardId: targetCard.id,
+      cardTitle: targetCard.title,
+      gridId: activeGrid.id,
+      gridName: activeGrid.name,
+      deletedAt: now,
+      expiresAt: now + TRASH_CARD_RETENTION_MS,
+    }
+
     const nextTodoItems = (targetCard.todoItems ?? []).filter((item) => item.id !== todoId)
     updateCliBridgeLayoutSyncMeta({ lastLayoutMutationAt: Date.now() })
+    setTrashTodoItems((current) => [trashedTodoItem, ...current.filter((item) => item.id !== todoId)])
     setGrids((current) =>
       current.map((grid) =>
         grid.id !== activeGridId
@@ -3939,6 +4095,10 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
       ),
     )
     void persistCliBridgeCardPatch(cardId, { todoItems: nextTodoItems })
+  }
+
+  const removeTodoItem = (cardId: string, todoId: string) => {
+    moveTodoItemToTrash(cardId, todoId)
   }
 
   const updateTodoText = (cardId: string, todoId: string, value: string) => {
@@ -4608,6 +4768,8 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
   const accountProviderLabel = account?.provider === 'google' ? text.providerGoogle : text.providerDemo
   const activeCardCount = activeGrid.cards.length
   const trashCardCount = trashCards.length
+  const trashTodoItemCount = trashTodoItems.length
+  const trashTotalCount = trashCardCount + trashTodoItemCount
   const navigatorCards = useMemo(
     () => filterNavigatorCards(activeGrid.cards, cardNavigatorQuery),
     [activeGrid.cards, cardNavigatorQuery],
@@ -4640,6 +4802,15 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
     const remainingDays = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)))
     return settings.language === 'zh' ? `剩余 ${remainingDays} 天` : `${remainingDays} day${remainingDays === 1 ? '' : 's'} left`
   }
+
+  const getTrashTodoRemainingLabel = (item: TrashedTodoItem) => {
+    const remainingMs = Math.max(0, item.expiresAt - Date.now())
+    const remainingDays = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)))
+    return settings.language === 'zh' ? `剩余 ${remainingDays} 天` : `${remainingDays} day${remainingDays === 1 ? '' : 's'} left`
+  }
+
+  const formatTrashTodoDeletedAt = (item: TrashedTodoItem) =>
+    new Date(item.deletedAt).toLocaleString(settings.language === 'zh' ? 'zh-CN' : 'en-US')
 
   const formatTrashDeletedAt = (item: TrashedCard) =>
     new Date(item.deletedAt).toLocaleString(settings.language === 'zh' ? 'zh-CN' : 'en-US')
@@ -4742,7 +4913,7 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
         <button type="button" className="trash-entry-btn" onClick={() => setTrashOpen(true)}>
           <span className="trash-entry-icon">♻</span>
           <span>{settings.language === 'zh' ? '回收站' : 'Recycle Bin'}</span>
-          {trashCardCount ? <span className="trash-count-badge">{trashCardCount}</span> : null}
+          {trashTotalCount ? <span className="trash-count-badge">{trashTotalCount}</span> : null}
         </button>
 
         <section className="grid-panel">
@@ -5791,33 +5962,75 @@ function App({ runtime = 'web', onStartLocalApi, onCheckLocalApiHealth }: AppPro
               </button>
             </header>
 
-            {trashCards.length === 0 ? (
-              <div className="trash-empty">
-                {settings.language === 'zh' ? '暂无已删除卡片。' : 'No deleted cards.'}
-              </div>
-            ) : (
-              <div className="trash-list">
-                {trashCards.map((item) => (
-                  <article key={item.id} className="trash-item" aria-label={getTrashCardLabel(item)}>
-                    <div className="trash-item-main">
-                      <span className={`trash-kind ${item.card.kind}`}>{getNavigatorCardTypeLabel(item.card.kind).slice(0, 1)}</span>
-                      <div className="trash-item-copy">
-                        <strong>{getTrashCardLabel(item)}</strong>
-                        <small>{item.gridName} · {formatTrashDeletedAt(item)} · {getTrashRemainingLabel(item)}</small>
-                      </div>
-                    </div>
-                    <div className="trash-item-actions">
-                      <button type="button" className="trash-restore-btn" onClick={() => restoreTrashedCard(item.id)}>
-                        {settings.language === 'zh' ? '恢复' : 'Restore'}
-                      </button>
-                      <button type="button" className="trash-delete-btn" onClick={() => requestPermanentlyDeleteTrashedCard(item)}>
-                        {settings.language === 'zh' ? '永久删除' : 'Delete forever'}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
+            <div className="trash-sections">
+              <section className="trash-section" aria-label={settings.language === 'zh' ? '已删除卡片' : 'Deleted cards'}>
+                <header className="trash-section-title">
+                  <span>{settings.language === 'zh' ? '已删除卡片' : 'Deleted cards'}</span>
+                  <small>{trashCardCount}</small>
+                </header>
+                {trashCards.length === 0 ? (
+                  <div className="trash-empty">
+                    {settings.language === 'zh' ? '暂无已删除卡片。' : 'No deleted cards.'}
+                  </div>
+                ) : (
+                  <div className="trash-list">
+                    {trashCards.map((item) => (
+                      <article key={item.id} className="trash-item" aria-label={getTrashCardLabel(item)}>
+                        <div className="trash-item-main">
+                          <span className={`trash-kind ${item.card.kind}`}>{getNavigatorCardTypeLabel(item.card.kind).slice(0, 1)}</span>
+                          <div className="trash-item-copy">
+                            <strong>{getTrashCardLabel(item)}</strong>
+                            <small>{item.gridName} · {formatTrashDeletedAt(item)} · {getTrashRemainingLabel(item)}</small>
+                          </div>
+                        </div>
+                        <div className="trash-item-actions">
+                          <button type="button" className="trash-restore-btn" onClick={() => restoreTrashedCard(item.id)}>
+                            {settings.language === 'zh' ? '恢复' : 'Restore'}
+                          </button>
+                          <button type="button" className="trash-delete-btn" onClick={() => requestPermanentlyDeleteTrashedCard(item)}>
+                            {settings.language === 'zh' ? '永久删除' : 'Delete forever'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="trash-section" aria-label={settings.language === 'zh' ? '已删除代办' : 'Deleted todos'}>
+                <header className="trash-section-title">
+                  <span>{settings.language === 'zh' ? '已删除代办' : 'Deleted todos'}</span>
+                  <small>{trashTodoItemCount}</small>
+                </header>
+                {trashTodoItems.length === 0 ? (
+                  <div className="trash-empty">
+                    {settings.language === 'zh' ? '暂无已删除代办。' : 'No deleted todo items.'}
+                  </div>
+                ) : (
+                  <div className="trash-list">
+                    {trashTodoItems.map((item) => (
+                      <article key={item.id} className="trash-todo-item" aria-label={item.item.text}>
+                        <div className="trash-item-main">
+                          <span className={`trash-kind ${normalizeTodoTag(item.item.tag)}`}>✓</span>
+                          <div className="trash-item-copy">
+                            <strong>{item.item.text}</strong>
+                            <small>{item.cardTitle} · {item.gridName} · {formatTrashTodoDeletedAt(item)} · {getTrashTodoRemainingLabel(item)}</small>
+                          </div>
+                        </div>
+                        <div className="trash-item-actions">
+                          <button type="button" className="trash-restore-btn" onClick={() => restoreTrashedTodoItem(item.id)}>
+                            {settings.language === 'zh' ? '恢复' : 'Restore'}
+                          </button>
+                          <button type="button" className="trash-delete-btn" onClick={() => requestPermanentlyDeleteTrashedTodoItem(item)}>
+                            {settings.language === 'zh' ? '永久删除' : 'Delete forever'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           </section>
         </div>
       ) : null}

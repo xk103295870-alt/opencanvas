@@ -3121,6 +3121,38 @@
   color: var(--text-dim);
 }
 
+.trash-sections {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.trash-section {
+  display: grid;
+  gap: 10px;
+}
+
+.trash-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+.trash-section-title small {
+  min-width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--icon-bg);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 .trash-list {
   display: grid;
   gap: 10px;
@@ -3129,6 +3161,17 @@
 }
 
 .trash-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 16px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+}
+
+.trash-todo-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -3943,7 +3986,8 @@
 }
 
 @media (max-width: 620px) {
-  .trash-item {
+  .trash-item,
+  .trash-todo-item {
     grid-template-columns: 1fr;
   }
 
